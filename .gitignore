@@ -1,0 +1,27 @@
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# SPM
+.build/
+.swiftpm/
+
+# XcodeGen output — regenerate with `make gen`
+open-receipt.xcodeproj
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Env
+.env
+project.local.yml
+
+# Local receipt scans and expected results
+/Fixtures/Receipts/
+
+# AI
+.claude/settings.local.json
+.cc-writes/

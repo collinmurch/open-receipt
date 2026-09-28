@@ -1,0 +1,180 @@
+import Observation
+import SwiftUI
+
+@MainActor
+@Observable
+final class ReceiptLibraryModel {
+  private(set) var receipts: [ReceiptSummary] = []
+  private(set) var deletedReceipts: [DeletedReceiptSummary] = []
+  private(set) var isLoading = false
+  private(set) var hasLoaded = false
+  var errorDescription: String?
+
+  private let storage: ReceiptStorageClient
+  private var lastTrashPurgeCheck: Date?
+
+  init(storage: ReceiptStorageClient) {
+    self.storage = storage
+  }
+
+  func load() async {
+    isLoading = true
+    defer { isLoading = false }
+    var purgeError: Error?
+    do {
+      try await purgeExpiredTrashIfNeeded(now: Date())
+    } catch {
+      purgeError = error
+    }
+    do {
+      async let storedReceipts = storage.list()
+      async let storedDeletedReceipts = storage.listDeleted()
+      let receipts = try await storedReceipts
+      let deletedReceipts = try await storedDeletedReceipts
+      if receipts != self.receipts { self.receipts = receipts }
+      if deletedReceipts != self.deletedReceipts { self.deletedReceipts = deletedReceipts }
+      errorDescription = purgeError?.localizedDescription
+    } catch {
+      errorDescription = error.localizedDescription
+    }
+    if !hasLoaded { hasLoaded = true }
+  }
+
+  func delete(_ receipt: ReceiptSummary) async {
+    guard let index = receipts.firstIndex(where: { $0.id == receipt.id }) else { return }
+    withAnimation(.smooth(duration: 0.4)) {
+      _ = receipts.remove(at: index)
+    }
+
+    do {
+      try await storage.delete(receipt.id)
+      errorDescription = nil
+    } catch {
+      withAnimation(.smooth(duration: 0.3)) {
+        receipts.insert(receipt, at: min(index, receipts.endIndex))
+      }
+      errorDescription = error.localizedDescription
+      return
+    }
+    await reloadDeletedReceipts()
+  }
+
+  func restore(_ deletedReceipt: DeletedReceiptSummary) async {
+    guard let index = deletedReceipts.firstIndex(where: { $0.id == deletedReceipt.id }) else {
+      return
+    }
+    withAnimation(.smooth(duration: 0.4)) {
+      _ = deletedReceipts.remove(at: index)
+    }
+
+    do {
+      try await storage.restore(deletedReceipt.id)
+      receipts = try await storage.list()
+      errorDescription = nil
+    } catch {
+      withAnimation(.smooth(duration: 0.3)) {
+        deletedReceipts.insert(deletedReceipt, at: min(index, deletedReceipts.endIndex))
+      }
+      errorDescription = error.localizedDescription
+    }
+  }
+
+  func permanentlyDelete(_ deletedReceipt: DeletedReceiptSummary) async {
+    guard let index = deletedReceipts.firstIndex(where: { $0.id == deletedReceipt.id }) else {
+      return
+    }
+    withAnimation(.smooth(duration: 0.4)) {
+      _ = deletedReceipts.remove(at: index)
+    }
+
+    do {
+      try await storage.permanentlyDelete(deletedReceipt.id)
+      errorDescription = nil
+    } catch {
+      withAnimation(.smooth(duration: 0.3)) {
+        deletedReceipts.insert(deletedReceipt, at: min(index, deletedReceipts.endIndex))
+      }
+      errorDescription = error.localizedDescription
+    }
+  }
+
+  func emptyTrash() async {
+    let previousReceipts = deletedReceipts
+    withAnimation(.smooth(duration: 0.4)) {
+      deletedReceipts = []
+    }
+
+    do {
+      try await storage.emptyTrash()
+      errorDescription = nil
+    } catch {
+      let remainingReceipts = (try? await storage.listDeleted()) ?? previousReceipts
+      withAnimation(.smooth(duration: 0.3)) {
+        deletedReceipts = remainingReceipts
+      }
+      errorDescription = error.localizedDescription
+    }
+  }
+
+  func refreshTrashIfNeeded(now: Date = Date()) async {
+    do {
+      guard try await purgeExpiredTrashIfNeeded(now: now) else { return }
+      deletedReceipts = try await storage.listDeleted()
+      errorDescription = nil
+    } catch {
+      errorDescription = error.localizedDescription
+    }
+  }
+
+  @discardableResult
+  private func purgeExpiredTrashIfNeeded(now: Date) async throws -> Bool {
+    if let lastTrashPurgeCheck,
+      now.timeIntervalSince(lastTrashPurgeCheck) < Self.trashPurgeCheckInterval
+    {
+      return false
+    }
+    lastTrashPurgeCheck = now
+    try await storage.purgeExpiredTrash(now)
+    return true
+  }
+
+  private func reloadDeletedReceipts() async {
+    do {
+      deletedReceipts = try await storage.listDeleted()
+      errorDescription = nil
+    } catch {
+      errorDescription = error.localizedDescription
+    }
+  }
+
+  private static let trashPurgeCheckInterval: TimeInterval = 24 * 60 * 60
+}
+
+/// Reloads the receipt library, for screens that change receipts while it is out of view.
+struct ReceiptLibraryRefreshAction: Sendable {
+  private let action: @MainActor @Sendable () -> Void
+
+  init(action: @escaping @MainActor @Sendable () -> Void = {}) {
+    self.action = action
+  }
+
+  init(library: ReceiptLibraryModel) {
+    action = { Task { await library.load() } }
+  }
+
+  @MainActor
+  func callAsFunction() {
+    action()
+  }
+}
+
+private struct ReceiptLibraryRefreshKey: EnvironmentKey {
+  static let defaultValue = ReceiptLibraryRefreshAction()
+}
+
+extension EnvironmentValues {
+  var receiptLibraryRefresh: ReceiptLibraryRefreshAction {
+    get { self[ReceiptLibraryRefreshKey.self] }
+    set { self[ReceiptLibraryRefreshKey.self] = newValue }
+  }
+}

@@ -1,0 +1,5 @@
+targets:
+  open-receipt:
+    settings:
+      base:
+        DEVELOPMENT_TEAM: YOUR_TEAM_ID

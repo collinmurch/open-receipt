@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-receipt.app/schemas/receipt-document-v1.json",
+  "title": "open-receipt persisted receipt",
+  "description": "The durable state and stored scan references for one receipt.",
+  "$comment": "A future version can add archived and settled lifecycle states, cloud synchronization metadata, and custom participant avatar assets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "createdAt",
+    "updatedAt",
+    "presentation",
+    "scan",
+    "recognition"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/uuid" },
+    "createdAt": { "$ref": "#/$defs/instant" },
+    "updatedAt": { "$ref": "#/$defs/instant" },
+    "presentation": { "$ref": "#/$defs/presentation" },
+    "scan": { "$ref": "#/$defs/scan" },
+    "recognition": { "$ref": "#/$defs/recognition" },
+    "receipt": { "$ref": "#/$defs/receipt" },
+    "split": { "$ref": "#/$defs/split" }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "instant": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backgroundStyle"],
+      "properties": {
+        "backgroundStyle": {
+          "enum": ["blue", "mint", "peach", "violet"]
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capturedAt", "source", "pages"],
+      "properties": {
+        "capturedAt": { "$ref": "#/$defs/instant" },
+        "source": {
+          "enum": ["documentCamera", "photoLibrary"]
+        },
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/page" }
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "file", "mediaType"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "file": {
+          "type": "string",
+          "pattern": "^pages/page-[0-9]{3}\\.heic$"
+        },
+        "mediaType": { "const": "image/heic" }
+      }
+    },
+    "recognition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "contractVersion", "warnings"],
+      "properties": {
+        "status": {
+          "enum": ["pending", "succeeded", "failed"]
+        },
+        "contractVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lastAttemptedAt": { "$ref": "#/$defs/instant" },
+        "completedAt": { "$ref": "#/$defs/instant" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "failureMessage": { "type": "string" }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "merchant",
+        "transaction",
+        "currency",
+        "items",
+        "amounts"
+      ],
+      "properties": {
+        "merchant": {
+          "$comment": "A future version can add store identifiers, address fields, and normalized merchant identity.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" }
+          }
+        },
+        "transaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localDate"],
+          "properties": {
+            "localDate": { "type": "string" }
+          }
+        },
+        "currency": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/item" }
+        },
+        "amounts": { "$ref": "#/$defs/amounts" },
+        "payment": {
+          "$comment": "A future version can replace the single payment with multiple structured tenders.",
+          "$ref": "#/$defs/payment"
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "quantity", "lineTotal"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "description": { "type": "string" },
+        "quantity": { "$ref": "#/$defs/decimal" },
+        "lineTotal": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "amounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subtotal", "adjustments", "total"],
+      "properties": {
+        "subtotal": { "$ref": "#/$defs/decimal" },
+        "adjustments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/adjustment" }
+        },
+        "total": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "adjustment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "amount"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["tax", "tip", "savings"] },
+        "label": { "type": "string" },
+        "amount": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "payment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string" },
+        "lastFour": { "type": "string" },
+        "authorizationCode": { "type": "string" }
+      }
+    },
+    "split": {
+      "$comment": "A future version can add weighted and fixed-amount item shares. It can also add collection request and settlement history with immutable requested-amount snapshots.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adjustmentMethod",
+        "participants",
+        "itemAssignments"
+      ],
+      "properties": {
+        "adjustmentMethod": { "enum": ["proportional", "even"] },
+        "participants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/participant" }
+        },
+        "itemAssignments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/itemAssignment" }
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "displayName": { "type": "string" },
+        "source": { "$ref": "#/$defs/participantSource" }
+      }
+    },
+    "participantSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["currentUser", "contact", "manual"] },
+        "identifier": { "type": "string" }
+      }
+    },
+    "itemAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "participantIds"],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/uuid" },
+        "participantIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/uuid" }
+        }
+      }
+    }
+  }
+}

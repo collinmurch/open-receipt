@@ -1,0 +1,299 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class ReceiptDraft {
+  let id: UUID
+  let backgroundStyle: ReceiptBackgroundStyle
+  var merchantName: String { didSet { markDurableChange() } }
+  var date: String { didSet { markDurableChange() } }
+  var subtotal: Double { didSet { markDurableChange() } }
+  var adjustments: ReceiptTotalAdjustments { didSet { markDurableChange() } }
+  var total: Double { didSet { markDurableChange() } }
+  var currency: String { didSet { markDurableChange() } }
+  var payment: ReceiptPayment? { didSet { markDurableChange() } }
+  var items: [ReceiptDraftItem] { didSet { markDurableChange() } }
+  var adjustmentSplitMethod: ReceiptAdjustmentSplitMethod {
+    didSet { markDurableChange() }
+  }
+  private(set) var isCompleted: Bool
+  private(set) var participants: [ReceiptParticipant]
+  private let extractionWarnings: [String]
+  private(set) var persistenceRevision = 0
+  @ObservationIgnored private var splitCalculationCache:
+    [ReceiptAdjustmentSplitMethod: ReceiptSplitCalculation] = [:]
+  private var splitCalculationRevision = 0
+  @ObservationIgnored private var warningsCache: (revision: Int, warnings: [String])?
+
+  init(
+    receipt: ParsedReceipt,
+    id: UUID = UUID(),
+    currentUserID: UUID = UUID(),
+    owner: ReceiptOwner? = nil,
+    backgroundStyle: ReceiptBackgroundStyle = .random()
+  ) {
+    self.id = id
+    self.backgroundStyle = backgroundStyle
+    merchantName = receipt.merchantName
+    date = receipt.date
+    subtotal = receipt.subtotal
+    adjustments = ReceiptTotalAdjustments(
+      tax: receipt.tax,
+      tip: receipt.tip,
+      savings: receipt.savings)
+    total = receipt.total
+    currency = receipt.currency
+    payment = receipt.payment
+    items = receipt.items.map { ReceiptDraftItem(item: $0) }
+    adjustmentSplitMethod = .proportional
+    isCompleted = false
+    participants = [.currentUser(id: currentUserID, owner: owner)]
+    let validationWarnings = Set(ReceiptValidator.warnings(for: receipt))
+    extractionWarnings = receipt.warnings.filter { !validationWarnings.contains($0) }
+  }
+
+  /// Creates a draft from a new recognition of `previous`'s receipt. People, colors, the split
+  /// method, and an entered tip carry over; items, printed totals, and assignments are replaced.
+  convenience init(receipt: ParsedReceipt, replacing previous: ReceiptDraft) {
+    self.init(receipt: receipt, id: previous.id, backgroundStyle: previous.backgroundStyle)
+    participants = previous.participants
+    adjustmentSplitMethod = previous.adjustmentSplitMethod
+    if !adjustments.contains(.tip), let tip = previous.adjustments[.tip] {
+      adjustments[.tip] = tip
+    }
+  }
+
+  init(document: ReceiptDocument) throws {
+    let state = try ReceiptDraftPersistenceState(document: document)
+    id = state.id
+    backgroundStyle = state.backgroundStyle
+    merchantName = state.merchantName
+    date = state.date
+    subtotal = state.subtotal
+    adjustments = state.adjustments
+    total = state.total
+    currency = state.currency
+    payment = state.payment
+    items = state.items
+    adjustmentSplitMethod = state.adjustmentSplitMethod
+    isCompleted = state.isCompleted
+    participants = state.participants
+    extractionWarnings = state.extractionWarnings
+  }
+
+  var tax: Double {
+    get { adjustments[.tax] ?? 0 }
+    set { adjustments[.tax] = newValue }
+  }
+
+  var tip: Double {
+    get { adjustments[.tip] ?? 0 }
+    set { adjustments[.tip] = newValue }
+  }
+
+  var savings: Double {
+    get { adjustments[.savings] ?? 0 }
+    set { adjustments[.savings] = newValue }
+  }
+
+  var warnings: [String] {
+    let revision = persistenceRevision
+    if let warningsCache, warningsCache.revision == revision {
+      return warningsCache.warnings
+    }
+    let liveWarnings = ReceiptValidator.warnings(for: parsedReceipt).filter {
+      $0 != ReceiptValidator.totalReconciliationWarning
+    }
+    let warnings = Array(Set(extractionWarnings + liveWarnings)).sorted()
+    warningsCache = (revision, warnings)
+    return warnings
+  }
+
+  var splitCalculation: ReceiptSplitCalculation {
+    _ = splitCalculationRevision
+    if let calculation = splitCalculationCache[adjustmentSplitMethod] {
+      return calculation
+    }
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: self,
+      adjustmentMethod: adjustmentSplitMethod)
+    splitCalculationCache[adjustmentSplitMethod] = calculation
+    return calculation
+  }
+
+  private var parsedReceipt: ParsedReceipt {
+    ParsedReceipt(
+      merchantName: merchantName,
+      date: date,
+      subtotal: subtotal,
+      tax: tax,
+      tip: tip,
+      savings: savings,
+      total: total,
+      currency: currency,
+      payment: payment,
+      items: items.map {
+        ReceiptItem(description: $0.description, quantity: $0.quantity, lineTotal: $0.lineTotal)
+      })
+  }
+
+  @discardableResult
+  func addContact(_ contact: ContactSummary, avatarData: Data? = nil) -> ReceiptParticipant {
+    if let index = participants.firstIndex(where: {
+      $0.source == .contact(identifier: contact.identifier)
+    }) {
+      let nameChanged = participants[index].displayName != contact.displayName
+      participants[index].displayName = contact.displayName
+      if let avatarData {
+        participants[index].avatarData = avatarData
+        invalidateSplitCalculation()
+      }
+      if nameChanged { markDurableChange() }
+      return participants[index]
+    }
+
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      source: .contact(identifier: contact.identifier),
+      displayName: contact.displayName,
+      avatarData: avatarData)
+    participants.append(participant)
+    markDurableChange()
+    return participant
+  }
+
+  @discardableResult
+  func addManualParticipant(named name: String) -> ReceiptParticipant? {
+    let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !displayName.isEmpty else { return nil }
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      source: .manual,
+      displayName: displayName,
+      avatarData: nil)
+    participants.append(participant)
+    markDurableChange()
+    return participant
+  }
+
+  @discardableResult
+  func addPerson(_ person: Person, avatarData: Data? = nil) -> ReceiptParticipant {
+    if let index = participants.firstIndex(where: { $0.personID == person.id }) {
+      let nameChanged = participants[index].displayName != person.displayName
+      participants[index].displayName = person.displayName
+      if let avatarData {
+        participants[index].avatarData = avatarData
+        invalidateSplitCalculation()
+      }
+      if nameChanged { markDurableChange() }
+      return participants[index]
+    }
+
+    let source = person.contactIdentifier.map(ReceiptParticipant.Source.contact) ?? .manual
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      personID: person.id,
+      source: source,
+      displayName: person.displayName,
+      avatarData: avatarData)
+    participants.append(participant)
+    markDurableChange()
+    return participant
+  }
+
+  func participant(forPersonID id: Person.ID) -> ReceiptParticipant? {
+    participants.first { $0.personID == id }
+  }
+
+  func removeParticipant(id: ReceiptParticipant.ID) {
+    guard let participant = participants.first(where: { $0.id == id }),
+      !participant.source.isCurrentUser
+    else { return }
+    participants.removeAll { $0.id == id }
+    for index in items.indices {
+      items[index].participantIDs.remove(id)
+    }
+    markDurableChange()
+  }
+
+  func recordRequest(for participantID: ReceiptParticipant.ID, at date: Date = Date()) {
+    guard let index = participants.firstIndex(where: { $0.id == participantID }) else { return }
+    participants[index].lastRequestedAt = date
+    markDurableChange()
+  }
+
+  func toggleAssignment(
+    of participantIDs: Set<ReceiptParticipant.ID>, to itemID: ReceiptDraftItem.ID
+  ) {
+    let validParticipantIDs = participantIDs.intersection(participants.map(\.id))
+    guard !validParticipantIDs.isEmpty,
+      let itemIndex = items.firstIndex(where: { $0.id == itemID })
+    else { return }
+
+    if validParticipantIDs.isSubset(of: items[itemIndex].participantIDs) {
+      items[itemIndex].participantIDs.subtract(validParticipantIDs)
+    } else {
+      items[itemIndex].participantIDs.formUnion(validParticipantIDs)
+    }
+  }
+
+  func participants(assignedTo item: ReceiptDraftItem) -> [ReceiptParticipant] {
+    participants.filter { item.participantIDs.contains($0.id) }
+  }
+
+  func participant(forContactIdentifier identifier: String) -> ReceiptParticipant? {
+    participants.first { $0.source == .contact(identifier: identifier) }
+  }
+
+  var currentUser: ReceiptParticipant? {
+    participants.first { $0.source.isCurrentUser }
+  }
+
+  /// Makes `owner` the person using the app on this receipt, or restores the default name.
+  func setOwner(_ owner: ReceiptOwner?, avatarData: Data? = nil) {
+    guard let index = participants.firstIndex(where: { $0.source.isCurrentUser }) else { return }
+    participants[index].source = .currentUser(contactIdentifier: owner?.contactIdentifier)
+    participants[index].displayName =
+      owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName
+    participants[index].avatarData = avatarData
+    markDurableChange()
+  }
+
+  func updateAvatar(_ avatarData: Data?, forContactIdentifier identifier: String) {
+    guard
+      let index = participants.firstIndex(where: {
+        $0.source.contactIdentifier == identifier
+      })
+    else { return }
+    participants[index].avatarData = avatarData
+    invalidateSplitCalculation()
+  }
+
+  func normalizeEditableFields() {
+    merchantName = merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
+    date = date.trimmingCharacters(in: .whitespacesAndNewlines)
+    currency = currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    items = items.map { item in
+      var item = item
+      item.description = item.description.trimmingCharacters(in: .whitespacesAndNewlines)
+      return item
+    }
+  }
+
+  func complete() {
+    guard !isCompleted else { return }
+    isCompleted = true
+    markDurableChange()
+  }
+
+  private func markDurableChange() {
+    invalidateSplitCalculation()
+    persistenceRevision &+= 1
+  }
+
+  private func invalidateSplitCalculation() {
+    splitCalculationCache.removeAll(keepingCapacity: true)
+    splitCalculationRevision &+= 1
+  }
+}
