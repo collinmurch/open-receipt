@@ -60,6 +60,12 @@
       XCTAssertEqual(document.split?.participants.map(\.displayName), ["Me"])
     }
 
+    func testCreateBlankUsesRequestedCurrency() async throws {
+      let document = try await storage.createBlank(id: UUID(), currency: "EUR")
+
+      XCTAssertEqual(document.receipt?.currency, "EUR")
+    }
+
     func testCreatedBlankCanBeLoaded() async throws {
       let id = UUID()
       _ = try await storage.createBlank(id: id)
@@ -439,6 +445,32 @@
       let summaries = try await storage.list()
 
       XCTAssertEqual(summaries.map(\.merchantName), ["Juniper Market"])
+    }
+
+    func testListIncludesDeferredReadDate() async throws {
+      let created = try await storage.create(scan: try makeScan())
+      let deferredUntil = Date(timeIntervalSince1970: 2_000_000_000)
+      var failed = created
+      failed.updatedAt = created.updatedAt.addingTimeInterval(1)
+      failed.recognition.status = .failed
+      failed.recognition.deferredUntil = deferredUntil
+
+      try await storage.save(failed)
+      let summaries = try await storage.list()
+
+      XCTAssertEqual(summaries.first?.deferredUntil, deferredUntil)
+    }
+
+    func testListOmitsDeferredReadDateOnceRead() async throws {
+      let created = try await storage.createBlank(id: UUID())
+      var succeeded = created
+      succeeded.updatedAt = created.updatedAt.addingTimeInterval(1)
+      succeeded.recognition.deferredUntil = Date()
+
+      try await storage.save(succeeded)
+      let summaries = try await storage.list()
+
+      XCTAssertNil(summaries.first?.deferredUntil)
     }
 
     func testListReloadsReceiptEditedOutsideStorage() async throws {

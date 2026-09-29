@@ -10,9 +10,21 @@ struct OpenReceiptApp: App {
 
   var body: some Scene {
     WindowGroup {
-      HomeView()
-        .environment(library)
-        .environment(recognitions)
+      #if DEBUG
+        if let scenario = ScreenshotScenario.launched {
+          ScreenshotScenarioView(scenario: scenario)
+        } else {
+          home
+        }
+      #else
+        home
+      #endif
     }
+  }
+
+  private var home: some View {
+    HomeView()
+      .environment(library)
+      .environment(recognitions)
   }
 }

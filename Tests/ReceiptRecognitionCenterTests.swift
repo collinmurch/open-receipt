@@ -1,4 +1,5 @@
 #if !SWIFT_PACKAGE
+  import CoreGraphics
   import XCTest
   @testable import open_receipt
 
@@ -139,6 +140,37 @@
       XCTAssertTrue(isRetryable)
     }
 
+    func testCancellingReadWaitingForConnectionStopsIt() async {
+      let client = ReceiptParsingClient(usesSampleData: false) { _ in
+        throw ReceiptParserError.connectionUnavailable
+      }
+      let center = makeCenter(parsingClient: client, connectivity: .offline)
+      let recognition = center.recognize(ReceiptScan(pages: []))
+
+      await center.cancel(recognition)
+
+      guard case .cancelled = await recognition.outcome else {
+        return XCTFail("Expected a cancelled read")
+      }
+      XCTAssertNil(center.recognition(for: recognition.id))
+    }
+
+    func testCancelledReadDoesNotRecordFailure() async {
+      let recorder = SaveRecorder()
+      let client = ReceiptParsingClient(usesSampleData: false) { _ in
+        throw ReceiptParserError.connectionUnavailable
+      }
+      let center = makeCenter(
+        parsingClient: client,
+        storage: makeStorage(save: { await recorder.append($0) }),
+        connectivity: .offline)
+
+      await center.cancel(center.recognize(ReceiptScan(pages: [])))
+
+      let saved = await recorder.documents
+      XCTAssertTrue(saved.isEmpty)
+    }
+
     func testFailedReadRecordsFailureOnNewReceipt() async {
       let recorder = SaveRecorder()
       let client = ReceiptParsingClient(usesSampleData: false) { _ in
@@ -154,6 +186,134 @@
       XCTAssertEqual(saved.last?.recognition.status, .failed)
       XCTAssertEqual(
         saved.last?.recognition.failureMessage, ReceiptParserError.timedOut.localizedDescription)
+    }
+
+    func testReadAtReadingLimitDoesNotCallModel() async {
+      let log = EventLog()
+      let client = ReceiptParsingClient(
+        usesSampleData: false,
+        stream: { _, _ in
+          await log.append("parse")
+          return ParsedReceipt(merchantName: "Cafe")
+        },
+        status: { .limitReached(resetDate: nil, canIncreaseLimit: false) })
+      let center = makeCenter(parsingClient: client)
+
+      _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+      let events = await log.events
+      XCTAssertEqual(events, [])
+    }
+
+    func testReadAtReadingLimitIsDeferredUntilReset() async {
+      let recorder = SaveRecorder()
+      let resetDate = Date().addingTimeInterval(3600)
+      let client = ReceiptParsingClient(
+        usesSampleData: false,
+        stream: { _, _ in ParsedReceipt(merchantName: "Cafe") },
+        status: { .limitReached(resetDate: resetDate, canIncreaseLimit: false) })
+      let center = makeCenter(
+        parsingClient: client,
+        storage: makeStorage(save: { await recorder.append($0) }))
+
+      _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+      let saved = await recorder.documents
+      XCTAssertEqual(saved.last?.recognition.status, .failed)
+      XCTAssertEqual(saved.last?.recognition.deferredUntil, resetDate)
+    }
+
+    func testQuotaFailureIsDeferred() async {
+      let recorder = SaveRecorder()
+      let resetDate = Date().addingTimeInterval(600)
+      let client = ReceiptParsingClient(usesSampleData: false) { _ in
+        throw ReceiptParserError.quotaLimitReached(resetDate: resetDate)
+      }
+      let center = makeCenter(
+        parsingClient: client,
+        storage: makeStorage(save: { await recorder.append($0) }))
+
+      _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+      let saved = await recorder.documents
+      XCTAssertEqual(saved.last?.recognition.deferredUntil, resetDate)
+    }
+
+    func testOtherFailuresAreNotDeferred() async {
+      let recorder = SaveRecorder()
+      let client = ReceiptParsingClient(usesSampleData: false) { _ in
+        throw ReceiptParserError.timedOut
+      }
+      let center = makeCenter(
+        parsingClient: client,
+        storage: makeStorage(save: { await recorder.append($0) }))
+
+      _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+      let saved = await recorder.documents
+      XCTAssertNil(saved.last?.recognition.deferredUntil)
+    }
+
+    func testResumeReadsDeferredReceiptThatIsDue() async {
+      let recorder = SaveRecorder()
+      let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
+      let center = makeCenter(
+        storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }))
+
+      await center.resumeDeferredReads()
+
+      let saved = await recorder.documents
+      XCTAssertEqual(saved.last?.id, document.id)
+      XCTAssertEqual(saved.last?.recognition.status, .succeeded)
+      XCTAssertNil(saved.last?.recognition.deferredUntil)
+    }
+
+    func testResumeWaitsForDeferredReceiptThatIsNotDue() async {
+      let recorder = SaveRecorder()
+      let document = Self.deferredDocument(until: Date().addingTimeInterval(3600))
+      let center = makeCenter(
+        storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }))
+
+      await center.resumeDeferredReads()
+
+      let saved = await recorder.documents
+      XCTAssertTrue(saved.isEmpty)
+    }
+
+    func testResumeWaitsWhileReadingLimitIsReached() async {
+      let recorder = SaveRecorder()
+      let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
+      let client = ReceiptParsingClient(
+        usesSampleData: false,
+        stream: { _, _ in ParsedReceipt(merchantName: "Cafe") },
+        status: { .limitReached(resetDate: nil, canIncreaseLimit: false) })
+      let center = makeCenter(
+        parsingClient: client,
+        storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }))
+
+      await center.resumeDeferredReads()
+
+      let saved = await recorder.documents
+      XCTAssertTrue(saved.isEmpty)
+    }
+
+    func testDeferredReadIsNotUserInitiated() async {
+      let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
+      let client = ReceiptParsingClient(usesSampleData: false) { _ in
+        try await Task.sleep(for: .seconds(10))
+        return ParsedReceipt(merchantName: "Cafe")
+      }
+      let center = makeCenter(
+        parsingClient: client, storage: makeDeferredStorage(document: document))
+
+      let resume = Task { await center.resumeDeferredReads() }
+      while center.recognition(for: document.id) == nil {
+        await Task.yield()
+      }
+
+      XCTAssertEqual(center.recognition(for: document.id)?.isUserInitiated, false)
+      resume.cancel()
+      center.recognition(for: document.id)?.task?.cancel()
     }
 
     func testFinishedRecognitionLeavesCenter() async {
@@ -180,13 +340,14 @@
     private func makeCenter(
       parsingClient: ReceiptParsingClient = .sample(pacing: .zero),
       storage: ReceiptStorageClient? = nil,
-      owner: ReceiptOwner? = nil
+      owner: ReceiptOwner? = nil,
+      connectivity: ReceiptConnectivity = .immediate
     ) -> ReceiptRecognitionCenter {
       ReceiptRecognitionCenter(
         parsingClient: parsingClient,
         storage: storage ?? makeStorage(),
         owner: { owner },
-        connectivity: .immediate,
+        connectivity: connectivity,
         connectionRetryDelay: .zero)
     }
 
@@ -210,6 +371,60 @@
         reorderPages: { _, _ in throw TestError.unused },
         save: save,
         delete: { _ in })
+    }
+
+    private func makeDeferredStorage(
+      document: ReceiptDocument,
+      save: @escaping @Sendable (ReceiptDocument) async throws -> Void = { _ in }
+    ) -> ReceiptStorageClient {
+      let summary = ReceiptSummary(
+        id: document.id,
+        updatedAt: document.updatedAt,
+        capturedAt: document.scan.capturedAt,
+        backgroundStyle: document.presentation.backgroundStyle,
+        recognitionStatus: document.recognition.status,
+        merchantName: nil,
+        localDate: nil,
+        total: nil,
+        currency: nil,
+        isUnavailable: false,
+        unavailableDescription: nil,
+        deferredUntil: document.recognition.deferredUntil)
+      let page = Self.page()
+      return ReceiptStorageClient(
+        create: { _, _ in throw TestError.unused },
+        createBlank: { _, _ in throw TestError.unused },
+        list: { [summary] },
+        load: { _ in document },
+        loadPages: { _ in [page] },
+        pageURLs: { _ in [] },
+        addPages: { _, _ in throw TestError.unused },
+        deletePage: { _, _ in throw TestError.unused },
+        reorderPages: { _, _ in throw TestError.unused },
+        save: save,
+        delete: { _ in })
+    }
+
+    private nonisolated static func deferredDocument(until date: Date) -> ReceiptDocument {
+      var document = pendingDocument(id: UUID(), style: .blue)
+      document.recognition.status = .failed
+      document.recognition.deferredUntil = date
+      return document
+    }
+
+    private nonisolated static func page() -> ReceiptPage {
+      let context = CGContext(
+        data: nil,
+        width: 1,
+        height: 1,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      return ReceiptPage(
+        image: context!.makeImage()!,
+        sourceURL: URL(fileURLWithPath: "page"),
+        pageIndex: 0)
     }
 
     private nonisolated static func pendingDocument(
@@ -245,6 +460,11 @@
     func append(_ event: String) {
       events.append(event)
     }
+  }
+
+  extension ReceiptConnectivity {
+    /// A connection that never returns until the waiting task is cancelled.
+    static let offline = ReceiptConnectivity { try? await Task.sleep(for: .seconds(3600)) }
   }
 
   private actor SaveRecorder {

@@ -72,6 +72,36 @@
       XCTAssertEqual(ReceiptLibrarySections.grouped([], now: now, calendar: calendar), [])
     }
 
+    func testFilteredKeepsMatchingReceiptsInOrder() {
+      let early = receipt(localDate: "2026-08-02")
+      let late = receipt(localDate: "2026-08-20")
+      let sections = ReceiptLibrarySections.grouped([early, late], now: now, calendar: calendar)
+
+      let filtered = ReceiptLibrarySections.filtered(sections) { _ in true }
+
+      XCTAssertEqual(filtered, sections)
+    }
+
+    func testFilteredDropsEmptySections() {
+      let august = receipt(localDate: "2026-08-10")
+      let july = receipt(localDate: "2026-07-02")
+      let sections = ReceiptLibrarySections.grouped([august, july], now: now, calendar: calendar)
+
+      let filtered = ReceiptLibrarySections.filtered(sections) { $0.id == july.id }
+
+      XCTAssertEqual(filtered.map(\.id), ["2026-07"])
+      XCTAssertEqual(filtered.first?.receipts.map(\.id), [july.id])
+    }
+
+    func testFilteredKeepsSectionTitle() {
+      let sections = ReceiptLibrarySections.grouped(
+        [receipt(localDate: "2025-08-10")], now: now, calendar: calendar)
+
+      let filtered = ReceiptLibrarySections.filtered(sections) { _ in true }
+
+      XCTAssertEqual(filtered.first?.title, "August 2025")
+    }
+
     func testInitialsUseFirstTwoWords() {
       XCTAssertEqual(ReceiptMonogram.initials(for: "Juniper Market"), "JM")
     }

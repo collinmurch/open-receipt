@@ -14,8 +14,9 @@ private final class NetworkPathObserver: Sendable {
   static let shared = NetworkPathObserver()
 
   private struct State {
-    var isConnected = true
-    var waiters: [CheckedContinuation<Void, Never>] = []
+    /// `nil` until the monitor reports its first path, which arrives shortly after it starts.
+    var isConnected: Bool?
+    var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   }
 
   private let monitor = NWPathMonitor()
@@ -28,13 +29,20 @@ private final class NetworkPathObserver: Sendable {
     monitor.start(queue: DispatchQueue(label: "com.collinmurch.open-receipt.network-path"))
   }
 
+  /// Returns once the device is online, or as soon as the calling task is cancelled.
   func waitUntilConnected() async {
-    await withCheckedContinuation { continuation in
-      let isConnected = state.withLock { state in
-        if !state.isConnected { state.waiters.append(continuation) }
-        return state.isConnected
+    let id = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let resumesNow = state.withLock { state in
+          guard state.isConnected != true, !Task.isCancelled else { return true }
+          state.waiters[id] = continuation
+          return false
+        }
+        if resumesNow { continuation.resume() }
       }
-      if isConnected { continuation.resume() }
+    } onCancel: {
+      state.withLock { $0.waiters.removeValue(forKey: id) }?.resume()
     }
   }
 
@@ -42,8 +50,8 @@ private final class NetworkPathObserver: Sendable {
     let waiters = state.withLock { state in
       state.isConnected = isConnected
       guard isConnected else { return [CheckedContinuation<Void, Never>]() }
-      defer { state.waiters = [] }
-      return state.waiters
+      defer { state.waiters = [:] }
+      return Array(state.waiters.values)
     }
     for waiter in waiters {
       waiter.resume()

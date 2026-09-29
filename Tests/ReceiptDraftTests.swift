@@ -110,39 +110,40 @@
       XCTAssertTrue(draft.adjustments.contains(.tax))
     }
 
-    func testContactIsDeduplicatedByIdentifier() {
+    func testPersonIsDeduplicatedByIdentifier() {
       let draft = makeDraft()
-      let contact = ContactSummary(identifier: "contact-1", displayName: "Sam Lee")
+      let person = Person(
+        id: UUID(),
+        createdAt: Date(timeIntervalSince1970: 1),
+        updatedAt: Date(timeIntervalSince1970: 1),
+        lastIncludedAt: Date(timeIntervalSince1970: 1),
+        displayName: "Sam Lee",
+        contactIdentifier: "contact-1",
+        paymentMethods: .init())
 
-      draft.addContact(contact)
-      draft.addContact(contact)
+      draft.addPerson(person)
+      draft.addPerson(person)
 
       XCTAssertEqual(draft.participants.count, 2)
     }
 
-    func testContactSnapshotUpdatesWhenAddedAgain() {
+    func testPersonSnapshotUpdatesWhenAddedAgain() {
       let draft = makeDraft()
-      draft.addContact(ContactSummary(identifier: "contact-1", displayName: "Sam Lee"))
+      var person = Person(
+        id: UUID(),
+        createdAt: Date(timeIntervalSince1970: 1),
+        updatedAt: Date(timeIntervalSince1970: 1),
+        lastIncludedAt: Date(timeIntervalSince1970: 1),
+        displayName: "Sam Lee",
+        contactIdentifier: "contact-1",
+        paymentMethods: .init())
+      draft.addPerson(person)
 
-      draft.addContact(ContactSummary(identifier: "contact-1", displayName: "Samantha Lee"))
+      person.displayName = "Samantha Lee"
+      draft.addPerson(person)
 
       XCTAssertEqual(
         draft.participant(forContactIdentifier: "contact-1")?.displayName, "Samantha Lee")
-    }
-
-    func testManualParticipantTrimsName() {
-      let draft = makeDraft()
-
-      let participant = draft.addManualParticipant(named: "  Jordan  ")
-
-      XCTAssertEqual(participant?.displayName, "Jordan")
-    }
-
-    func testManualParticipantRejectsEmptyName() {
-      let draft = makeDraft()
-
-      XCTAssertNil(draft.addManualParticipant(named: "  \n "))
-      XCTAssertEqual(draft.participants.count, 1)
     }
 
     func testCurrentUserCannotBeRemoved() throws {
@@ -154,9 +155,9 @@
       XCTAssertEqual(draft.participants.count, 1)
     }
 
-    func testRemovingParticipantClearsItemAssignments() throws {
+    func testRemovingParticipantClearsItemAssignments() {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       draft.items[0].participantIDs.insert(participant.id)
 
       draft.removeParticipant(id: participant.id)
@@ -167,7 +168,7 @@
     func testToggleAssignmentAddsMultipleParticipants() throws {
       let draft = makeDraft()
       let currentUserID = try XCTUnwrap(draft.participants.first?.id)
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       let itemID = try XCTUnwrap(draft.items.first?.id)
 
       draft.toggleAssignment(of: [currentUserID, participant.id], to: itemID)
@@ -189,7 +190,7 @@
     func testToggleAssignmentCompletesPartialSelection() throws {
       let draft = makeDraft()
       let currentUserID = try XCTUnwrap(draft.participants.first?.id)
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       let itemID = try XCTUnwrap(draft.items.first?.id)
       draft.items[0].participantIDs = [currentUserID]
 
@@ -200,7 +201,7 @@
 
     func testToggleAssignmentIgnoresRemovedParticipant() throws {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       let itemID = try XCTUnwrap(draft.items.first?.id)
       draft.removeParticipant(id: participant.id)
 
@@ -226,9 +227,9 @@
       XCTAssertEqual(draft.persistenceRevision, revision + 1)
     }
 
-    func testRecordingRequestStoresDateForParticipant() throws {
+    func testRecordingRequestStoresDateForParticipant() {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       let date = Date(timeIntervalSince1970: 1_700_000_000)
 
       draft.recordRequest(for: participant.id, at: date)
@@ -238,9 +239,9 @@
         date)
     }
 
-    func testRecordingRequestAdvancesPersistenceRevision() throws {
+    func testRecordingRequestAdvancesPersistenceRevision() {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Jordan"))
+      let participant = draft.addManualParticipant(named: "Jordan")
       let revision = draft.persistenceRevision
 
       draft.recordRequest(for: participant.id)
@@ -303,7 +304,7 @@
       XCTAssertFalse(draft.warnings.contains(ReceiptValidator.totalReconciliationWarning))
     }
 
-    func testRescanKeepsParticipants() throws {
+    func testRescanKeepsParticipants() {
       let previous = makeDraft()
       previous.addManualParticipant(named: "Sam")
 
@@ -340,7 +341,7 @@
 
     func testRescanClearsItemAssignments() throws {
       let previous = makeDraft()
-      let person = try XCTUnwrap(previous.addManualParticipant(named: "Sam"))
+      let person = previous.addManualParticipant(named: "Sam")
       let item = try XCTUnwrap(previous.items.first)
       previous.toggleAssignment(of: [person.id], to: item.id)
 

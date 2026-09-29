@@ -5,9 +5,14 @@ extension ReceiptDraft {
     currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
   }
 
+  /// The currency code amounts are formatted with while the entered code may be incomplete.
+  var displayCurrency: String {
+    ReceiptCurrency.displayCode(normalizedCurrency)
+  }
+
   var purchaseDate: Date {
-    get { Self.parseDate(date) ?? .now }
-    set { date = Self.formatDate(newValue) }
+    get { ReceiptLocalDate.date(from: date) ?? .now }
+    set { date = ReceiptLocalDate.string(from: newValue) }
   }
 
   var validationIssues: [ReceiptEditorValidationIssue] {
@@ -15,17 +20,7 @@ extension ReceiptDraft {
     if !Self.isCurrencyCode(normalizedCurrency) {
       issues.append(.invalidCurrency)
     }
-    for item in items {
-      if item.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        issues.append(.missingItemDescription(item.id))
-      }
-      if !item.quantity.isFinite || item.quantity <= 0 {
-        issues.append(.invalidItemQuantity(item.id))
-      }
-      if !item.lineTotal.isFinite {
-        issues.append(.invalidItemTotal(item.id))
-      }
-    }
+    issues += items.flatMap(\.validationIssues)
     if !adjustments.isEmpty, !subtotal.isFinite { issues.append(.invalidSubtotal) }
     if adjustments.contains(.tax), !tax.isFinite { issues.append(.invalidTax) }
     if adjustments.contains(.tip), !tip.isFinite { issues.append(.invalidTip) }
@@ -130,30 +125,22 @@ extension ReceiptDraft {
   private static func isCurrencyCode(_ value: String) -> Bool {
     value.count == 3 && value.unicodeScalars.allSatisfy(CharacterSet.letters.contains)
   }
+}
 
-  private static func parseDate(_ value: String) -> Date? {
-    let parts = value.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "-")
-    guard parts.count == 3,
-      let year = Int(parts[0]),
-      let month = Int(parts[1]),
-      let day = Int(parts[2])
-    else { return nil }
-    return receiptCalendar.date(from: DateComponents(year: year, month: month, day: day))
-  }
-
-  private static func formatDate(_ value: Date) -> String {
-    let components = receiptCalendar.dateComponents([.year, .month, .day], from: value)
-    guard let year = components.year, let month = components.month, let day = components.day else {
-      return ""
+extension ReceiptDraftItem {
+  var validationIssues: [ReceiptEditorValidationIssue] {
+    var issues: [ReceiptEditorValidationIssue] = []
+    if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      issues.append(.missingItemDescription(id))
     }
-    return String(format: "%04d-%02d-%02d", year, month, day)
+    if !quantity.isFinite || quantity <= 0 {
+      issues.append(.invalidItemQuantity(id))
+    }
+    if !lineTotal.isFinite {
+      issues.append(.invalidItemTotal(id))
+    }
+    return issues
   }
-
-  private static let receiptCalendar: Calendar = {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-    return calendar
-  }()
 }
 
 enum ReceiptEditorValidationIssue: Identifiable, Equatable {

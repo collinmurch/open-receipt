@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ReceiptCurrencyPicker: View {
   @Binding var selection: String
-  let backgroundStyle: ReceiptBackgroundStyle
+  var backgroundStyle: ReceiptBackgroundStyle?
   @State private var searchText = ""
   @Environment(\.dismiss) private var dismiss
   @Environment(\.colorScheme) private var colorScheme
@@ -28,11 +28,10 @@ struct ReceiptCurrencyPicker: View {
         }
       }
     }
-    .receiptBackground(backgroundStyle)
-    .tint(backgroundStyle.accentColor(for: colorScheme))
+    .pickerBackground(backgroundStyle, colorScheme: colorScheme)
     .navigationTitle("Currency")
     .navigationBarTitleDisplayMode(.inline)
-    .searchable(text: $searchText, prompt: "Search currencies")
+    .searchable(text: $searchText, prompt: "Search by name, code, or symbol")
   }
 
   private var searchResults: [CurrencyOption] {
@@ -40,6 +39,7 @@ struct ReceiptCurrencyPicker: View {
     return catalog.searchOrder.filter {
       $0.code.localizedCaseInsensitiveContains(query)
         || $0.name.localizedCaseInsensitiveContains(query)
+        || $0.symbols.contains { $0.localizedCaseInsensitiveContains(query) }
     }
   }
 
@@ -48,13 +48,14 @@ struct ReceiptCurrencyPicker: View {
       selection = currency.code
       dismiss()
     } label: {
-      HStack {
+      HStack(spacing: 12) {
+        CurrencySignIcon(code: currency.code)
         VStack(alignment: .leading, spacing: 2) {
           Text(currency.name)
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.primary)
           Text(currency.code)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondary)
         }
         Spacer()
         if currency.code == selection.uppercased() {
@@ -67,12 +68,41 @@ struct ReceiptCurrencyPicker: View {
   }
 }
 
+private struct CurrencySignIcon: View {
+  let code: String
+
+  @ScaledMetric(relativeTo: .body) private var size = 29
+
+  var body: some View {
+    Image(systemName: ReceiptCurrency.symbolName(code))
+      .font(.system(size: size * 0.5, weight: .semibold))
+      .foregroundStyle(.tint)
+      .frame(width: size, height: size)
+      .background(.tint.opacity(0.15), in: .circle)
+      .accessibilityHidden(true)
+  }
+}
+
+extension View {
+  @ViewBuilder
+  fileprivate func pickerBackground(
+    _ style: ReceiptBackgroundStyle?, colorScheme: ColorScheme
+  ) -> some View {
+    if let style {
+      receiptBackground(style).tint(style.accentColor(for: colorScheme))
+    } else {
+      self
+    }
+  }
+}
+
 private struct CurrencyCatalog: Sendable {
   static let current: Self = {
     let currencies = Locale.commonISOCurrencyCodes.map { code in
       CurrencyOption(
         code: code,
-        name: Locale.current.localizedString(forCurrencyCode: code) ?? code)
+        name: ReceiptCurrency.localizedName(code),
+        symbols: ReceiptCurrency.symbols(code))
     }
     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     let currenciesByCode = Dictionary(uniqueKeysWithValues: currencies.map { ($0.code, $0) })
@@ -90,6 +120,7 @@ private struct CurrencyCatalog: Sendable {
 private struct CurrencyOption: Identifiable, Sendable {
   let code: String
   let name: String
+  let symbols: [String]
 
   var id: String { code }
 }

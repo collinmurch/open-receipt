@@ -35,8 +35,17 @@ targets:
           - "**/AGENTS.md"
           - "**/CLAUDE.md"
       - path: App
-        excludes: *agentExcludes
+        excludes:
+          - "Info.plist"
+          - "**/.claude"
+          - "**/.cc-writes"
+          - "**/.codex"
+          - "**/.agents"
+          - "**/.cursor"
+          - "**/AGENTS.md"
+          - "**/CLAUDE.md"
     dependencies:
+      - sdk: BackgroundTasks.framework
       - sdk: Contacts.framework
       - sdk: ContactsUI.framework
       - sdk: MessageUI.framework
@@ -48,6 +57,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.collinmurch.open-receipt
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_NSCameraUsageDescription: "Open Receipt needs camera access to scan receipts."
         INFOPLIST_KEY_NSContactsUsageDescription: "Open Receipt uses selected contacts to add people to receipt splits."
         INFOPLIST_KEY_CFBundleDisplayName: "Open Receipt"
@@ -74,6 +84,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.collinmurch.open-receiptTests
+        GENERATE_INFOPLIST_FILE: YES
+
+  ScreenshotCapture:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tools/Screenshots/Capture
+        excludes: *agentExcludes
+    dependencies:
+      - target: open-receipt
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.collinmurch.open-receipt.ScreenshotCapture
         GENERATE_INFOPLIST_FILE: YES
 
   ReceiptKit:
@@ -131,3 +154,13 @@ schemes:
         ReceiptLab: all
     run:
       config: Release
+
+  Screenshots:
+    build:
+      targets:
+        open-receipt: all
+        ScreenshotCapture: [test]
+    test:
+      config: Debug
+      targets:
+        - ScreenshotCapture

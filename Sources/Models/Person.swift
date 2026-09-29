@@ -93,28 +93,16 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
       var displayValue: String {
         switch kind {
         case .phoneNumber:
-          guard let phoneNumber = normalizedUSPhoneNumber else { return value }
-          let areaCodeEnd = phoneNumber.index(phoneNumber.startIndex, offsetBy: 3)
-          let prefixEnd = phoneNumber.index(areaCodeEnd, offsetBy: 3)
-          let areaCode = phoneNumber[..<areaCodeEnd]
-          let prefix = phoneNumber[areaCodeEnd..<prefixEnd]
-          let lineNumber = phoneNumber[prefixEnd...]
-          return "(\(areaCode)) \(prefix)-\(lineNumber)"
+          USPhoneNumber.formatted(value) ?? value
         case .emailAddress:
-          return value
+          value
         case .username:
-          return value.hasPrefix("@") ? value : "@\(value)"
+          value.hasPrefix("@") ? value : "@\(value)"
         }
       }
 
       var normalizedUSPhoneNumber: String? {
-        guard kind == .phoneNumber else { return nil }
-        var digits = String(
-          value.unicodeScalars.filter { (48...57).contains($0.value) })
-        if digits.count == 11, digits.hasPrefix("1") {
-          digits.removeFirst()
-        }
-        return digits.count == 10 ? digits : nil
+        kind == .phoneNumber ? USPhoneNumber.digits(value) : nil
       }
     }
 
@@ -184,16 +172,7 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
 
       var displayValue: String {
         guard kind != .emailAddress, !value.contains("@") else { return value }
-        var digits = String(
-          value.unicodeScalars.filter { (48...57).contains($0.value) })
-        if digits.count == 11, digits.hasPrefix("1") {
-          digits.removeFirst()
-        }
-        guard digits.count == 10 else { return value }
-        let areaCodeEnd = digits.index(digits.startIndex, offsetBy: 3)
-        let prefixEnd = digits.index(areaCodeEnd, offsetBy: 3)
-        return
-          "(\(digits[..<areaCodeEnd])) \(digits[areaCodeEnd..<prefixEnd])-\(digits[prefixEnd...])"
+        return USPhoneNumber.formatted(value) ?? value
       }
     }
 
@@ -234,6 +213,23 @@ enum PaymentDestination: Equatable, Sendable {
     case .iMessage(let recipient):
       recipient.displayValue
     }
+  }
+}
+
+private enum USPhoneNumber {
+  /// The ten digits of a US phone number, dropping a leading country code of 1.
+  static func digits(_ value: String) -> String? {
+    var digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })
+    if digits.count == 11, digits.hasPrefix("1") {
+      digits.removeFirst()
+    }
+    return digits.count == 10 ? digits : nil
+  }
+
+  /// Formats a US phone number as "(xxx) xxx-xxxx".
+  static func formatted(_ value: String) -> String? {
+    guard let digits = digits(value) else { return nil }
+    return "(\(digits.prefix(3))) \(digits.dropFirst(3).prefix(3))-\(digits.suffix(4))"
   }
 }
 

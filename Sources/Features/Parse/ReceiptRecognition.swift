@@ -17,6 +17,8 @@ final class ReceiptRecognition: Identifiable {
   enum Outcome {
     case recognized(ReceiptDocument)
     case failed(message: String, isRetryable: Bool)
+    /// The read was stopped before it finished, and nothing was recorded.
+    case cancelled
   }
 
   /// The receipt identifier, which is also the scan identifier.
@@ -24,6 +26,9 @@ final class ReceiptRecognition: Identifiable {
   let backgroundStyle: ReceiptBackgroundStyle
   let capturedAt: Date
   let pageCount: Int
+  /// Whether someone started this read, so it may keep running with system progress UI after
+  /// they leave the app.
+  let isUserInitiated: Bool
   private(set) var preview = ReceiptParsePreview()
   private(set) var status = Status.reading
   private(set) var thumbnail: CGImage?
@@ -39,9 +44,11 @@ final class ReceiptRecognition: Identifiable {
     scan: ReceiptScan,
     backgroundStyle: ReceiptBackgroundStyle,
     document: ReceiptDocument? = nil,
-    parsedReceipt: ParsedReceipt? = nil
+    parsedReceipt: ParsedReceipt? = nil,
+    isUserInitiated: Bool = true
   ) {
     id = scan.id
+    self.isUserInitiated = isUserInitiated
     self.scan = scan
     self.backgroundStyle = backgroundStyle
     self.document = document

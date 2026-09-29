@@ -22,11 +22,16 @@ struct ReceiptStorageClient: Sendable {
   var emptyTrash: @Sendable () async throws -> Void = {}
   var purgeExpiredTrash: @Sendable (Date) async throws -> Void = { _ in }
 
-  static let live: ReceiptStorageClient = {
-    let storage = ReceiptFileStorage.live
-    return ReceiptStorageClient(
+  static let live = ReceiptStorageClient.files(.live)
+
+  /// A client that stores receipts in `storage`.
+  static func files(_ storage: ReceiptFileStorage) -> ReceiptStorageClient {
+    ReceiptStorageClient(
       create: { try await storage.create(scan: $0, backgroundStyle: $1) },
-      createBlank: { try await storage.createBlank(id: $0, backgroundStyle: $1) },
+      createBlank: {
+        try await storage.createBlank(
+          id: $0, backgroundStyle: $1, currency: CurrencySettings.defaultCode())
+      },
       list: { try await storage.list() },
       load: { try await storage.load(id: $0) },
       loadPages: { try await storage.loadPages(id: $0) },
@@ -42,7 +47,7 @@ struct ReceiptStorageClient: Sendable {
       permanentlyDelete: { try await storage.permanentlyDelete(id: $0) },
       emptyTrash: { try await storage.emptyTrash() },
       purgeExpiredTrash: { try await storage.purgeExpiredTrash(now: $0) })
-  }()
+  }
 }
 
 struct DeletedReceiptSummary: Equatable, Identifiable, Sendable {
@@ -113,7 +118,8 @@ actor ReceiptFileStorage {
 
   func createBlank(
     id: UUID,
-    backgroundStyle: ReceiptBackgroundStyle = .random()
+    backgroundStyle: ReceiptBackgroundStyle = .random(),
+    currency: String = CurrencySettings.initialDefaultCode
   ) throws -> ReceiptDocument {
     let root = try receiptsRoot()
     let stagingRoot = root.appending(path: ".staging", directoryHint: .isDirectory)
@@ -145,7 +151,7 @@ actor ReceiptFileStorage {
         receipt: .init(
           merchant: .init(name: ""),
           transaction: .init(localDate: ""),
-          currency: "USD",
+          currency: currency,
           items: [],
           amounts: .init(subtotal: .init(0), adjustments: [], total: .init(0)),
           payment: nil),
@@ -532,7 +538,9 @@ actor ReceiptFileStorage {
       total: total,
       currency: document.receipt?.currency,
       isUnavailable: false,
-      unavailableDescription: nil)
+      unavailableDescription: nil,
+      deferredUntil: document.recognition.status == .succeeded
+        ? nil : document.recognition.deferredUntil)
   }
 
   private func pageURLs(document: ReceiptDocument) throws -> [URL] {
@@ -739,7 +747,7 @@ actor ReceiptFileStorage {
 
 /// Summaries of stored receipts, keyed by the modification date of each receipt's file.
 struct ReceiptLibraryIndex: Codable {
-  static let currentVersion = 1
+  static let currentVersion = 2
 
   struct Entry: Codable {
     let modifiedAt: Date

@@ -16,6 +16,8 @@ An iOS app for parsing receipts and splitting bills.
 - `Sources/Features`, `Sources/Models`, `Sources/Services`, `Sources/Utilities` — app-side code.
 - `Tools/ReceiptLab` — CLI harness for evaluating the parser against fixtures. Built by SPM for tests and by the `ReceiptLab` macOS app target for live PCC runs.
 - `Fixtures/Receipts/<name>/{fixtures/<n>.png, expected.json}` — parser test fixtures.
+- `Assets/` — App Store assets. `Receipts/` holds screenshot scene inputs. `Icons/`, `ScreenshotData/`, and `Previews/` are generated and gitignored.
+- `Tools/Screenshots/Capture` — UI tests that capture App Store screens. `Tools/Screenshots/Composer` — macOS SwiftUI renderer that turns captures into marketing frames.
 
 ## Development
 
@@ -27,6 +29,8 @@ Targets:
 - `make build` / `make run` — build and run on the simulator.
 - `make test` — full test suite. `fast=1` for SPM-only.
 - `make receipts` — parser harness (primary iteration loop).
+- `make icons` — export `App/open-receipt.icon` renditions to `Assets/Icons/`. Skips renditions that are already current.
+- `make screenshots` — App Store screenshots (see below).
 - `make format` / `make lint` — Swift formatting.
 - `make clean` — remove build artifacts.
 
@@ -38,6 +42,9 @@ Build behavior:
 - `ReceiptFlowModel` owns receipt-flow phases, `ReceiptDraft` owns mutable review state, and `ContactClient` is the Contacts framework seam.
 - `ReceiptRecognitionCenter` owns in-flight reads. It streams partial results into `ReceiptRecognition`, stores the scan alongside the model request, and outlives the screen that started it.
 - The Debug sample client streams its rows with a short delay so the reading screen can be developed without PCC.
+- Opening an unread receipt never calls PCC by itself; reading is an explicit action. A read that hits the reading limit stores `recognition.deferredUntil`, and `ReceiptRecognitionCenter.resumeDeferredReads()` reads it again after the reset.
+- Reads a person starts run as a `BGContinuedProcessingTask` (`ReceiptReadActivity`) so they can finish in the background.
+- The receipt background is a Metal shader (`ReceiptInkWash.metal`); builds need Xcode's Metal Toolchain component.
 
 ## Harness
 
@@ -56,6 +63,15 @@ Example: `make receipts of=whole-foods-1 format=summary`.
 Exit code is non-zero when any fixture fails evaluation; read the logs to confirm.
 
 See [Fixtures/README.md](Fixtures/README.md) for instructions to add and run local fixtures.
+
+## Screenshots
+
+`make screenshots` runs `ScreenshotCapture` on the iPhone 17 Pro Max simulator, then `ScreenshotComposer` renders 1284x2778 frames (App Store 6.5" size) into `Assets/Previews/{light,dark}/`. Flags:
+
+- `of=reading|split|requests|breakdown|library` — one shot.
+- `cached=1` — skip capture and recompose from `Assets/ScreenshotData/{light,dark}` (seconds; use for design and copy changes).
+
+Capture launches Debug with `-ScreenshotScenario <kind>`, which `App/ScreenshotScenario.swift` stages from the scene JSON in `Assets/Receipts/` using isolated storage. Views lifted above a frame are marked with `.screenshotHighlight(_:)`, which records their drawn frame only in that mode. Headlines and backdrops live in `StoreShot.swift`; layout in `StoreFrame.swift`.
 
 ## Conventions
 

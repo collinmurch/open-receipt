@@ -7,7 +7,7 @@
     func testSharedItemIsDividedBetweenAssignedPeople() throws {
       let draft = makeDraft(
         items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)], total: 10)
-      let secondPerson = try XCTUnwrap(draft.addManualParticipant(named: "Sam"))
+      let secondPerson = draft.addManualParticipant(named: "Sam")
       let currentUserID = try XCTUnwrap(draft.participants.first?.id)
       draft.items[0].participantIDs = [currentUserID, secondPerson.id]
 
@@ -43,15 +43,16 @@
       let draft = makeDraft(
         items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)], total: 11)
       draft.tax = 1
-      let secondPerson = try XCTUnwrap(draft.addManualParticipant(named: "Sam"))
-      let thirdPerson = try XCTUnwrap(draft.addManualParticipant(named: "Alex"))
+      let secondPerson = draft.addManualParticipant(named: "Sam")
+      let thirdPerson = draft.addManualParticipant(named: "Alex")
       let currentUserID = try XCTUnwrap(draft.participants.first?.id)
       draft.items[0].participantIDs = [currentUserID, secondPerson.id, thirdPerson.id]
 
       let calculation = ReceiptSplitCalculator.calculate(
         draft: draft, adjustmentMethod: .even)
 
-      XCTAssertEqual(calculation.assignedTotal, 11, accuracy: 0.000_1)
+      let assignedTotal = calculation.participantShares.reduce(0) { $0 + $1.total }
+      XCTAssertEqual(assignedTotal, 11, accuracy: 0.000_1)
     }
 
     func testSavingsReduceParticipantTotals() throws {
@@ -111,7 +112,7 @@
         total: 48)
       draft.tax = 4
       draft.tip = 4
-      let secondPerson = try XCTUnwrap(draft.addManualParticipant(named: "Sam"))
+      let secondPerson = draft.addManualParticipant(named: "Sam")
       let currentUserID = try XCTUnwrap(draft.participants.first?.id)
       draft.items[0].participantIDs = [currentUserID]
       draft.items[1].participantIDs = [secondPerson.id]

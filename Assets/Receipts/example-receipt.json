@@ -1,0 +1,76 @@
+{
+  "id": "5C1D8E2A-3B7F-4E61-9A0C-2F4B6D8E1A37",
+  "image": "example-receipt.jpg",
+  "merchant": "Cru Food and Wine Bar",
+  "date": "2019-09-11",
+  "currency": "USD",
+  "subtotal": 214.00,
+  "tax": 17.66,
+  "total": 231.66,
+  "addedTip": 42.80,
+  "backgroundStyle": { "primary": "violet", "secondary": "amber" },
+  "people": [
+    { "name": "Matt", "venmo": "matt-4127" },
+    { "name": "Jillian", "venmo": "jillian-3092" },
+    { "name": "Will", "cashApp": "will0417" },
+    { "name": "Lauren", "iMessage": "4155550142" }
+  ],
+  "items": [
+    { "description": "Ahi Tartare", "lineTotal": 16.00 },
+    { "description": "Lamb Lollipops", "lineTotal": 23.00 },
+    { "description": "CRU House Salad", "lineTotal": 9.00 },
+    { "description": "Caprese Salad", "lineTotal": 13.00 },
+    { "description": "Pan Seared Crab Cake", "lineTotal": 17.00 },
+    { "description": "Sinful Experience", "lineTotal": 19.00 },
+    { "description": "#6 Afternoon Delights", "lineTotal": 17.00 },
+    { "description": "#11 Pinot Perfection Flight", "lineTotal": 18.00 },
+    { "description": "#12 Italian Stallion Flight", "lineTotal": 18.00 },
+    { "description": "#10 South American Flight", "lineTotal": 18.00 },
+    { "description": "Chef's Pick", "lineTotal": 19.00 },
+    { "description": "#14 Benchmark Cab Flight", "lineTotal": 27.00 }
+  ],
+  "groups": {
+    "split": {
+      "owner": "Collin",
+      "assignments": {
+        "Ahi Tartare": ["Collin", "Jillian"],
+        "Lamb Lollipops": ["Will"],
+        "CRU House Salad": ["Jillian"],
+        "Caprese Salad": ["Jillian"],
+        "Pan Seared Crab Cake": ["Will"],
+        "Sinful Experience": ["Collin", "Jillian", "Will"],
+        "#6 Afternoon Delights": ["Collin"],
+        "#11 Pinot Perfection Flight": ["Jillian"],
+        "#12 Italian Stallion Flight": ["Will"],
+        "#10 South American Flight": ["Collin"],
+        "Chef's Pick": ["Jillian", "Will"],
+        "#14 Benchmark Cab Flight": ["Collin", "Will"]
+      }
+    },
+    "requests": {
+      "assignments": {
+        "Ahi Tartare": ["Me", "Jillian"],
+        "Lamb Lollipops": ["Matt"],
+        "CRU House Salad": ["Lauren"],
+        "Caprese Salad": ["Jillian"],
+        "Pan Seared Crab Cake": ["Will"],
+        "Sinful Experience": ["Me", "Matt", "Jillian", "Will", "Lauren"],
+        "#6 Afternoon Delights": ["Lauren"],
+        "#11 Pinot Perfection Flight": ["Jillian"],
+        "#12 Italian Stallion Flight": ["Matt"],
+        "#10 South American Flight": ["Me"],
+        "Chef's Pick": ["Will", "Lauren"],
+        "#14 Benchmark Cab Flight": ["Me", "Matt"]
+      }
+    }
+  },
+  "library": [
+    { "merchant": "Golden Hour Coffee", "daysAgo": 2, "total": 14.25, "backgroundStyle": { "primary": "amber", "secondary": "blue" } },
+    { "merchant": "Harbor Taqueria", "daysAgo": 5, "total": 86.40, "backgroundStyle": { "primary": "rose", "secondary": "mint" } },
+    { "merchant": "Lakeside Grocery", "daysAgo": 9, "total": 132.18, "backgroundStyle": { "primary": "forest", "secondary": "peach" } },
+    { "merchant": "Northside Pizza Co.", "daysAgo": 16, "total": 48.75, "backgroundStyle": { "primary": "peach", "secondary": "indigo" } },
+    { "merchant": "Saffron Kitchen", "daysAgo": 31, "total": 112.60, "backgroundStyle": { "primary": "indigo", "secondary": "amber" } },
+    { "merchant": "Tidewater Oyster Bar", "daysAgo": 38, "total": 204.35, "backgroundStyle": { "primary": "blue", "secondary": "rose" } },
+    { "merchant": "Juniper Market", "daysAgo": 45, "total": 36.94, "backgroundStyle": { "primary": "mint", "secondary": "violet" } }
+  ]
+}

@@ -1,4 +1,3 @@
-import Contacts
 import ContactsUI
 import SwiftUI
 
@@ -8,7 +7,6 @@ struct OwnerContactPicker: View {
   let onSelect: (ContactSummary?) -> Void
   @State private var model: PeoplePickerModel
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.openURL) private var openURL
 
   init(
     contactClient: ContactClient,
@@ -49,7 +47,9 @@ struct OwnerContactPicker: View {
       } else if model.canReadContacts {
         contactsSection
       } else {
-        unavailableContactsSection
+        ContactsUnavailableSection(
+          authorization: model.authorization,
+          settingsMessage: "Allow Contacts access in Settings to choose your contact.")
       }
     }
     .navigationTitle("Choose Your Contact")
@@ -63,16 +63,8 @@ struct OwnerContactPicker: View {
 
   private var contactsSection: some View {
     Section("Contacts") {
-      if model.authorization == .limited {
-        Button("Choose More Contacts", systemImage: "person.crop.circle.badge.plus") {
-          model.isContactAccessPickerPresented = true
-        }
-
-        if !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          ContactAccessButton(queryString: model.searchText) { identifiers in
-            Task { await selectResolvedContact(identifiers) }
-          }
-        }
+      LimitedContactAccessRows(model: model) { identifiers in
+        Task { await selectResolvedContact(identifiers) }
       }
 
       if model.filteredContacts.isEmpty {
@@ -92,22 +84,6 @@ struct OwnerContactPicker: View {
           .task(id: contact.identifier) {
             _ = await model.avatar(for: contact.identifier)
           }
-        }
-      }
-    }
-  }
-
-  private var unavailableContactsSection: some View {
-    Section("Contacts") {
-      if model.authorization == .restricted {
-        Text("Contacts are unavailable because this device restricts access.")
-          .foregroundStyle(.secondary)
-      } else {
-        Text("Allow Contacts access in Settings to choose your contact.")
-          .foregroundStyle(.secondary)
-        Button("Open Settings") {
-          guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-          openURL(url)
         }
       }
     }

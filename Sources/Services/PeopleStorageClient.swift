@@ -12,9 +12,11 @@ struct PeopleStorageClient: Sendable {
   /// Stores the owner only when none is stored yet, and returns the stored owner.
   var adoptOwner: @Sendable (ReceiptOwner) async throws -> ReceiptOwner = { $0 }
 
-  static let live: PeopleStorageClient = {
-    let storage = PeopleFileStorage.live
-    return PeopleStorageClient(
+  static let live = PeopleStorageClient.files(.live)
+
+  /// A client that stores people in `storage`.
+  static func files(_ storage: PeopleFileStorage) -> PeopleStorageClient {
+    PeopleStorageClient(
       list: { try await storage.list() },
       include: {
         try await storage.include(id: $0, displayName: $1, contactIdentifier: $2, at: $3)
@@ -25,7 +27,7 @@ struct PeopleStorageClient: Sendable {
       owner: { try await storage.owner() },
       setOwner: { try await storage.setOwner($0) },
       adoptOwner: { try await storage.adoptOwner($0) })
-  }()
+  }
 }
 
 actor PeopleFileStorage {

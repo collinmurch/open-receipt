@@ -139,45 +139,6 @@ final class ReceiptDraft {
   }
 
   @discardableResult
-  func addContact(_ contact: ContactSummary, avatarData: Data? = nil) -> ReceiptParticipant {
-    if let index = participants.firstIndex(where: {
-      $0.source == .contact(identifier: contact.identifier)
-    }) {
-      let nameChanged = participants[index].displayName != contact.displayName
-      participants[index].displayName = contact.displayName
-      if let avatarData {
-        participants[index].avatarData = avatarData
-        invalidateSplitCalculation()
-      }
-      if nameChanged { markDurableChange() }
-      return participants[index]
-    }
-
-    let participant = ReceiptParticipant(
-      id: UUID(),
-      source: .contact(identifier: contact.identifier),
-      displayName: contact.displayName,
-      avatarData: avatarData)
-    participants.append(participant)
-    markDurableChange()
-    return participant
-  }
-
-  @discardableResult
-  func addManualParticipant(named name: String) -> ReceiptParticipant? {
-    let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !displayName.isEmpty else { return nil }
-    let participant = ReceiptParticipant(
-      id: UUID(),
-      source: .manual,
-      displayName: displayName,
-      avatarData: nil)
-    participants.append(participant)
-    markDurableChange()
-    return participant
-  }
-
-  @discardableResult
   func addPerson(_ person: Person, avatarData: Data? = nil) -> ReceiptParticipant {
     if let index = participants.firstIndex(where: { $0.personID == person.id }) {
       let nameChanged = participants[index].displayName != person.displayName

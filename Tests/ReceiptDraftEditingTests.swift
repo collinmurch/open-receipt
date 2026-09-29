@@ -190,6 +190,26 @@
       XCTAssertTrue(draft.validationIssues.contains(.invalidItemQuantity(draft.items[0].id)))
     }
 
+    func testValidItemHasNoValidationIssues() {
+      let draft = makeDraft()
+
+      XCTAssertTrue(draft.items[0].validationIssues.isEmpty)
+    }
+
+    func testItemReportsEachInvalidField() {
+      var item = makeDraft().items[0]
+      item.description = ""
+      item.quantity = -1
+      item.lineTotal = .nan
+
+      XCTAssertEqual(
+        item.validationIssues,
+        [
+          .missingItemDescription(item.id), .invalidItemQuantity(item.id),
+          .invalidItemTotal(item.id),
+        ])
+    }
+
     func testInvalidCurrencyProducesValidationIssue() {
       let draft = makeDraft()
       draft.currency = "US"
@@ -247,7 +267,15 @@
 
     func testAvatarMutationDoesNotAdvancePersistenceRevision() {
       let draft = makeDraft()
-      draft.addContact(ContactSummary(identifier: "contact-1", displayName: "Sam"))
+      draft.addPerson(
+        Person(
+          id: UUID(),
+          createdAt: Date(timeIntervalSince1970: 1),
+          updatedAt: Date(timeIntervalSince1970: 1),
+          lastIncludedAt: Date(timeIntervalSince1970: 1),
+          displayName: "Sam",
+          contactIdentifier: "contact-1",
+          paymentMethods: .init()))
       let revision = draft.persistenceRevision
 
       draft.updateAvatar(Data([1, 2, 3]), forContactIdentifier: "contact-1")

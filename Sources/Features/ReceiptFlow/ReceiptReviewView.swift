@@ -1,26 +1,28 @@
 import SwiftUI
 
-private enum ReceiptReviewPage: Hashable {
-  case receipt
-  case payments
+private enum ReceiptReviewSheet: Hashable {
+  case pages
+  case people
+}
+
+private enum ReceiptReviewGlass: Hashable {
+  case bottomBar
 }
 
 struct ReceiptReviewView: View {
   let draft: ReceiptDraft
   let showsSampleNotice: Bool
   let pages: ReceiptPagesEditor
-  let onClose: (() -> Void)?
   let onFlush: () async -> Void
   @State private var isEditing = false
   @State private var selectedItemID: ReceiptDraftItem.ID?
   @State private var selectedParticipantIDs: Set<ReceiptParticipant.ID> = []
-  @State private var hasInitializedParticipantSelection = false
   @State private var selectedPage: ReceiptReviewPage
   @State private var isPeoplePresented = false
   @State private var isPagesPresented = false
   @State private var haptic = HapticEvent()
-  @ScaledMetric(relativeTo: .caption2) private var stripHeight = ParticipantStrip.baseHeight
-  @ScaledMetric(relativeTo: .body) private var actionButtonClearance: CGFloat = 76
+  @Namespace private var sheetTransition
+  @Namespace private var glassTransition
   @Environment(\.receiptBackgroundMotion) private var motion
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
@@ -32,13 +34,11 @@ struct ReceiptReviewView: View {
     showsSampleNotice: Bool,
     pages: ReceiptPagesEditor,
     startsInEditing: Bool,
-    onClose: (() -> Void)?,
     onFlush: @escaping () async -> Void
   ) {
     self.draft = draft
     self.showsSampleNotice = showsSampleNotice
     self.pages = pages
-    self.onClose = onClose
     self.onFlush = onFlush
     _isEditing = State(initialValue: startsInEditing)
     _selectedPage = State(initialValue: draft.isCompleted ? .payments : .receipt)
@@ -46,8 +46,9 @@ struct ReceiptReviewView: View {
 
   var body: some View {
     reviewContent
+      .scrollEdgeEffectHidden(true, for: .bottom)
+      .safeAreaBar(edge: .bottom) { bottomBar }
       .tint(draft.backgroundStyle.accentColor(for: colorScheme))
-      .toolbarVisibility(isEditing ? .hidden : .visible, for: .tabBar)
       .navigationTitle(navigationTitle)
       .navigationBarTitleDisplayMode(.inline)
       .scrollDismissesKeyboard(.interactively)
@@ -60,52 +61,34 @@ struct ReceiptReviewView: View {
           draft: draft,
           contactClient: contactClient,
           peopleStorage: peopleStorage,
-          receiptStorage: storage)
+          receiptStorage: storage
+        )
+        .navigationTransition(.zoom(sourceID: ReceiptReviewSheet.people, in: sheetTransition))
       }
       .sheet(isPresented: $isPagesPresented) {
         ReceiptPagesView(receiptID: draft.id, editor: pages, style: draft.backgroundStyle)
           .environment(\.receiptBackgroundMotion, motion)
+          .navigationTransition(.zoom(sourceID: ReceiptReviewSheet.pages, in: sheetTransition))
       }
       .haptics(haptic)
       .sensoryFeedback(.success, trigger: draft.isCompleted) { wasCompleted, isCompleted in
         !wasCompleted && isCompleted
       }
-      .onAppear(perform: initializeParticipantSelection)
       .task { await refreshContactAvatars() }
-      .overlay(alignment: .bottom) {
-        if !draft.isCompleted && !isEditing {
-          completionButton
-            .offset(y: 16)
-            .transition(.scale(scale: 0.5).combined(with: .opacity))
-        }
-      }
   }
 
-  @ViewBuilder
+  /// Both pages of a completed receipt stay built, and switching only changes which one shows.
+  /// Rebuilding a page on every switch stalls the frame that starts the switcher's animation.
   private var reviewContent: some View {
-    if draft.isCompleted {
-      receiptTabs
-        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
-    } else {
+    let showsPayments = draft.isCompleted && selectedPage == .payments && !isEditing
+    return ZStack {
       receiptList
-    }
-  }
-
-  private var receiptTabs: some View {
-    TabView(selection: $selectedPage) {
-      Tab("Receipt", systemImage: "doc.text", value: ReceiptReviewPage.receipt) {
-        receiptList
-      }
-
-      Tab("Payments", systemImage: "dollarsign", value: ReceiptReviewPage.payments) {
-        ReceiptRequestsView(
-          draft: draft,
-          adjustmentMethod: draft.adjustmentSplitMethod,
-          onFlush: onFlush)
+        .pageVisibility(!showsPayments)
+      if draft.isCompleted {
+        ReceiptRequestsView(draft: draft, onFlush: onFlush)
+          .pageVisibility(showsPayments)
       }
     }
-    .tabViewStyle(.tabBarOnly)
-    .tabBarMinimizeBehavior(.never)
   }
 
   private var receiptList: some View {
@@ -125,14 +108,14 @@ struct ReceiptReviewView: View {
         draft: draft,
         isEditing: isEditing,
         selectedParticipantIDs: $selectedParticipantIDs,
-        displayCurrency: displayCurrency,
+        displayCurrency: draft.displayCurrency,
         haptic: $haptic,
         onSelectItem: { selectedItemID = $0 }
       )
       ReceiptTotalsSection(
         draft: draft,
         isEditing: isEditing,
-        displayCurrency: displayCurrency,
+        displayCurrency: draft.displayCurrency,
         haptic: $haptic
       )
 
@@ -142,26 +125,42 @@ struct ReceiptReviewView: View {
         ReceiptWarningsSection(warnings: draft.warnings)
       }
     }
-    .contentMargins(.top, isEditing ? 0 : stripHeight + 16, for: .scrollContent)
-    .contentMargins(
-      .bottom, !draft.isCompleted && !isEditing ? actionButtonClearance : 24, for: .scrollContent
-    )
-    .receiptBackground(draft.backgroundStyle)
-    .overlay(alignment: .top) {
-      if !isEditing {
-        ParticipantStrip(
-          participants: draft.participants,
-          amountsOwed: participantAmountsOwed,
-          currency: displayCurrency,
-          selectedParticipantIDs: selectedParticipantIDs,
-          onSelect: toggleParticipantSelection,
-          onManagePeople: { isPeoplePresented = true }
-        )
-        .padding(.horizontal)
-        .padding(.top, 8)
-        .transition(.move(edge: .top).combined(with: .opacity))
+    .scrollContentBackground(.hidden)
+    .safeAreaBar(edge: .top) {
+      GlassEffectContainer {
+        if !isEditing {
+          ParticipantStrip(
+            participants: draft.participants,
+            amountsOwed: participantAmountsOwed,
+            currency: draft.displayCurrency,
+            selectedParticipantIDs: selectedParticipantIDs,
+            onSelect: toggleParticipantSelection,
+            onManagePeople: { isPeoplePresented = true },
+            addTransition: (id: ReceiptReviewSheet.people, namespace: sheetTransition)
+          )
+          .receiptTopBarPadding()
+        }
       }
     }
+  }
+
+  /// Done while the receipt is being split, then the switch between its items and payments. Done
+  /// morphs into the switcher when the receipt is completed.
+  private var bottomBar: some View {
+    GlassEffectContainer {
+      if !isEditing {
+        if draft.isCompleted {
+          ReceiptPageSwitcher(selection: $selectedPage)
+            .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
+        } else {
+          completionButton
+            .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
+        }
+      }
+    }
+    .padding(.bottom, 8)
+    .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: draft.isCompleted)
+    .animation(.smooth(duration: 0.35), value: isEditing)
   }
 
   private var participantAmountsOwed: [ReceiptParticipant.ID: Double] {
@@ -170,11 +169,11 @@ struct ReceiptReviewView: View {
   }
 
   private var completionButton: some View {
-    ReceiptActionButton(title: "Done", systemImage: "checkmark", style: draft.backgroundStyle) {
-      withAnimation(.bouncy(duration: 0.65, extraBounce: 0.12)) {
-        draft.complete()
-        selectedPage = .payments
-      }
+    ReceiptActionButton(
+      title: "Done", systemImage: "checkmark", tint: draft.backgroundStyle.prominentColor
+    ) {
+      draft.complete()
+      selectedPage = .payments
       Task { await onFlush() }
     }
     .accessibilityLabel("Ready for Payments")
@@ -183,40 +182,26 @@ struct ReceiptReviewView: View {
 
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
-    if selectedPage == .payments { return "Request Payments" }
+    if draft.isCompleted && selectedPage == .payments { return "Request Payments" }
     return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
   }
 
   @ToolbarContentBuilder
   private var receiptToolbar: some ToolbarContent {
-    ToolbarItem(placement: .principal) {
-      Text(navigationTitle)
-        .font(.headline)
-        .lineLimit(1)
-    }
-
     if isEditing {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Done", systemImage: "checkmark", action: finishEditing)
-          .labelStyle(.iconOnly)
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Done", systemImage: "checkmark", role: .confirm, action: finishEditing)
+          .buttonStyle(.glassProminent)
       }
     } else {
-      if let onClose {
-        ToolbarItem(placement: .topBarLeading) {
-          Button("Close", systemImage: "xmark", action: onClose)
-            .labelStyle(.iconOnly)
-        }
-      }
-
       ToolbarItem(placement: .topBarTrailing) {
         Button("Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
-          .labelStyle(.iconOnly)
       }
+      .matchedTransitionSource(id: ReceiptReviewSheet.pages, in: sheetTransition)
 
-      if selectedPage == .receipt {
+      if selectedPage == .receipt || !draft.isCompleted {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit", systemImage: "pencil", action: beginEditing)
-            .labelStyle(.iconOnly)
         }
       }
     }
@@ -244,11 +229,6 @@ struct ReceiptReviewView: View {
     }
   }
 
-  private var displayCurrency: String {
-    let currency = draft.normalizedCurrency
-    return currency.count == 3 ? currency : "USD"
-  }
-
   private func itemBinding(for id: ReceiptDraftItem.ID) -> Binding<ReceiptDraftItem>? {
     guard let initialItem = draft.items.first(where: { $0.id == id }) else { return nil }
     return Binding(
@@ -266,12 +246,14 @@ struct ReceiptReviewView: View {
     if let item = itemBinding(for: id) {
       ReceiptItemEditorView(
         item: item,
-        currency: displayCurrency,
+        currency: draft.displayCurrency,
         onSplit: { count in
           draft.splitItem(id: id, into: count)
+          haptic.play(.success)
         },
         onDelete: {
           draft.removeItem(id: id)
+          haptic.play(.removal)
         })
     } else {
       ContentUnavailableView("Item Not Found", systemImage: "questionmark.square.dashed")
@@ -295,17 +277,6 @@ struct ReceiptReviewView: View {
     }
   }
 
-  private func initializeParticipantSelection() {
-    guard !hasInitializedParticipantSelection else { return }
-    hasInitializedParticipantSelection = true
-    let defaultParticipant =
-      draft.participants.first { $0.source.isCurrentUser }
-      ?? draft.participants.first
-    if let defaultParticipant {
-      selectedParticipantIDs.insert(defaultParticipant.id)
-    }
-  }
-
   private func removeMissingParticipantSelections() {
     let participantIDs = Set(draft.participants.map(\.id))
     selectedParticipantIDs.formIntersection(participantIDs)
@@ -326,11 +297,18 @@ struct ReceiptReviewView: View {
   }
 
   private func refreshContactAvatars() async {
-    for participant in draft.participants {
-      guard let identifier = participant.source.contactIdentifier,
-        let avatar = try? await contactClient.fetchAvatar(identifier)
-      else { continue }
-      draft.updateAvatar(avatar, forContactIdentifier: identifier)
+    let fetchAvatar = contactClient.fetchAvatar
+    let identifiers = Set(draft.participants.compactMap(\.source.contactIdentifier))
+    await withTaskGroup(of: (String, Data)?.self) { group in
+      for identifier in identifiers {
+        group.addTask {
+          guard let avatar = try? await fetchAvatar(identifier) else { return nil }
+          return (identifier, avatar)
+        }
+      }
+      for await case (let identifier, let avatar)? in group {
+        draft.updateAvatar(avatar, forContactIdentifier: identifier)
+      }
     }
   }
 
@@ -340,5 +318,15 @@ struct ReceiptReviewView: View {
     Binding(
       get: { draft[keyPath: keyPath] },
       set: { draft[keyPath: keyPath] = $0 })
+  }
+}
+
+extension View {
+  /// Shows or hides one page of a receipt without removing it, so switching back is immediate.
+  /// The switch is a cut: fading would smear the pages' glass and scroll edge effects.
+  fileprivate func pageVisibility(_ isVisible: Bool) -> some View {
+    opacity(isVisible ? 1 : 0)
+      .allowsHitTesting(isVisible)
+      .accessibilityHidden(!isVisible)
   }
 }

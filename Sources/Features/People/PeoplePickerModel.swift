@@ -26,7 +26,7 @@ final class PeoplePickerModel {
   }
 
   var canReadContacts: Bool {
-    authorization == .limited || authorization == .authorized
+    authorization.canReadContacts
   }
 
   func load() async {

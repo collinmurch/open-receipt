@@ -50,10 +50,6 @@ struct ReceiptSplitCalculation {
   let participantShares: [ReceiptParticipantShare]
   let unassignedItemCount: Int
   let unassignedItemTotal: Double
-
-  var assignedTotal: Double {
-    participantShares.reduce(0) { $0 + $1.total }
-  }
 }
 
 enum ReceiptSplitCalculator {

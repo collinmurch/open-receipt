@@ -1,5 +1,5 @@
+import Foundation
 import Observation
-import UIKit
 
 /// Owns every receipt being read. Recognition starts the moment pages exist, writes the scan to
 /// storage alongside the model request, and finishes even if the person leaves the receipt.
@@ -16,6 +16,8 @@ final class ReceiptRecognitionCenter {
   @ObservationIgnored private let connectionRetryLimit: Int
   @ObservationIgnored private let connectionRetryDelay: Duration
   @ObservationIgnored private let owner: @Sendable () async -> ReceiptOwner?
+  @ObservationIgnored private var isResumingDeferredReads = false
+  @ObservationIgnored private var deferredReadWake: Task<Void, Never>?
 
   init(
     parsingClient: ReceiptParsingClient,
@@ -50,20 +52,96 @@ final class ReceiptRecognitionCenter {
     recognitions[id]
   }
 
+  /// Whether a new read can reach the model right now.
+  var canReadNow: Bool {
+    switch modelStatus {
+    case .available, .approachingLimit: true
+    case .limitReached, .unavailable: false
+    }
+  }
+
   /// Starts reading `scan`. Pass the stored receipt to read an existing receipt again.
   @discardableResult
   func recognize(
     _ scan: ReceiptScan,
     backgroundStyle: ReceiptBackgroundStyle = .random(),
-    replacing document: ReceiptDocument? = nil
+    replacing document: ReceiptDocument? = nil,
+    isUserInitiated: Bool = true
   ) -> ReceiptRecognition {
     if let active = recognitions[scan.id] { return active }
     let recognition = ReceiptRecognition(
       scan: scan,
       backgroundStyle: document?.presentation.backgroundStyle ?? backgroundStyle,
-      document: document)
+      document: document,
+      isUserInitiated: isUserInitiated)
     start(recognition)
     return recognition
+  }
+
+  /// Stops `recognition` and returns once it has finished, leaving the stored receipt as it was
+  /// before the read.
+  func cancel(_ recognition: ReceiptRecognition) async {
+    recognition.task?.cancel()
+    _ = await recognition.outcome
+  }
+
+  /// Reads stored receipts again whose reads stopped at the reading limit, once it has reset. Reads
+  /// run one at a time, and the next reset is scheduled while the app stays open.
+  func resumeDeferredReads(now: Date = Date()) async {
+    guard !isResumingDeferredReads else { return }
+    isResumingDeferredReads = true
+    defer { isResumingDeferredReads = false }
+    deferredReadWake?.cancel()
+    deferredReadWake = nil
+
+    guard let summaries = try? await storage.list() else { return }
+    let deferred =
+      summaries
+      .filter { $0.deferredUntil != nil && recognitions[$0.id] == nil }
+      .sorted { $0.capturedAt < $1.capturedAt }
+    var pending: [Date] = []
+    for summary in deferred {
+      guard let deferredUntil = summary.deferredUntil else { continue }
+      guard deferredUntil <= now, canReadNow else {
+        pending.append(deferredUntil)
+        continue
+      }
+      guard let recognition = await startDeferredRead(of: summary.id) else { continue }
+      if case .failed = await recognition.outcome, !canReadNow {
+        pending.append(now)
+      }
+    }
+    scheduleDeferredReadWake(after: pending, now: Date())
+  }
+
+  private func startDeferredRead(of id: UUID) async -> ReceiptRecognition? {
+    guard let document = try? await storage.load(id),
+      document.recognition.status != .succeeded,
+      document.recognition.deferredUntil != nil,
+      let pages = try? await storage.loadPages(id),
+      !pages.isEmpty
+    else { return nil }
+    let scan = ReceiptScan(
+      id: document.id,
+      pages: pages,
+      capturedAt: document.scan.capturedAt,
+      source: document.scan.source)
+    return recognize(scan, replacing: document, isUserInitiated: false)
+  }
+
+  private func scheduleDeferredReadWake(after dates: [Date], now: Date) {
+    guard let earliest = dates.min() else { return }
+    var wake = earliest
+    if case .limitReached(let resetDate, _) = modelStatus {
+      guard let resetDate else { return }
+      wake = max(wake, resetDate)
+    }
+    guard wake > now else { return }
+    deferredReadWake = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(wake.timeIntervalSince(now)))
+      guard !Task.isCancelled else { return }
+      await self?.resumeDeferredReads()
+    }
   }
 
   /// Starts a failed recognition again. A receipt that was already parsed is only saved again.
@@ -73,7 +151,8 @@ final class ReceiptRecognitionCenter {
       scan: failed.scan,
       backgroundStyle: failed.backgroundStyle,
       document: failed.document,
-      parsedReceipt: failed.parsedReceipt)
+      parsedReceipt: failed.parsedReceipt,
+      isUserInitiated: true)
     start(recognition)
     return recognition
   }
@@ -100,19 +179,31 @@ final class ReceiptRecognitionCenter {
   }
 
   private func run(_ recognition: ReceiptRecognition) async -> ReceiptRecognition.Outcome {
-    let activity = BackgroundActivity(name: "Read receipt")
-    defer { activity.end() }
+    let activity = ReceiptReadActivity(continuesInBackground: recognition.isUserInitiated)
+    let outcome = await read(recognition, activity: activity)
+    if case .recognized = outcome {
+      activity.end(succeeded: true)
+    } else {
+      activity.end(succeeded: false)
+    }
+    return outcome
+  }
 
+  private func read(
+    _ recognition: ReceiptRecognition,
+    activity: ReceiptReadActivity
+  ) async -> ReceiptRecognition.Outcome {
     let creation = createDocumentIfNeeded(for: recognition)
     let attemptedAt = Date()
 
     let receipt: ParsedReceipt
     do {
-      receipt = try await parsedReceipt(for: recognition)
+      receipt = try await parsedReceipt(for: recognition, activity: activity)
     } catch {
       if let creation, let document = try? await creation.value {
         recognition.document = document
       }
+      if error is CancellationError { return .cancelled }
       return await recordFailure(error, of: recognition, attemptedAt: attemptedAt)
     }
     recognition.parsedReceipt = receipt
@@ -153,14 +244,23 @@ final class ReceiptRecognitionCenter {
     return Task { try await storage.create(scan, backgroundStyle) }
   }
 
-  private func parsedReceipt(for recognition: ReceiptRecognition) async throws -> ParsedReceipt {
+  private func parsedReceipt(
+    for recognition: ReceiptRecognition,
+    activity: ReceiptReadActivity
+  ) async throws -> ParsedReceipt {
     if let parsedReceipt = recognition.parsedReceipt { return parsedReceipt }
+    if case .limitReached(let resetDate, _) = modelStatus {
+      throw ReceiptParserError.quotaLimitReached(resetDate: resetDate)
+    }
     var connectionRetries = 0
     while true {
       recognition.update(.reading)
       do {
         return try await parsingClient.stream(recognition.scan.pages) { preview in
-          await recognition.update(preview)
+          await MainActor.run {
+            recognition.update(preview)
+            activity.reportProgress(itemCount: preview.items.count)
+          }
         }
       } catch let error as ReceiptParserError
         where error.isConnectionFailure && connectionRetries < connectionRetryLimit
@@ -169,6 +269,7 @@ final class ReceiptRecognitionCenter {
         recognition.update(.waitingForConnection)
         recognition.resetPreview()
         await connectivity.waitUntilConnected()
+        try Task.checkCancellation()
         try await Task.sleep(for: connectionRetryDelay * connectionRetries)
       }
     }
@@ -179,11 +280,16 @@ final class ReceiptRecognitionCenter {
     of recognition: ReceiptRecognition,
     attemptedAt: Date
   ) async -> ReceiptRecognition.Outcome {
-    let message = error.localizedDescription
+    var message = error.localizedDescription
     // A rescan leaves the stored receipt untouched until a new recognition succeeds.
     if var document = recognition.document, !recognition.isRescan {
+      let deferredUntil = Self.deferral(after: error, attemptedAt: attemptedAt)
+      if let deferredUntil {
+        message = DeferredReceiptRead.description(until: deferredUntil)
+      }
       document.recognition.status = .failed
       document.recognition.failureMessage = message
+      document.recognition.deferredUntil = deferredUntil
       document.recognition.contractVersion = ReceiptModelContract.version
       document.recognition.lastAttemptedAt = attemptedAt
       document.updatedAt = max(Date(), document.updatedAt)
@@ -193,6 +299,17 @@ final class ReceiptRecognitionCenter {
     }
     let isRetryable = (error as? ReceiptParserError)?.isRetryable ?? true
     return .failed(message: message, isRetryable: isRetryable)
+  }
+
+  /// When a read that failed with `error` should start again on its own, or `nil` when it
+  /// shouldn't.
+  private static func deferral(after error: any Error, attemptedAt: Date) -> Date? {
+    switch error as? ReceiptParserError {
+    case .quotaLimitReached(let resetDate), .rateLimited(let resetDate):
+      max(resetDate ?? attemptedAt.addingTimeInterval(15 * 60), attemptedAt)
+    default:
+      nil
+    }
   }
 
   private func completedDocument(
@@ -218,23 +335,5 @@ final class ReceiptRecognitionCenter {
     let validationWarnings = Set(ReceiptValidator.warnings(for: receipt))
     completed.recognition.warnings = receipt.warnings.filter { !validationWarnings.contains($0) }
     return completed
-  }
-}
-
-/// Keeps the app running briefly after it moves to the background, so a read can finish.
-@MainActor
-private final class BackgroundActivity {
-  private var identifier = UIBackgroundTaskIdentifier.invalid
-
-  init(name: String) {
-    identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-      self?.end()
-    }
-  }
-
-  func end() {
-    guard identifier != .invalid else { return }
-    UIApplication.shared.endBackgroundTask(identifier)
-    identifier = .invalid
   }
 }

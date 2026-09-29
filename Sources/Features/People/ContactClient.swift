@@ -7,6 +7,10 @@ enum ContactAuthorization: Sendable, Equatable {
   case denied
   case limited
   case authorized
+
+  var canReadContacts: Bool {
+    self == .limited || self == .authorized
+  }
 }
 
 struct ContactSummary: Identifiable, Sendable, Equatable {
@@ -97,11 +101,34 @@ struct ContactSummary: Identifiable, Sendable, Equatable {
     }
     return nil
   }
+
+  /// The payment methods this contact suggests for those `person` hasn't set.
+  func paymentDefaults(for person: Person) -> ContactPaymentDefaults {
+    ContactPaymentDefaults(
+      venmo: person.paymentMethods.venmo == nil ? defaultVenmoRecipient : nil,
+      iMessage: person.paymentMethods.iMessage == nil ? defaultIMessageRecipient : nil)
+  }
 }
 
 struct ContactPaymentDefaults: Sendable, Equatable {
   let venmo: Person.Venmo.Recipient?
   let iMessage: Person.IMessage.Recipient?
+}
+
+extension Person {
+  /// Fills in the payment methods suggested by the person's contact, returning whether any changed.
+  mutating func adopt(_ defaults: ContactPaymentDefaults) -> Bool {
+    var didChange = false
+    if let recipient = defaults.venmo {
+      paymentMethods.venmo = .init(recipient: recipient)
+      didChange = true
+    }
+    if let recipient = defaults.iMessage {
+      paymentMethods.iMessage = .init(recipient: recipient)
+      didChange = true
+    }
+    return didChange
+  }
 }
 
 struct ContactClient: Sendable {
@@ -133,7 +160,7 @@ struct ContactClient: Sendable {
     }
     let identifiers = eligiblePeople.compactMap(\.contactIdentifier)
     guard !identifiers.isEmpty,
-      authorizationStatus() == .authorized || authorizationStatus() == .limited,
+      authorizationStatus().canReadContacts,
       let contacts = try? await fetchContacts(identifiers)
     else { return [:] }
     let contactsByIdentifier = Dictionary(
@@ -143,13 +170,7 @@ struct ContactClient: Sendable {
         guard let identifier = person.contactIdentifier,
           let contact = contactsByIdentifier[identifier]
         else { return nil }
-        return (
-          person.id,
-          ContactPaymentDefaults(
-            venmo: person.paymentMethods.venmo == nil ? contact.defaultVenmoRecipient : nil,
-            iMessage: person.paymentMethods.iMessage == nil
-              ? contact.defaultIMessageRecipient : nil)
-        )
+        return (person.id, contact.paymentDefaults(for: person))
       })
   }
 }

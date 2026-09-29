@@ -109,6 +109,13 @@
                 echo "Install macOS 27+ and select a full Xcode 27+ install with xcode-select." >&2
                 return 1
               fi
+
+              # xcrun always finds the metal stub, so run it to confirm the toolchain component exists.
+              if ! /usr/bin/xcrun metal --version >/dev/null 2>&1; then
+                echo "error: the Metal Toolchain is required to compile the app's shaders." >&2
+                echo "Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
+                return 1
+              fi
             '';
           };
         });

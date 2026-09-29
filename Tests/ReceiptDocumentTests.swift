@@ -17,7 +17,7 @@
 
     func testDraftRoundTripPreservesParticipantsAndAssignments() throws {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Sam"))
+      let participant = draft.addManualParticipant(named: "Sam")
       draft.items[0].participantIDs.insert(participant.id)
       let document = pendingDocument(id: draft.id).updating(from: draft)
 
@@ -78,7 +78,7 @@
 
     func testDraftRoundTripPreservesLastRequestedDate() throws {
       let draft = makeDraft()
-      let participant = try XCTUnwrap(draft.addManualParticipant(named: "Sam"))
+      let participant = draft.addManualParticipant(named: "Sam")
       let date = Date(timeIntervalSince1970: 1_700_000_000)
       draft.recordRequest(for: participant.id, at: date)
 
@@ -106,7 +106,7 @@
 
     func testParticipantWithoutLastRequestedDateDecodesWithNoDate() throws {
       let draft = makeDraft()
-      _ = draft.addManualParticipant(named: "Sam")
+      draft.addManualParticipant(named: "Sam")
       let document = pendingDocument(id: draft.id).updating(from: draft)
       let data = try encoder.encode(document)
       var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -135,8 +135,15 @@
 
     func testAvatarDataIsNotStored() throws {
       let draft = makeDraft()
-      let contact = ContactSummary(identifier: "contact-1", displayName: "Sam")
-      draft.addContact(contact, avatarData: Data([1, 2, 3]))
+      let person = Person(
+        id: UUID(),
+        createdAt: Date(timeIntervalSince1970: 1),
+        updatedAt: Date(timeIntervalSince1970: 1),
+        lastIncludedAt: Date(timeIntervalSince1970: 1),
+        displayName: "Sam",
+        contactIdentifier: "contact-1",
+        paymentMethods: .init())
+      draft.addPerson(person, avatarData: Data([1, 2, 3]))
 
       let document = pendingDocument(id: draft.id).updating(from: draft)
       let data = try encoder.encode(document)

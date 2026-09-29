@@ -4,6 +4,7 @@ import SwiftUI
 struct ReceiptScannerView: UIViewControllerRepresentable {
   var onCapture: (ReceiptScan) -> Void
   var onCancel: () -> Void
+  var onFailure: (Error) -> Void
 
   func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
     let controller = VNDocumentCameraViewController()
@@ -17,23 +18,27 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
   ) {
     context.coordinator.onCapture = onCapture
     context.coordinator.onCancel = onCancel
+    context.coordinator.onFailure = onFailure
   }
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(onCapture: onCapture, onCancel: onCancel)
+    Coordinator(onCapture: onCapture, onCancel: onCancel, onFailure: onFailure)
   }
 
   @MainActor
   final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
     var onCapture: (ReceiptScan) -> Void
     var onCancel: () -> Void
+    var onFailure: (Error) -> Void
 
     init(
       onCapture: @escaping (ReceiptScan) -> Void,
-      onCancel: @escaping () -> Void
+      onCancel: @escaping () -> Void,
+      onFailure: @escaping (Error) -> Void
     ) {
       self.onCapture = onCapture
       self.onCancel = onCancel
+      self.onFailure = onFailure
     }
 
     func documentCameraViewController(
@@ -60,7 +65,7 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
       _ controller: VNDocumentCameraViewController,
       didFailWithError error: Error
     ) {
-      onCancel()
+      onFailure(error)
     }
   }
 }

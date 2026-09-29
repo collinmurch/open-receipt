@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import SwiftUI
@@ -87,6 +88,12 @@ extension EnvironmentValues {
 }
 
 extension View {
+  /// Spacing for a bar pinned above a receipt's list, shared so the reading and review screens
+  /// line up their rows.
+  func receiptTopBarPadding() -> some View {
+    padding(.horizontal).padding(.vertical, 8)
+  }
+
   func receiptBackground(_ style: ReceiptBackgroundStyle) -> some View {
     scrollContentBackground(.hidden)
       .background {
@@ -98,111 +105,79 @@ extension View {
 struct ReceiptInkWashBackground: View {
   let style: ReceiptBackgroundStyle
   @State private var isVisible = true
+  @State private var isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.receiptBackgroundMotion) private var motion
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     let palette = style.inkWashPalette(for: colorScheme)
+    let pattern = motion.pattern
+    let isDark = colorScheme == .dark
 
-    ZStack {
-      palette.base
-
-      TimelineView(
-        .animation(
-          minimumInterval: 1 / 30,
-          paused: reduceMotion || !isVisible || motion.isResting)
-      ) { context in
-        animatedFields(
-          palette: palette,
-          phase: reduceMotion ? 0 : motion.phase(at: context.date))
-      }
-
-      LinearGradient(
-        colors: [.clear, .black.opacity(colorScheme == .dark ? 0.1 : 0.04)],
-        startPoint: UnitPoint(x: 0.5, y: 0.48),
-        endPoint: .bottom)
-
-      ReceiptBackgroundGrain(seed: style.grainSeed)
-        .blendMode(.softLight)
+    TimelineView(
+      .animation(
+        minimumInterval: 1 / 30,
+        paused: reduceMotion || isLowPowerModeEnabled || !isVisible || motion.isResting)
+    ) { context in
+      let phase = reduceMotion ? 0 : motion.phase(at: context.date)
+      Rectangle()
+        .visualEffect { content, proxy in
+          content.colorEffect(
+            ReceiptInkWashShader.shader(
+              size: proxy.size, palette: palette, pattern: pattern, phase: phase, isDark: isDark))
+        }
     }
-    // One flattened layer: scrolling content and glass above it composite a single texture
-    // instead of blending seven full-screen layers every frame.
-    .drawingGroup()
     .ignoresSafeArea()
     .allowsHitTesting(false)
     .onAppear { isVisible = true }
     .onDisappear { isVisible = false }
-  }
-
-  private func animatedFields(
-    palette: ReceiptInkWashPalette,
-    phase: Float
-  ) -> some View {
-    let leadingDominance = (Double(phase) + 1) / 2
-    let trailingDominance = 1 - leadingDominance
-    let highlightOpacity =
-      colorScheme == .dark
-      ? 0.22 + Double(phase) * 0.08
-      : 0.44
-        + Double(phase) * 0.1
-    let bloomOpacity =
-      colorScheme == .dark
-      ? 0.19 - Double(phase) * 0.07
-      : 0.32
-        - Double(phase) * 0.08
-
-    return ZStack {
-      MeshGradient(
-        width: 3,
-        height: 3,
-        points: [
-          SIMD2<Float>(0, 0), SIMD2<Float>(0.54, 0), SIMD2<Float>(1, 0),
-          SIMD2<Float>(0, 0.48),
-          SIMD2<Float>(0.58 + phase * 0.07, 0.4 + phase * 0.05),
-          SIMD2<Float>(1, 0.55),
-          SIMD2<Float>(0, 1), SIMD2<Float>(0.42, 1), SIMD2<Float>(1, 1),
-        ],
-        colors: palette.meshColors,
-        background: palette.base,
-        smoothsColors: true)
-
-      RadialGradient(
-        colors: [
-          palette.leadingWash.opacity(0.12 + leadingDominance * 0.44),
-          palette.leadingWash.opacity(leadingDominance * 0.24),
-          .clear,
-        ],
-        center: motion.pattern.leadingCenter(at: leadingDominance),
-        startRadius: 20,
-        endRadius: 900)
-
-      RadialGradient(
-        colors: [
-          palette.trailingWash.opacity(0.12 + trailingDominance * 0.44),
-          palette.trailingWash.opacity(trailingDominance * 0.24),
-          .clear,
-        ],
-        center: motion.pattern.trailingCenter(at: leadingDominance),
-        startRadius: 20,
-        endRadius: 900)
-
-      RadialGradient(
-        colors: [palette.highlight.opacity(highlightOpacity), .clear],
-        center: UnitPoint(
-          x: 0.92 + Double(phase) * 0.07,
-          y: 0.04 + Double(phase) * 0.03),
-        startRadius: 10,
-        endRadius: 430)
-
-      RadialGradient(
-        colors: [palette.bloom.opacity(bloomOpacity), .clear],
-        center: UnitPoint(
-          x: 0.08 + Double(phase) * 0.07,
-          y: 0.42 - Double(phase) * 0.06),
-        startRadius: 0,
-        endRadius: 360)
+    .onReceive(
+      NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
+        .receive(on: DispatchQueue.main)
+    ) { _ in
+      isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
     }
+  }
+}
+
+private enum ReceiptInkWashShader {
+  static func shader(
+    size: CGSize,
+    palette: ReceiptInkWashPalette,
+    pattern: ReceiptBackgroundMotionPattern,
+    phase: Float,
+    isDark: Bool
+  ) -> Shader {
+    let phase = Double(phase)
+    let leadingDominance = (phase + 1) / 2
+    let trailingDominance = 1 - leadingDominance
+    let highlightOpacity = isDark ? 0.22 + phase * 0.08 : 0.44 + phase * 0.1
+    let bloomOpacity = isDark ? 0.19 - phase * 0.07 : 0.32 - phase * 0.08
+    let leadingCenter = pattern.leadingCenter(at: leadingDominance)
+    let trailingCenter = pattern.trailingCenter(at: leadingDominance)
+
+    return ShaderLibrary.receiptInkWash(
+      .float2(size),
+      .color(palette.base),
+      .color(palette.primary),
+      .color(palette.secondary),
+      .color(palette.highlight),
+      .color(palette.bloom),
+      .float2(0.58 + phase * 0.07, 0.4 + phase * 0.05),
+      .float2(leadingCenter.x, leadingCenter.y),
+      .float2(trailingCenter.x, trailingCenter.y),
+      .float4(
+        0.12 + leadingDominance * 0.44,
+        leadingDominance * 0.24,
+        0.12 + trailingDominance * 0.44,
+        trailingDominance * 0.24),
+      .float2(0.92 + phase * 0.07, 0.04 + phase * 0.03),
+      .float2(0.08 + phase * 0.07, 0.42 - phase * 0.06),
+      .float2(highlightOpacity, bloomOpacity),
+      .float(isDark ? 0.1 : 0.04),
+      .float(isDark ? 1 : 0),
+      .float(palette.grainSeed))
   }
 }
 
@@ -267,79 +242,13 @@ private struct SeededRandomNumberGenerator: RandomNumberGenerator {
   }
 }
 
-private struct ReceiptBackgroundGrain: View {
-  let seed: UInt64
-  @Environment(\.colorScheme) private var colorScheme
-
-  var body: some View {
-    Image(uiImage: ReceiptBackgroundGrainCache.image(seed: seed, colorScheme: colorScheme))
-      .resizable(resizingMode: .tile)
-      .interpolation(.none)
-  }
-}
-
-@MainActor
-private enum ReceiptBackgroundGrainCache {
-  private static let tileSize = CGSize(width: 320, height: 320)
-  private static let cache: NSCache<NSString, UIImage> = {
-    let cache = NSCache<NSString, UIImage>()
-    cache.countLimit = ReceiptThemeColor.allCases.count * 2
-    return cache
-  }()
-
-  static func image(seed: UInt64, colorScheme: ColorScheme) -> UIImage {
-    let isDark = colorScheme == .dark
-    let key = "\(seed)-\(isDark)" as NSString
-    if let image = cache.object(forKey: key) {
-      return image
-    }
-
-    let format = UIGraphicsImageRendererFormat()
-    format.opaque = false
-    format.scale = 1
-    let image = UIGraphicsImageRenderer(size: tileSize, format: format).image { renderer in
-      let context = renderer.cgContext
-      let grainColor = isDark ? UIColor.white : UIColor.black
-      var randomState = seed
-      let count = max(900, Int(tileSize.width * tileSize.height / 92))
-
-      for index in 0..<count {
-        let x = nextUnitValue(state: &randomState) * tileSize.width
-        let y = nextUnitValue(state: &randomState) * tileSize.height
-        let grainSize = 0.35 + nextUnitValue(state: &randomState) * 0.75
-        let rect = CGRect(x: x, y: y, width: grainSize, height: grainSize)
-        context.setFillColor(
-          grainColor.withAlphaComponent(index.isMultiple(of: 5) ? 0.12 : 0.075).cgColor)
-        if index.isMultiple(of: 5) {
-          context.fillEllipse(in: rect)
-        } else {
-          context.fill(rect)
-        }
-      }
-    }
-    cache.setObject(image, forKey: key)
-    return image
-  }
-
-  private static func nextUnitValue(state: inout UInt64) -> CGFloat {
-    state = 2_862_933_555_777_941_757 &* state &+ 3_037_000_493
-    return CGFloat(state & 0x00FF_FFFF) / CGFloat(0x0100_0000)
-  }
-}
-
 private struct ReceiptInkWashPalette {
   let base: Color
-  let meshColors: [Color]
+  let primary: Color
+  let secondary: Color
   let highlight: Color
   let bloom: Color
-
-  var leadingWash: Color {
-    meshColors.first ?? base
-  }
-
-  var trailingWash: Color {
-    meshColors.last ?? base
-  }
+  let grainSeed: Float
 }
 
 extension ReceiptBackgroundStyle {
@@ -361,63 +270,61 @@ extension ReceiptBackgroundStyle {
 
     return ReceiptInkWashPalette(
       base: base,
-      meshColors: [
-        primaryColor, base, secondaryColor,
-        primaryColor, base, secondaryColor,
-        primaryColor, secondaryColor, secondaryColor,
-      ],
+      primary: primaryColor,
+      secondary: secondaryColor,
       highlight: primary.accentColor(for: colorScheme),
-      bloom: secondary.accentColor(for: colorScheme))
+      bloom: secondary.accentColor(for: colorScheme),
+      grainSeed: Float(primary.paletteIndex * 8 + secondary.paletteIndex) * 7.31)
   }
 
-  fileprivate var grainSeed: UInt64 {
-    UInt64(primary.paletteIndex + 1) * 1_592_746
-      + UInt64(secondary.paletteIndex + 1) * 2_803_917
+  /// A darker accent that stays legible under white labels, for prominent tinted controls.
+  var prominentColor: Color {
+    primary.accentColor(for: .light)
   }
 }
 
 extension ReceiptThemeColor {
   fileprivate func accentColor(for colorScheme: ColorScheme) -> Color {
-    switch (self, colorScheme) {
-    case (.blue, .light): Color(red: 0.05, green: 0.42, blue: 0.82)
-    case (.blue, .dark): Color(red: 0.22, green: 0.72, blue: 1)
-    case (.mint, .light): Color(red: 0, green: 0.48, blue: 0.36)
-    case (.mint, .dark): Color(red: 0.24, green: 0.86, blue: 0.68)
-    case (.peach, .light): Color(red: 0.82, green: 0.30, blue: 0.22)
-    case (.peach, .dark): Color(red: 1, green: 0.56, blue: 0.36)
-    case (.violet, .light): Color(red: 0.48, green: 0.30, blue: 0.78)
-    case (.violet, .dark): Color(red: 0.68, green: 0.56, blue: 1)
-    case (.amber, .light): Color(red: 0.72, green: 0.43, blue: 0.02)
-    case (.amber, .dark): Color(red: 1, green: 0.72, blue: 0.2)
-    case (.rose, .light): Color(red: 0.76, green: 0.18, blue: 0.38)
-    case (.rose, .dark): Color(red: 1, green: 0.4, blue: 0.62)
-    case (.forest, .light): Color(red: 0.12, green: 0.43, blue: 0.18)
-    case (.forest, .dark): Color(red: 0.4, green: 0.82, blue: 0.42)
-    case (.indigo, .light): Color(red: 0.25, green: 0.28, blue: 0.74)
-    case (.indigo, .dark): Color(red: 0.48, green: 0.58, blue: 1)
-    @unknown default: .accentColor
+    let isDark = colorScheme == .dark
+    return switch self {
+    case .blue:
+      isDark ? Color(red: 0.22, green: 0.72, blue: 1) : Color(red: 0.05, green: 0.42, blue: 0.82)
+    case .mint:
+      isDark ? Color(red: 0.24, green: 0.86, blue: 0.68) : Color(red: 0, green: 0.48, blue: 0.36)
+    case .peach:
+      isDark ? Color(red: 1, green: 0.56, blue: 0.36) : Color(red: 0.82, green: 0.30, blue: 0.22)
+    case .violet:
+      isDark ? Color(red: 0.68, green: 0.56, blue: 1) : Color(red: 0.48, green: 0.30, blue: 0.78)
+    case .amber:
+      isDark ? Color(red: 1, green: 0.72, blue: 0.2) : Color(red: 0.72, green: 0.43, blue: 0.02)
+    case .rose:
+      isDark ? Color(red: 1, green: 0.4, blue: 0.62) : Color(red: 0.76, green: 0.18, blue: 0.38)
+    case .forest:
+      isDark ? Color(red: 0.4, green: 0.82, blue: 0.42) : Color(red: 0.12, green: 0.43, blue: 0.18)
+    case .indigo:
+      isDark ? Color(red: 0.48, green: 0.58, blue: 1) : Color(red: 0.25, green: 0.28, blue: 0.74)
     }
   }
 
   fileprivate func backgroundColor(for colorScheme: ColorScheme) -> Color {
-    switch (self, colorScheme) {
-    case (.blue, .light): Color(red: 0.78, green: 0.9, blue: 1)
-    case (.blue, .dark): Color(red: 0.05, green: 0.13, blue: 0.28)
-    case (.mint, .light): Color(red: 0.76, green: 0.96, blue: 0.87)
-    case (.mint, .dark): Color(red: 0.03, green: 0.22, blue: 0.16)
-    case (.peach, .light): Color(red: 1, green: 0.82, blue: 0.7)
-    case (.peach, .dark): Color(red: 0.32, green: 0.12, blue: 0.06)
-    case (.violet, .light): Color(red: 0.85, green: 0.79, blue: 1)
-    case (.violet, .dark): Color(red: 0.18, green: 0.08, blue: 0.32)
-    case (.amber, .light): Color(red: 1, green: 0.9, blue: 0.58)
-    case (.amber, .dark): Color(red: 0.3, green: 0.2, blue: 0.03)
-    case (.rose, .light): Color(red: 1, green: 0.76, blue: 0.84)
-    case (.rose, .dark): Color(red: 0.3, green: 0.07, blue: 0.14)
-    case (.forest, .light): Color(red: 0.74, green: 0.91, blue: 0.72)
-    case (.forest, .dark): Color(red: 0.04, green: 0.18, blue: 0.08)
-    case (.indigo, .light): Color(red: 0.78, green: 0.82, blue: 1)
-    case (.indigo, .dark): Color(red: 0.08, green: 0.09, blue: 0.3)
-    @unknown default: Color(.secondarySystemGroupedBackground)
+    let isDark = colorScheme == .dark
+    return switch self {
+    case .blue:
+      isDark ? Color(red: 0.05, green: 0.13, blue: 0.28) : Color(red: 0.78, green: 0.9, blue: 1)
+    case .mint:
+      isDark ? Color(red: 0.03, green: 0.22, blue: 0.16) : Color(red: 0.76, green: 0.96, blue: 0.87)
+    case .peach:
+      isDark ? Color(red: 0.32, green: 0.12, blue: 0.06) : Color(red: 1, green: 0.82, blue: 0.7)
+    case .violet:
+      isDark ? Color(red: 0.18, green: 0.08, blue: 0.32) : Color(red: 0.85, green: 0.79, blue: 1)
+    case .amber:
+      isDark ? Color(red: 0.3, green: 0.2, blue: 0.03) : Color(red: 1, green: 0.9, blue: 0.58)
+    case .rose:
+      isDark ? Color(red: 0.3, green: 0.07, blue: 0.14) : Color(red: 1, green: 0.76, blue: 0.84)
+    case .forest:
+      isDark ? Color(red: 0.04, green: 0.18, blue: 0.08) : Color(red: 0.74, green: 0.91, blue: 0.72)
+    case .indigo:
+      isDark ? Color(red: 0.08, green: 0.09, blue: 0.3) : Color(red: 0.78, green: 0.82, blue: 1)
     }
   }
 

@@ -61,6 +61,8 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
     var failureMessage: String?
     /// The scan pages the current receipt values were recognized from.
     var pageIDs: [UUID] = []
+    /// When a read that stopped at the reading limit starts again on its own.
+    var deferredUntil: Date?
 
     enum CodingKeys: String, CodingKey {
       case status
@@ -70,6 +72,7 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
       case warnings
       case failureMessage
       case pageIDs = "pageIds"
+      case deferredUntil
     }
   }
 
@@ -207,6 +210,8 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   let currency: String?
   let isUnavailable: Bool
   let unavailableDescription: String?
+  /// When an unread receipt is read again on its own after the reading limit resets.
+  var deferredUntil: Date?
 }
 
 enum ReceiptDocumentError: Error, LocalizedError, Equatable {

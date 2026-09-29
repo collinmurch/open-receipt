@@ -35,7 +35,7 @@ struct ReceiptItemsSection: View {
         Button("Add Item", systemImage: "plus") {
           onSelectItem(draft.addItem())
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.bordered)
         Spacer()
       }
       .frame(height: isEditing ? 48 : 0)
@@ -119,7 +119,7 @@ private struct ReceiptItemRow: View, Equatable {
           assignments
           Spacer()
           Image(systemName: "checkmark.circle.fill")
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(.tint)
             .symbolEffect(.bounce, value: isAssignedToSelection)
             .opacity(isAssignedToSelection ? 1 : 0)
             .frame(width: 20, alignment: .trailing)
@@ -131,8 +131,6 @@ private struct ReceiptItemRow: View, Equatable {
     .onTapGesture(perform: onTap)
     .accessibilityAddTraits(.isButton)
     .accessibilityHint(accessibilityHint)
-    .animation(.smooth(duration: 0.35), value: isEditing)
-    .animation(.smooth(duration: 0.25), value: item.participantIDs)
   }
 
   @ViewBuilder

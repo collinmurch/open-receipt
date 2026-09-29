@@ -1,6 +1,6 @@
 # Open Receipt
 
-Scan. Split. Settle. Open Receipt turns a scanned or imported receipt into an itemized bill. Assign items to friends, split the extra charges, and send accurate Venmo requests without doing the math yourself.
+Scan. Split. Settle. Open Receipt turns a receipt into an itemized bill. Assign items to friends, split tax and tip, and send payment requests without doing the math.
 
 ## Requirements
 
@@ -46,6 +46,7 @@ make run           # build and run on the simulator
 make run-device    # build and run on iOS hardware
 make test          # run unit tests
 make receipts      # evaluate receipt fixtures
+make screenshots   # capture and compose App Store screenshots
 make upload        # archive and upload to App Store Connect
 make format        # auto-format Swift sources
 make lint          # lint Swift sources (read-only)

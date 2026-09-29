@@ -1,4 +1,5 @@
 #if !SWIFT_PACKAGE
+  import Synchronization
   import XCTest
   @testable import open_receipt
 
@@ -361,17 +362,120 @@
       XCTAssertEqual(model.backgroundStyle, completed.presentation.backgroundStyle)
     }
 
-    func testStoredPendingReceiptStartsRecognizing() async {
+    func testPreloadedReceiptOpensInReview() {
+      let scan = ReceiptScan(pages: [])
+      let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Saved"), id: scan.id)
+      let completed = pendingDocument(for: scan).updating(from: draft)
+
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id, document: completed))
+
+      XCTAssertEqual(model.reviewingDraft?.merchantName, "Saved")
+      XCTAssertNil(model.workID)
+    }
+
+    func testPreloadedUnreadReceiptOpensWaitingToBeRead() {
+      let scan = ReceiptScan(pages: [])
+
+      let model = ReceiptFlowModel(
+        input: .storedReceipt(scan.id, document: pendingDocument(for: scan)))
+
+      XCTAssertEqual(model.failure?.title, "Receipt Not Read")
+    }
+
+    func testPreloadedDocumentForAnotherReceiptIsIgnored() {
+      let scan = ReceiptScan(pages: [])
+      let other = pendingDocument(for: ReceiptScan(pages: []))
+
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id, document: other))
+
+      guard case .loading(let id) = model.phase else {
+        return XCTFail("Expected loading phase")
+      }
+      XCTAssertEqual(id, scan.id)
+    }
+
+    func testStoredPendingReceiptWaitsToBeRead() async {
       let scan = ReceiptScan(pages: [])
       let storage = storage(for: scan)
       let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
 
       await model.performWork(using: center(storage: storage), storage: storage)
 
+      guard case .failed(let failure) = model.phase else {
+        return XCTFail("Expected an unread receipt")
+      }
+      XCTAssertEqual(failure.title, "Receipt Not Read")
+      XCTAssertTrue(failure.allowsManualEntry)
+      guard case .read(let id) = failure.retry else {
+        return XCTFail("Expected a read action")
+      }
+      XCTAssertEqual(id, scan.id)
+    }
+
+    func testStoredPendingReceiptDoesNotCallModel() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let parser = FlowParseRecorder()
+      let parsingClient = ReceiptParsingClient(usesSampleData: false) { _ in
+        await parser.parse()
+      }
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+
+      await model.performWork(
+        using: center(parsingClient: parsingClient, storage: storage), storage: storage)
+
+      let parseCount = await parser.count
+      XCTAssertEqual(parseCount, 0)
+    }
+
+    func testStoredDeferredReceiptWaitsForReadingLimit() async {
+      let scan = ReceiptScan(pages: [])
+      var document = pendingDocument(for: scan)
+      document.recognition.status = .failed
+      document.recognition.deferredUntil = Date().addingTimeInterval(3600)
+      let storage = storage(document: document)
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+
+      await model.performWork(using: center(storage: storage), storage: storage)
+
+      guard case .failed(let failure) = model.phase else {
+        return XCTFail("Expected an unread receipt")
+      }
+      XCTAssertEqual(failure.title, "Waiting to Read")
+    }
+
+    func testReadingStoredReceiptStartsRecognizing() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(storage: storage)
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+      await model.performWork(using: center, storage: storage)
+
+      model.retry(using: center)
+      await model.performWork(using: center, storage: storage)
+
       guard case .recognizing(let recognition) = model.phase else {
         return XCTFail("Expected recognizing phase")
       }
       XCTAssertEqual(recognition.id, scan.id)
+    }
+
+    func testReadingStoredReceiptPrewarmsModel() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let prewarms = FlowPrewarmCounter()
+      let parsingClient = ReceiptParsingClient(
+        usesSampleData: false,
+        stream: { _, _ in ParsedReceipt(merchantName: "Saved") },
+        prewarm: { prewarms.increment() })
+      let center = center(parsingClient: parsingClient, storage: storage)
+      let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+      await model.performWork(using: center, storage: storage)
+
+      model.retry(using: center)
+      await model.performWork(using: center, storage: storage)
+
+      XCTAssertEqual(prewarms.count, 1)
     }
 
     func testOpeningReceiptBeingReadJoinsActiveRecognition() async {
@@ -511,6 +615,216 @@
       XCTAssertTrue(saved.allSatisfy { $0.recognition.status == .succeeded })
     }
 
+    func testFailedRescanReturnsToReceipt() async {
+      let document = recognizedDocument(pageCount: 2, recognizedCount: 1)
+      let storage = storage(document: document)
+      let center = center(parsingClient: failingClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .storedReceipt(document.id))
+      await model.performWork(using: center, storage: storage)
+
+      model.rescan()
+      await model.performWork(using: center, storage: storage)
+      await model.performWork(using: center, storage: storage)
+
+      guard case .failed(let failure) = model.phase else {
+        return XCTFail("Expected failed phase")
+      }
+      XCTAssertEqual(failure.title, "Couldn’t Rescan Receipt")
+      XCTAssertEqual(failure.manualEntryTitle, "Back to Receipt")
+    }
+
+    func testFailedReadOffersManualEntry() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(parsingClient: failingClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+
+      await model.performWork(using: center, storage: storage)
+
+      XCTAssertEqual(model.failure?.manualEntryTitle, "Enter Manually")
+    }
+
+    func testNewScanStartsRecognizingWhenModelIsAvailable() {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center(storage: storage)))
+
+      guard case .recognizing = model.phase else {
+        return XCTFail("Expected recognizing phase")
+      }
+    }
+
+    func testNewScanIsStoredWhenModelIsUnavailable() {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(parsingClient: unavailableClient(), storage: storage)
+
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
+
+      guard case .storing = model.phase else {
+        return XCTFail("Expected storing phase")
+      }
+      XCTAssertFalse(model.isRecognizing)
+      XCTAssertNil(center.recognition(for: scan.id))
+    }
+
+    func testStoredUnreadScanWaitsToBeRead() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(parsingClient: unavailableClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
+
+      await model.performWork(using: center, storage: storage)
+
+      guard case .failed(let failure) = model.phase else {
+        return XCTFail("Expected an unread receipt")
+      }
+      XCTAssertEqual(failure.title, "Receipt Not Read")
+      XCTAssertFalse(failure.isError)
+      XCTAssertTrue(failure.allowsManualEntry)
+    }
+
+    func testStoredUnreadScanDoesNotCallModel() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let parser = FlowParseRecorder()
+      let center = center(parsingClient: unavailableClient(parser: parser), storage: storage)
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
+
+      await model.performWork(using: center, storage: storage)
+
+      let parseCount = await parser.count
+      XCTAssertEqual(parseCount, 0)
+    }
+
+    func testStoredUnreadScanCanBeEnteredManually() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(parsingClient: unavailableClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
+      await model.performWork(using: center, storage: storage)
+
+      await model.enterManually(storage: storage)
+
+      XCTAssertNotNil(model.reviewingDraft)
+    }
+
+    func testStoringFailureCanRetry() async {
+      let scan = ReceiptScan(pages: [])
+      var storage = storage(for: scan)
+      storage.create = { _, _ in throw FlowTestError.failed }
+      let center = center(parsingClient: unavailableClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
+      await model.performWork(using: center, storage: storage)
+
+      model.retry(using: center)
+
+      guard case .storing = model.phase else {
+        return XCTFail("Expected the scan to be stored again")
+      }
+    }
+
+    func testStoppingReadWaitingForConnectionOpensBlankReview() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(
+        parsingClient: offlineClient(), storage: storage, connectivity: .offline)
+      let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+
+      await model.stopReadingAndEnterManually(using: center, storage: storage)
+
+      XCTAssertNotNil(model.reviewingDraft)
+      XCTAssertNil(center.recognition(for: scan.id))
+    }
+
+    func testStoppingRescanWaitingForConnectionKeepsStoredValues() async {
+      let document = recognizedDocument(pageCount: 2, recognizedCount: 1)
+      let storage = storage(document: document)
+      let center = center(
+        parsingClient: offlineClient(), storage: storage, connectivity: .offline)
+      let model = ReceiptFlowModel(input: .storedReceipt(document.id))
+      await model.performWork(using: center, storage: storage)
+      model.rescan()
+      await model.performWork(using: center, storage: storage)
+
+      await model.stopReadingAndEnterManually(using: center, storage: storage)
+
+      XCTAssertEqual(model.reviewingDraft?.merchantName, "Saved")
+    }
+
+    func testStoppedReadDoesNotShowFailure() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(
+        parsingClient: offlineClient(), storage: storage, connectivity: .offline)
+      let recognition = center.recognize(scan)
+      let model = ReceiptFlowModel(input: .recognition(recognition))
+      let work = Task { await model.performWork(using: center, storage: storage) }
+
+      await center.cancel(recognition)
+      await work.value
+
+      guard case .recognizing = model.phase else {
+        return XCTFail("Expected the stopped read to leave the phase alone")
+      }
+    }
+
+    func testCreatedReceiptStartsInEditing() async {
+      let id = UUID()
+      let storage = storage(document: blankDocument(id: id))
+      let model = ReceiptFlowModel(input: .create(id: id))
+
+      await model.performWork(using: center(storage: storage), storage: storage)
+
+      XCTAssertTrue(model.startsInEditing)
+    }
+
+    func testReadReceiptDoesNotStartInEditing() async {
+      let (model, _) = await reviewingModel(merchantName: "Cafe")
+
+      XCTAssertFalse(model.startsInEditing)
+    }
+
+    func testEnteringUnreadReceiptManuallyStartsInEditing() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(parsingClient: failingClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+      await model.performWork(using: center, storage: storage)
+
+      await model.enterManually(storage: storage)
+
+      XCTAssertTrue(model.startsInEditing)
+    }
+
+    func testStoppingReadToEnterManuallyStartsInEditing() async {
+      let scan = ReceiptScan(pages: [])
+      let storage = storage(for: scan)
+      let center = center(
+        parsingClient: offlineClient(), storage: storage, connectivity: .offline)
+      let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+
+      await model.stopReadingAndEnterManually(using: center, storage: storage)
+
+      XCTAssertTrue(model.startsInEditing)
+    }
+
+    func testReturningFromFailedRescanDoesNotStartInEditing() async {
+      let document = recognizedDocument(pageCount: 2, recognizedCount: 1)
+      let storage = storage(document: document)
+      let center = center(parsingClient: failingClient(), storage: storage)
+      let model = ReceiptFlowModel(input: .storedReceipt(document.id))
+      await model.performWork(using: center, storage: storage)
+      model.rescan()
+      await model.performWork(using: center, storage: storage)
+      await model.performWork(using: center, storage: storage)
+
+      await model.enterManually(storage: storage)
+
+      XCTAssertFalse(model.startsInEditing)
+    }
+
     func testAddingPagesUpdatesReviewedPages() async throws {
       let document = recognizedDocument(pageCount: 1, recognizedCount: 1)
       var updated = document
@@ -549,12 +863,13 @@
 
     private func center(
       parsingClient: ReceiptParsingClient = .sample(pacing: .zero),
-      storage: ReceiptStorageClient
+      storage: ReceiptStorageClient,
+      connectivity: ReceiptConnectivity = .immediate
     ) -> ReceiptRecognitionCenter {
       ReceiptRecognitionCenter(
         parsingClient: parsingClient,
         storage: storage,
-        connectivity: .immediate,
+        connectivity: connectivity,
         connectionRetryDelay: .zero)
     }
 
@@ -600,6 +915,22 @@
       }
     }
 
+    private func offlineClient() -> ReceiptParsingClient {
+      ReceiptParsingClient(usesSampleData: false) { _ in
+        throw ReceiptParserError.connectionUnavailable
+      }
+    }
+
+    private func unavailableClient(parser: FlowParseRecorder? = nil) -> ReceiptParsingClient {
+      ReceiptParsingClient(
+        usesSampleData: false,
+        stream: { _, _ in
+          _ = await parser?.parse()
+          throw ReceiptParserError.modelUnavailable("Unavailable.")
+        },
+        status: { .unavailable("Unavailable.") })
+    }
+
     private func rescanningClient(merchantName: String = "Rescanned") -> ReceiptParsingClient {
       ReceiptParsingClient(usesSampleData: false) { _ in
         ParsedReceipt(merchantName: merchantName)
@@ -641,6 +972,16 @@
 
     func append(_ document: ReceiptDocument) {
       documents.append(document)
+    }
+  }
+
+  private final class FlowPrewarmCounter: Sendable {
+    private let value = Mutex(0)
+
+    var count: Int { value.withLock { $0 } }
+
+    func increment() {
+      value.withLock { $0 += 1 }
     }
   }
 

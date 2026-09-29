@@ -1,65 +1,88 @@
+import PhotosUI
 import SwiftUI
 
-/// Where the library goes once the drawer has closed.
-enum ReceiptLibraryDestination {
-  case scanner
-  case receipt(ReceiptFlowInput)
-}
-
+/// The receipt library, and the app's root screen. New receipts start from the bottom toolbar.
 struct ReceiptLibraryView: View {
-  /// Tall enough to show the newest receipt and a sliver of the next.
-  private static let collapsedHeight: CGFloat = 228
-
-  let onHistoryDismiss: () -> Void
-  let onOpen: (ReceiptLibraryDestination) -> Void
-  @Binding private var isHistoryPresented: Bool
-  @State private var selectedDetent = PresentationDetent.height(Self.collapsedHeight)
+  let transitionNamespace: Namespace.ID
+  let onScan: () -> Void
+  let onOpen: (HomeRoute) -> Void
   @State private var searchText = ""
-  @State private var pendingDestination: ReceiptLibraryDestination?
-  @State private var isTrashPresented = false
-  @State private var trashSwipeOffset: CGFloat = 0
+  @State private var importedItems: [PhotosPickerItem] = []
+  @State private var isPhotoPickerPresented = false
+  @State private var isImporting = false
+  @State private var importErrorDescription: String?
   @State private var deletionCount = 0
+  @State private var openingReceiptID: ReceiptSummary.ID?
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
-  @Environment(\.scenePhase) private var scenePhase
-
-  init(
-    isHistoryPresented: Binding<Bool>,
-    onHistoryDismiss: @escaping () -> Void,
-    onOpen: @escaping (ReceiptLibraryDestination) -> Void
-  ) {
-    _isHistoryPresented = isHistoryPresented
-    self.onHistoryDismiss = onHistoryDismiss
-    self.onOpen = onOpen
-  }
+  @Environment(\.receiptStorageClient) private var storage
 
   var body: some View {
-    ZStack {
-      ReceiptLibraryBackground()
+    let reading = readingReceipts
+    let query = searchQuery
+    let sections = displayedSections(reading: reading, query: query)
 
-      GeometryReader { geometry in
-        NewReceiptView(
-          onScan: presentScanner,
-          onRecognize: recognize,
-          onCreate: { prepareToOpen(.receipt(.create())) }
-        )
-        .padding(.horizontal, 24)
-        .padding(.bottom, Self.collapsedHeight)
-        .frame(maxWidth: .infinity, maxHeight: geometry.size.height)
+    List {
+      if recognitions.modelStatus != .available {
+        Section {
+          ReceiptModelNotice(
+            status: recognitions.modelStatus,
+            onIncreaseLimit: recognitions.showLimitIncrease)
+        }
+      }
+
+      ForEach(sections) { section in
+        Section {
+          ForEach(section.receipts) { receipt in
+            row(for: receipt)
+          }
+          .onDelete { offsets in
+            for index in offsets where section.receipts.indices.contains(index) {
+              delete(section.receipts[index])
+            }
+          }
+        } header: {
+          Text(section.title)
+        }
+      }
+
+      if query.isEmpty, !library.deletedReceipts.isEmpty {
+        Section {
+          NavigationLink(value: HomeRoute.recentlyDeleted) {
+            Label("Recently Deleted", systemImage: "trash")
+          }
+        }
       }
     }
-    .sheet(isPresented: $isHistoryPresented, onDismiss: finishHistoryDismissal) {
-      historyDrawer
+    .headerProminence(.increased)
+    .scrollContentBackground(.hidden)
+    .background { ReceiptLibraryBackground() }
+    .overlay {
+      if library.hasLoaded, sections.isEmpty {
+        if query.isEmpty {
+          ReceiptLibraryEmptyState()
+        } else {
+          ContentUnavailableView.search(text: query)
+        }
+      }
     }
-    .task { await library.load() }
-    .onChange(of: recognitions.finishedCount) {
-      Task { await library.load() }
+    .animation(.smooth(duration: 0.3), value: sections)
+    .navigationTitle("Receipts")
+    .debugBuildSubtitle()
+    .searchable(text: $searchText, prompt: "Search receipts")
+    .toolbar { libraryToolbar }
+    .photosPicker(
+      isPresented: $isPhotoPickerPresented,
+      selection: $importedItems,
+      maxSelectionCount: 8,
+      selectionBehavior: .ordered,
+      matching: .images
+    )
+    .onChange(of: importedItems) { _, items in
+      Task { await importImages(items) }
     }
-    .onChange(of: scenePhase) { _, newPhase in
-      guard newPhase == .active else { return }
-      Task { await library.refreshTrashIfNeeded() }
-    }
-    .errorHaptic(library.errorDescription)
+    .sensoryFeedback(.removal, trigger: deletionCount)
+    .errorHaptic(library.errorDescription ?? importErrorDescription)
     .alert(
       "Couldn’t Update Receipts",
       isPresented: Binding(
@@ -71,65 +94,108 @@ struct ReceiptLibraryView: View {
     } message: {
       Text(library.errorDescription ?? "The receipt library could not be updated.")
     }
+    .alert(
+      "Couldn’t Import Receipt",
+      isPresented: Binding(
+        get: { importErrorDescription != nil },
+        set: { if !$0 { importErrorDescription = nil } })
+    ) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(importErrorDescription ?? "The selected images could not be imported.")
+    }
   }
 
-  private var historyDrawer: some View {
-    GeometryReader { geometry in
-      ZStack {
-        if !isTrashPresented || trashSwipeOffset > 0 {
-          ReceiptHistorySheet(
-            receipts: displayedReceipts,
-            isLoading: library.isLoading,
-            searchText: $searchText,
-            onOpen: open,
-            onDelete: delete,
-            onOpenRecentlyDeleted: openTrash
-          )
-          .offset(x: isTrashPresented ? trashSwipeOffset - geometry.size.width : 0)
-          .transition(.move(edge: .leading))
-        }
+  @ToolbarContentBuilder
+  private var libraryToolbar: some ToolbarContent {
+    ToolbarItem(placement: .topBarLeading) {
+      Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
+    }
 
-        if isTrashPresented {
-          ReceiptTrashView(
-            deletedReceipts: library.deletedReceipts,
-            onBack: closeTrash,
-            onRestore: { deletedReceipt in
-              Task { await library.restore(deletedReceipt) }
-            },
-            onDelete: { deletedReceipt in
-              Task { await library.permanentlyDelete(deletedReceipt) }
-            },
-            onEmpty: { Task { await library.emptyTrash() } }
-          )
-          .offset(x: trashSwipeOffset)
-          .transition(.move(edge: .trailing))
-          .gesture(
-            EdgeSwipeBackGesture(
-              onChanged: { trashSwipeOffset = min($0, geometry.size.width) },
-              onEnded: { translation, velocity in
-                finishTrashSwipe(
-                  translation: translation, velocity: velocity, width: geometry.size.width)
-              }
-            )
-          )
+    ToolbarItem(placement: .topBarTrailing) {
+      Button("People", systemImage: "person.2") { onOpen(.people) }
+    }
+
+    DefaultToolbarItem(kind: .search, placement: .bottomBar)
+    ToolbarSpacer(.flexible, placement: .bottomBar)
+    ToolbarItem(placement: .bottomBar) {
+      newReceiptMenu
+    }
+  }
+
+  private var newReceiptMenu: some View {
+    Menu {
+      Button("Scan", systemImage: "document.viewfinder", action: onScan)
+      Button("Import", systemImage: "photo.on.rectangle.angled") {
+        recognitions.prewarm()
+        isPhotoPickerPresented = true
+      }
+      Button("Create", systemImage: "square.and.pencil") {
+        onOpen(.receipt(.create()))
+      }
+    } label: {
+      if isImporting {
+        ProgressView()
+      } else {
+        Label("New Receipt", systemImage: "plus")
+      }
+    }
+    .buttonStyle(.glassProminent)
+    .disabled(isImporting)
+  }
+
+  @ViewBuilder
+  private func row(for receipt: ReceiptSummary) -> some View {
+    let recognition = recognitions.recognition(for: receipt.id)
+    if receipt.isUnavailable {
+      ReceiptLibraryRow(receipt: receipt)
+    } else {
+      Button {
+        open(receipt)
+      } label: {
+        ReceiptLibraryRow(
+          receipt: receipt,
+          recognition: recognition,
+          transitionNamespace: transitionNamespace)
+      }
+      .tint(.primary)
+      .screenshotHighlight("library-row-\(receipt.merchantName ?? "")")
+      .contextMenu {
+        Button("Delete Receipt", systemImage: "trash", role: .destructive) {
+          delete(receipt)
         }
       }
     }
-    .clipped()
-    .animation(.smooth(duration: 0.35), value: isTrashPresented)
-    .presentationDetents([.height(Self.collapsedHeight), .large], selection: $selectedDetent)
-    .presentationDragIndicator(.visible)
-    .presentationContentInteraction(.resizes)
-    .presentationBackgroundInteraction(.enabled(upThrough: .height(Self.collapsedHeight)))
-    .interactiveDismissDisabled()
-    .sensoryFeedback(.removal, trigger: deletionCount)
   }
 
-  /// Library receipts, led by any new receipt being read that storage has not listed yet.
-  private var displayedReceipts: [ReceiptSummary] {
-    let storedIDs = Set(library.receipts.map(\.id))
-    let reading = recognitions.recognitions.values
-      .filter { !storedIDs.contains($0.id) && !$0.isRescan }
+  /// Opens a receipt once its document has loaded, so the receipt is complete on the transition's
+  /// first frame.
+  private func open(_ receipt: ReceiptSummary) {
+    guard openingReceiptID == nil else { return }
+    if let recognition = recognitions.recognition(for: receipt.id) {
+      onOpen(.receipt(.recognition(recognition), zoomsFromRow: true))
+      return
+    }
+    openingReceiptID = receipt.id
+    Task {
+      defer { openingReceiptID = nil }
+      let document = try? await storage.load(receipt.id)
+      let input = ReceiptFlowInput.storedReceipt(
+        receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)
+      onOpen(.receipt(input, zoomsFromRow: true))
+    }
+  }
+
+  private var searchQuery: String {
+    searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// New receipts being read that storage has not listed yet, newest first.
+  private var readingReceipts: [ReceiptSummary] {
+    recognitions.recognitions.values
+      .filter { recognition in
+        !recognition.isRescan && !library.receipts.contains { $0.id == recognition.id }
+      }
       .sorted { $0.capturedAt > $1.capturedAt }
       .map { recognition in
         ReceiptSummary(
@@ -145,83 +211,128 @@ struct ReceiptLibraryView: View {
           isUnavailable: false,
           unavailableDescription: nil)
       }
-    return reading + library.receipts
   }
 
-  private func presentScanner() {
-    recognitions.prewarm()
-    prepareToOpen(.scanner)
+  /// The library's sections with `reading` merged in and narrowed to `query`. Reading a streaming
+  /// merchant name here redraws the list as it streams, so it is read only while searching.
+  private func displayedSections(
+    reading: [ReceiptSummary],
+    query: String
+  ) -> [ReceiptLibrarySection] {
+    let sections =
+      reading.isEmpty
+      ? library.sections : ReceiptLibrarySections.grouped(reading + library.receipts)
+    guard !query.isEmpty else { return sections }
+    return ReceiptLibrarySections.filtered(sections) { receipt in
+      [
+        receipt.merchantName,
+        recognitions.recognition(for: receipt.id)?.preview.merchantName,
+        receipt.localDate,
+        receipt.currency,
+        receipt.localDate.flatMap { ReceiptLibraryDateFormatter.formatted(localDate: $0) },
+      ]
+      .compactMap { $0 }
+      .contains { $0.localizedCaseInsensitiveContains(query) }
+    }
   }
 
-  /// Reading starts now, while the drawer closes, rather than after the receipt opens.
-  private func recognize(_ scan: ReceiptScan) {
-    prepareToOpen(.receipt(.recognition(recognitions.recognize(scan))))
-  }
-
-  private func open(_ receipt: ReceiptSummary, recognition: ReceiptRecognition?) {
-    guard !receipt.isUnavailable else { return }
-    let input =
-      recognition.map(ReceiptFlowInput.recognition)
-      ?? .storedReceipt(receipt.id, backgroundStyle: receipt.backgroundStyle)
-    prepareToOpen(.receipt(input))
-  }
-
-  private func prepareToOpen(_ destination: ReceiptLibraryDestination) {
-    pendingDestination = destination
-    isHistoryPresented = false
-  }
-
+  /// Deletes `receipt`, first stopping a read of it that is in progress.
   private func delete(_ receipt: ReceiptSummary) {
-    guard recognitions.recognition(for: receipt.id) == nil else { return }
     deletionCount += 1
-    Task { await library.delete(receipt) }
-  }
-
-  private func finishHistoryDismissal() {
-    isTrashPresented = false
-    trashSwipeOffset = 0
-    if let pendingDestination {
-      self.pendingDestination = nil
-      onOpen(pendingDestination)
+    let recognition = recognitions.recognition(for: receipt.id)
+    Task {
+      if let recognition { await recognitions.cancel(recognition) }
+      await library.delete(receipt)
     }
-    onHistoryDismiss()
   }
 
-  private func openTrash() {
-    guard selectedDetent != .large else {
-      isTrashPresented = true
+  private func importImages(_ items: [PhotosPickerItem]) async {
+    guard !items.isEmpty else { return }
+    isImporting = true
+    defer {
+      isImporting = false
+      importedItems = []
+    }
+    let pages = await ReceiptPhotoImporter.pages(from: items)
+    guard !pages.isEmpty else {
+      importErrorDescription = "The selected images could not be read. Select different images."
       return
     }
-    withAnimation(.smooth(duration: 0.35), completionCriteria: .removed) {
-      selectedDetent = .large
-    } completion: {
-      isTrashPresented = true
-    }
+    let scan = ReceiptScan(pages: pages, source: .photoLibrary)
+    onOpen(.receipt(.scan(scan, recognitions: recognitions)))
   }
+}
 
-  private func closeTrash() {
-    withAnimation(.smooth(duration: 0.35)) {
-      isTrashPresented = false
-    }
-  }
+/// The first-run screen, shown until the library has a receipt.
+private struct ReceiptLibraryEmptyState: View {
+  @State private var hasAppeared = false
 
-  private func finishTrashSwipe(translation: CGFloat, velocity: CGFloat, width: CGFloat) {
-    let projectedTranslation = translation + velocity * 0.2
-    guard projectedTranslation > width / 2 else {
-      withAnimation(.smooth(duration: 0.25)) {
-        trashSwipeOffset = 0
+  var body: some View {
+    ContentUnavailableView {
+      VStack(spacing: 16) {
+        Image(systemName: "receipt")
+          .font(.system(size: 58))
+          .foregroundStyle(.tint)
+          .symbolEffect(.bounce, value: hasAppeared)
+        Text("Open Receipt")
+          .font(.largeTitle.bold())
+        Text("Scan. Split. Settle.")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
       }
+    } description: {
+      Text("Tap \(Image(systemName: "plus")) to scan, import, or enter your first receipt.")
+    }
+    .onAppear { hasAppeared = true }
+  }
+}
+
+/// Persistent status for receipt reading, shown before a person scans rather than after.
+private struct ReceiptModelNotice: View {
+  let status: ReceiptModelStatus
+  let onIncreaseLimit: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label(message, systemImage: systemImage)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+      if canIncreaseLimit {
+        Button("Increase Limit", action: onIncreaseLimit)
+          .font(.footnote.weight(.semibold))
+      }
+    }
+  }
+
+  private var message: String {
+    switch status {
+    case .available:
+      return ""
+    case .approachingLimit:
+      return "You’re close to today’s limit for reading receipts."
+    case .limitReached(let resetDate, _):
+      let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
       return
+        "Today’s reading limit is reached. New scans are saved and read automatically \(resumption)."
+    case .unavailable(let reason):
+      return "\(reason) You can still enter receipts manually."
     }
-    withAnimation(.smooth(duration: 0.25), completionCriteria: .removed) {
-      trashSwipeOffset = width
-    } completion: {
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        isTrashPresented = false
-        trashSwipeOffset = 0
-      }
+  }
+
+  private var systemImage: String {
+    switch status {
+    case .available, .approachingLimit: "gauge.with.dots.needle.67percent"
+    case .limitReached: "hourglass"
+    case .unavailable: "exclamationmark.triangle"
+    }
+  }
+
+  private var canIncreaseLimit: Bool {
+    switch status {
+    case .approachingLimit(let canIncreaseLimit), .limitReached(_, let canIncreaseLimit):
+      canIncreaseLimit
+    case .available, .unavailable:
+      false
     }
   }
 }

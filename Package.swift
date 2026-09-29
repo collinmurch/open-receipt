@@ -9,7 +9,8 @@ let package = Package(
     ],
     products: [
         .library(name: "ReceiptKit", targets: ["ReceiptKit"]),
-        .executable(name: "ReceiptLab", targets: ["ReceiptLab"])
+        .executable(name: "ReceiptLab", targets: ["ReceiptLab"]),
+        .executable(name: "ScreenshotComposer", targets: ["ScreenshotComposer"])
     ],
     targets: [
         .target(
@@ -22,6 +23,10 @@ let package = Package(
             name: "ReceiptLab",
             dependencies: ["ReceiptKit"],
             path: "Tools/ReceiptLab"
+        ),
+        .executableTarget(
+            name: "ScreenshotComposer",
+            path: "Tools/Screenshots/Composer"
         ),
         .testTarget(
             name: "ReceiptKitTests",

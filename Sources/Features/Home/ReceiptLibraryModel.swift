@@ -4,9 +4,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class ReceiptLibraryModel {
-  private(set) var receipts: [ReceiptSummary] = []
+  private(set) var receipts: [ReceiptSummary] = [] {
+    didSet { sections = ReceiptLibrarySections.grouped(receipts) }
+  }
+  /// `receipts` grouped by month, regrouped only when `receipts` changes.
+  private(set) var sections: [ReceiptLibrarySection] = []
   private(set) var deletedReceipts: [DeletedReceiptSummary] = []
-  private(set) var isLoading = false
   private(set) var hasLoaded = false
   var errorDescription: String?
 
@@ -18,8 +21,6 @@ final class ReceiptLibraryModel {
   }
 
   func load() async {
-    isLoading = true
-    defer { isLoading = false }
     var purgeError: Error?
     do {
       try await purgeExpiredTrashIfNeeded(now: Date())
@@ -40,8 +41,19 @@ final class ReceiptLibraryModel {
     if !hasLoaded { hasLoaded = true }
   }
 
+  /// Moves `receipt` to Recently Deleted. A receipt deleted while it was first being read may not
+  /// be listed yet, so the library reloads once it is gone.
   func delete(_ receipt: ReceiptSummary) async {
-    guard let index = receipts.firstIndex(where: { $0.id == receipt.id }) else { return }
+    guard let index = receipts.firstIndex(where: { $0.id == receipt.id }) else {
+      do {
+        try await storage.delete(receipt.id)
+      } catch {
+        errorDescription = error.localizedDescription
+        return
+      }
+      await load()
+      return
+    }
     withAnimation(.smooth(duration: 0.4)) {
       _ = receipts.remove(at: index)
     }

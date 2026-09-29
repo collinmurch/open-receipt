@@ -17,6 +17,15 @@ AUTO_EXPORT_OPTIONS = $(BUILD_DIR)/AppStoreExportOptions-auto.plist
 AUTO_BUILD_NUMBER = $(filter auto,$(build_number))
 RECEIPTLAB_DERIVED = $(BUILD_DIR)/derived-receiptlab
 RECEIPTLAB    = $(RECEIPTLAB_DERIVED)/Build/Products/Release/ReceiptLab.app/Contents/MacOS/ReceiptLab
+ASSETS        = Assets
+ICON          = App/open-receipt.icon
+ICTOOL        = $(DEVELOPER_DIR)/../Applications/Icon Composer.app/Contents/Executables/ictool
+ICON_RENDITIONS = Default Dark ClearLight ClearDark TintedLight TintedDark
+ICON_EXPORTS  = $(foreach rendition,$(ICON_RENDITIONS),$(ASSETS)/Icons/open-receipt-iOS-$(rendition)-1024@1x.png)
+SCREENSHOT_SIMULATOR = platform=iOS Simulator,name=iPhone 17 Pro Max,OS=latest
+SCREENSHOT_CAPTURES  = $(ASSETS)/ScreenshotData
+SCREENSHOT_RECEIPT   = $(ASSETS)/Receipts/example-receipt.json
+SCREENSHOT_OUTPUT    = $(ASSETS)/Previews
 BASE_SPEC     = project.yml
 LOCAL_SPEC    = project.local.yml
 CURRENT_TEAM  := $(shell if [ -f "$(PROJECT)/project.pbxproj" ]; then rg -o 'DEVELOPMENT_TEAM = [A-Z0-9]+' "$(PROJECT)/project.pbxproj" | head -1 | awk '{print $$3}'; elif [ -f "$(LOCAL_SPEC)" ]; then awk '/DEVELOPMENT_TEAM:/ {print $$2; exit}' "$(LOCAL_SPEC)"; fi)
@@ -113,6 +122,42 @@ receiptlab: gen
 		CODE_SIGN_STYLE=Automatic \
 		$(if $(RESOLVED_TEAM),DEVELOPMENT_TEAM=$(RESOLVED_TEAM),) \
 		-quiet
+
+# ─── App Store assets ────────────────────────────────────────────────────
+# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|library limits both steps.
+.PHONY: icons
+icons: $(ICON_EXPORTS) ## Export the app icon renditions to Assets/Icons
+
+$(ASSETS)/Icons/open-receipt-iOS-%-1024@1x.png: $(ICON)/icon.json $(wildcard $(ICON)/Assets/*)
+	@mkdir -p "$(@D)"
+	@"$(ICTOOL)" "$(ICON)" --export-image --output-file "$@" \
+		--platform iOS --rendition $* --width 1024 --height 1024 --scale 1 >/dev/null
+	@echo "Wrote $@"
+
+.PHONY: screenshots
+screenshots: $(if $(cached),,gen) ## Capture and compose App Store screenshots. cached=1 only composes.
+	@set -o pipefail; \
+	if [ -z "$(cached)" ]; then \
+		$(if $(of),,rm -rf "$(SCREENSHOT_CAPTURES)";) \
+		mkdir -p "$(SCREENSHOT_CAPTURES)"; \
+		TEST_RUNNER_SCREENSHOTS_OUTPUT="$(abspath $(SCREENSHOT_CAPTURES))" \
+		TEST_RUNNER_SCREENSHOTS_RECEIPT="$(abspath $(SCREENSHOT_RECEIPT))" \
+		xcodebuild test \
+			-project $(PROJECT) \
+			-scheme Screenshots \
+			-destination '$(SCREENSHOT_SIMULATOR)' \
+			-derivedDataPath $(BUILD_DIR)/derived \
+			$(if $(of),-only-testing:ScreenshotCapture/ScreenshotCapture/test$$(echo "$(of)" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')) \
+			| xcbeautify || exit $$?; \
+	elif [ ! -d "$(SCREENSHOT_CAPTURES)/light" ]; then \
+		echo "No capture in $(SCREENSHOT_CAPTURES). Run make screenshots first." >&2; exit 66; \
+	fi; \
+	swift build -c release --product ScreenshotComposer && \
+	.build/release/ScreenshotComposer \
+		--captures "$(SCREENSHOT_CAPTURES)" \
+		--assets "$(ASSETS)" \
+		--output "$(SCREENSHOT_OUTPUT)" \
+		$(if $(of),--only "$(of)")
 
 # ─── Build / Test ─────────────────────────────────────────────────────────────
 .PHONY: build

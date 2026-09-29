@@ -1,5 +1,5 @@
-import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -46,16 +46,7 @@ final class SavedPeopleModel {
         contactIdentifier: contact.identifier,
         at: date)
     else { return nil }
-    var didChange = false
-    if person.paymentMethods.venmo == nil, let recipient = contact.defaultVenmoRecipient {
-      person.paymentMethods.venmo = .init(recipient: recipient)
-      didChange = true
-    }
-    if person.paymentMethods.iMessage == nil, let recipient = contact.defaultIMessageRecipient {
-      person.paymentMethods.iMessage = .init(recipient: recipient)
-      didChange = true
-    }
-    return didChange ? await save(person) : person
+    return person.adopt(contact.paymentDefaults(for: person)) ? await save(person) : person
   }
 
   func include(name: String, at date: Date = Date()) async -> Person? {
@@ -91,6 +82,17 @@ final class SavedPeopleModel {
     }
   }
 
+  /// Saves the payment methods each person's contact suggests for those they haven't set.
+  func adoptContactPaymentDefaults(from contactClient: ContactClient) async {
+    let defaults = await contactClient.defaultPaymentMethods(for: people)
+    for var person in people {
+      guard let personDefaults = defaults[person.id], person.adopt(personDefaults) else {
+        continue
+      }
+      _ = await save(person)
+    }
+  }
+
   func save(_ person: Person) async -> Person? {
     do {
       let saved = try await storage.save(person)
@@ -106,7 +108,9 @@ final class SavedPeopleModel {
   func delete(_ person: Person) async -> Bool {
     do {
       try await storage.delete(person.id)
-      people.removeAll { $0.id == person.id }
+      withAnimation(.smooth(duration: 0.3)) {
+        people.removeAll { $0.id == person.id }
+      }
       errorDescription = nil
       return true
     } catch {

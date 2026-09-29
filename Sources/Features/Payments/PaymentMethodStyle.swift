@@ -1,14 +1,15 @@
 import SwiftUI
 
 extension PaymentMethod {
-  func color(for colorScheme: ColorScheme) -> Color {
+  /// A color that stays legible under white labels, for prominent tinted buttons.
+  var prominentColor: Color {
     switch self {
     case .venmo:
       Color(red: 0, green: 140.0 / 255.0, blue: 1)
     case .cashApp:
-      Color(red: 0, green: 214.0 / 255.0, blue: 79.0 / 255.0)
+      Color(red: 0, green: 0.6, blue: 0.24)
     case .iMessage:
-      colorScheme == .dark ? .white : .black
+      .green
     case .none:
       .orange
     }

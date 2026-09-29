@@ -29,8 +29,8 @@ struct ReceiptPagesView: View {
   @State private var isRescanConfirmationPresented = false
   @State private var errorDescription: String?
   @State private var haptic = HapticEvent()
-  @ScaledMetric(relativeTo: .body) private var actionButtonClearance: CGFloat = 76
   @Environment(\.receiptStorageClient) private var storage
+  @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.dismiss) private var dismiss
   @Environment(\.colorScheme) private var colorScheme
 
@@ -62,23 +62,23 @@ struct ReceiptPagesView: View {
           return true
         }
       }
-      .contentMargins(.bottom, editor.needsRescan ? actionButtonClearance : 0, for: .scrollContent)
       .receiptBackground(style)
       .navigationTitle("Pages")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
+        ToolbarItem(placement: .topBarLeading) {
+          Button(role: .close) { dismiss() }
         }
       }
-      .overlay(alignment: .bottom) {
-        if editor.needsRescan {
-          rescanButton
-            .offset(y: 16)
-            .transition(.scale(scale: 0.5).combined(with: .opacity))
+      .safeAreaBar(edge: .bottom) {
+        GlassEffectContainer {
+          if editor.needsRescan {
+            rescanButton
+          }
         }
+        .padding(.bottom, 8)
+        .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: editor.needsRescan)
       }
-      .animation(.bouncy(duration: 0.65, extraBounce: 0.12), value: editor.needsRescan)
     }
     .tint(style.accentColor(for: colorScheme))
     .task(id: Set(editor.pages.map(\.id))) { await loadPageURLs() }
@@ -95,7 +95,11 @@ struct ReceiptPagesView: View {
           isScannerPresented = false
           addPages { scan.pages }
         },
-        onCancel: { isScannerPresented = false }
+        onCancel: { isScannerPresented = false },
+        onFailure: { error in
+          isScannerPresented = false
+          errorDescription = error.localizedDescription
+        }
       )
       .ignoresSafeArea()
     }
@@ -124,9 +128,25 @@ struct ReceiptPagesView: View {
   }
 
   private var footnote: String? {
-    if editor.needsRescan { return "Rescan to read the receipt from the updated pages." }
+    if editor.needsRescan {
+      return rescanUnavailableReason ?? "Rescan to read the receipt from the updated pages."
+    }
     if editor.pages.count > 1 { return "Touch and hold a page to reorder or delete it." }
     return nil
+  }
+
+  /// Why the receipt can't be rescanned right now, or `nil` when it can.
+  private var rescanUnavailableReason: String? {
+    switch recognitions.modelStatus {
+    case .limitReached(let resetDate, _):
+      let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
+      return
+        "Today’s reading limit is reached. Rescan \(resumption), or edit the items to match the updated pages."
+    case .unavailable(let reason):
+      return "\(reason) Edit the items to match the updated pages."
+    case .available, .approachingLimit:
+      return nil
+    }
   }
 
   private var displayedPages: [ReceiptDocument.Page] {
@@ -144,7 +164,7 @@ struct ReceiptPagesView: View {
           Text(number, format: .number)
             .font(.caption.weight(.semibold).monospacedDigit())
             .frame(minWidth: 28, minHeight: 28)
-            .glassEffect(.regular, in: .circle)
+            .background(.regularMaterial, in: .circle)
             .padding(8)
         }
     }
@@ -158,7 +178,8 @@ struct ReceiptPagesView: View {
       delegate: ReceiptPageDropDelegate(
         target: page.id,
         order: $orderedPageIDs,
-        draggedPageID: $draggedPageID)
+        draggedPageID: $draggedPageID,
+        onReorder: { haptic.play(.selection) })
     )
     .contextMenu {
       Button("Delete Page", systemImage: "trash", role: .destructive) {
@@ -219,9 +240,12 @@ struct ReceiptPagesView: View {
   }
 
   private var rescanButton: some View {
-    ReceiptActionButton(title: "Rescan", systemImage: "arrow.clockwise", style: style) {
+    ReceiptActionButton(
+      title: "Rescan", systemImage: "arrow.clockwise", tint: style.prominentColor
+    ) {
       isRescanConfirmationPresented = true
     }
+    .disabled(rescanUnavailableReason != nil)
     .accessibilityHint("Reads the receipt again from the current pages")
     .confirmationDialog(
       "Rescan Receipt?",
@@ -303,6 +327,7 @@ private struct ReceiptPageDropDelegate: DropDelegate {
   let target: ReceiptDocument.Page.ID
   @Binding var order: [ReceiptDocument.Page.ID]
   @Binding var draggedPageID: ReceiptDocument.Page.ID?
+  let onReorder: () -> Void
 
   func dropEntered(info: DropInfo) {
     guard let draggedPageID, draggedPageID != target,
@@ -314,6 +339,7 @@ private struct ReceiptPageDropDelegate: DropDelegate {
         fromOffsets: IndexSet(integer: source),
         toOffset: destination > source ? destination + 1 : destination)
     }
+    onReorder()
   }
 
   func dropUpdated(info: DropInfo) -> DropProposal? {

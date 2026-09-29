@@ -1,41 +1,15 @@
 import SwiftUI
 
-struct ReceiptLibraryListRow: View {
-  let receipt: ReceiptSummary
-  var recognition: ReceiptRecognition?
-  let onOpen: () -> Void
-  let onDelete: () -> Void
-
-  var body: some View {
-    Button {
-      guard !receipt.isUnavailable else { return }
-      onOpen()
-    } label: {
-      ReceiptLibraryRow(receipt: receipt, recognition: recognition)
-    }
-    .buttonStyle(.plain)
-    .contextMenu {
-      if recognition == nil {
-        Button("Delete Receipt", systemImage: "trash", role: .destructive) {
-          onDelete()
-        }
-      }
-    }
-  }
-}
-
 struct ReceiptLibraryRow: View {
   let receipt: ReceiptSummary
   /// The active read of this receipt, which the row follows as it streams.
   var recognition: ReceiptRecognition?
+  /// The namespace the receipt zooms out of when it opens from this row.
+  var transitionNamespace: Namespace.ID?
 
   var body: some View {
     HStack(spacing: 14) {
-      ReceiptMonogramTile(
-        style: receipt.backgroundStyle,
-        initials: recognition == nil && receipt.recognitionStatus == .succeeded
-          ? receipt.merchantName.flatMap(ReceiptMonogram.initials) : nil,
-        systemImage: tileSymbol)
+      monogramTile
 
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
@@ -57,18 +31,45 @@ struct ReceiptLibraryRow: View {
 
       Spacer(minLength: 8)
 
-      if recognition != nil {
-        ProgressView()
-      } else if let total = receipt.total {
-        Text(total, format: .currency(code: displayCurrency))
-          .font(.body.monospacedDigit())
-          .foregroundStyle(.primary)
-      } else {
-        Image(systemName: receipt.isUnavailable ? "exclamationmark.triangle" : "arrow.clockwise")
-          .foregroundStyle(.secondary)
-      }
+      trailingStatus
     }
     .contentShape(.rect)
+    .animation(.smooth(duration: 0.3), value: recognition == nil)
+    .animation(.smooth(duration: 0.3), value: receipt)
+  }
+
+  @ViewBuilder
+  private var trailingStatus: some View {
+    if recognition != nil {
+      ProgressView()
+    } else if let total = receipt.total {
+      Text(total, format: .currency(code: ReceiptCurrency.displayCode(receipt.currency)))
+        .font(.body.monospacedDigit())
+        .foregroundStyle(.primary)
+        .contentTransition(.numericText())
+    } else {
+      Image(systemName: statusSymbol)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder
+  private var monogramTile: some View {
+    let tile = ReceiptMonogramTile(
+      style: receipt.backgroundStyle,
+      initials: recognition == nil && receipt.recognitionStatus == .succeeded
+        ? receipt.merchantName.flatMap(ReceiptMonogram.initials) : nil,
+      systemImage: tileSymbol)
+    if let transitionNamespace {
+      tile.matchedTransitionSource(id: receipt.id, in: transitionNamespace)
+    } else {
+      tile
+    }
+  }
+
+  private var statusSymbol: String {
+    if receipt.isUnavailable { return "exclamationmark.triangle" }
+    return receipt.deferredUntil == nil ? "arrow.clockwise" : "hourglass"
   }
 
   private var tileSymbol: String {
@@ -80,7 +81,7 @@ struct ReceiptLibraryRow: View {
   private var title: String {
     if let recognition { return recognition.preview.merchantName ?? "Reading Receipt" }
     if receipt.isUnavailable { return "Unavailable Receipt" }
-    if receipt.recognitionStatus != .succeeded { return "Unprocessed Receipt" }
+    if receipt.recognitionStatus != .succeeded { return "Unread Receipt" }
     let merchant = receipt.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return merchant.isEmpty ? "Receipt" : merchant
   }
@@ -94,18 +95,18 @@ struct ReceiptLibraryRow: View {
       return "Reading · \(items)"
     }
     if receipt.isUnavailable { return "This receipt cannot be opened." }
-    if receipt.recognitionStatus != .succeeded { return "Needs Retry" }
+    if receipt.recognitionStatus != .succeeded {
+      if let deferredUntil = receipt.deferredUntil {
+        return DeferredReceiptRead.status(until: deferredUntil)
+      }
+      return receipt.recognitionStatus == .failed ? "Couldn’t Read" : "Not Read"
+    }
     if let localDate = receipt.localDate,
       let formattedDate = ReceiptLibraryDateFormatter.dayTitle(localDate: localDate)
     {
       return formattedDate
     }
-    return receipt.capturedAt.formatted(.dateTime.month(.wide).day())
-  }
-
-  private var displayCurrency: String {
-    guard let currency = receipt.currency, currency.count == 3 else { return "USD" }
-    return currency
+    return receipt.capturedAt.formatted(.dateTime.month(.abbreviated).day())
   }
 }
 
@@ -133,9 +134,12 @@ struct ReceiptMonogramTile: View {
           if let initials {
             Text(initials)
               .font(.system(.subheadline, design: .rounded).weight(.bold))
+              .transition(.opacity.combined(with: .scale(scale: 0.8)))
           } else {
             Image(systemName: systemImage)
               .font(.subheadline.weight(.semibold))
+              .contentTransition(.symbolEffect(.replace))
+              .transition(.opacity.combined(with: .scale(scale: 0.8)))
           }
         }
         .foregroundStyle(style.accentColor(for: colorScheme))

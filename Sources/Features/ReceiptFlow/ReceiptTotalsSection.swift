@@ -75,7 +75,8 @@ struct ReceiptTotalsSection: View {
           Menu {
             ForEach(draft.missingAdjustments) { adjustment in
               Button {
-                draft.addAdjustment(adjustment)
+                withAnimation(.smooth) { draft.addAdjustment(adjustment) }
+                haptic.play(.selection)
               } label: {
                 Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
               }
@@ -84,7 +85,8 @@ struct ReceiptTotalsSection: View {
             Label("Add Adjustment", systemImage: "plus")
               .labelStyle(.iconOnly)
           }
-          .buttonStyle(.glass)
+          .buttonStyle(.bordered)
+          .buttonBorderShape(.circle)
           .accessibilityLabel("Add Adjustment")
         }
         Spacer()
@@ -125,7 +127,7 @@ struct ReceiptTotalsSection: View {
           withAnimation(.smooth) { draft.fixTotal() }
           haptic.play(.success)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.bordered)
         .tint(.orange)
         Spacer()
       }

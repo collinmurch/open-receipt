@@ -27,6 +27,57 @@
       XCTAssertNotNil(model.errorDescription)
     }
 
+    func testDeletingUnlistedReceiptDeletesStoredReceipt() async {
+      let model = ReceiptLibraryModel(storage: makeStorage(receipts: []))
+      await model.load()
+
+      await model.delete(makeSummary())
+
+      XCTAssertTrue(model.receipts.isEmpty)
+      XCTAssertNil(model.errorDescription)
+    }
+
+    func testFailedDeleteOfUnlistedReceiptShowsError() async {
+      let model = ReceiptLibraryModel(
+        storage: makeStorage(receipts: [], deleteError: .deleteFailed))
+      await model.load()
+
+      await model.delete(makeSummary())
+
+      XCTAssertNotNil(model.errorDescription)
+    }
+
+    func testLoadGroupsReceiptsIntoSections() async {
+      let receipt = makeSummary()
+      let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
+
+      await model.load()
+
+      XCTAssertEqual(model.sections.map(\.id), ["2026-08"])
+      XCTAssertEqual(model.sections.first?.receipts, [receipt])
+    }
+
+    func testDeleteRemovesReceiptFromSections() async {
+      let receipt = makeSummary()
+      let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
+      await model.load()
+
+      await model.delete(receipt)
+
+      XCTAssertTrue(model.sections.isEmpty)
+    }
+
+    func testFailedDeleteRestoresReceiptToSections() async {
+      let receipt = makeSummary()
+      let model = ReceiptLibraryModel(
+        storage: makeStorage(receipts: [receipt], deleteError: .deleteFailed))
+      await model.load()
+
+      await model.delete(receipt)
+
+      XCTAssertEqual(model.sections.first?.receipts, [receipt])
+    }
+
     func testLoadIncludesRecentlyDeletedReceipts() async {
       let deletedReceipt = makeDeletedSummary()
       let model = ReceiptLibraryModel(

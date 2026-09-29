@@ -3,6 +3,8 @@ import ContactsUI
 import SwiftUI
 
 struct ReceiptPeopleView: View {
+  private static let participantAnimation = Animation.smooth(duration: 0.25)
+
   let draft: ReceiptDraft
   private let contactClient: ContactClient
   private let receiptStorage: ReceiptStorageClient
@@ -11,7 +13,6 @@ struct ReceiptPeopleView: View {
   @State private var isNewPersonPresented = false
   @State private var haptic = HapticEvent()
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.openURL) private var openURL
 
   init(
     draft: ReceiptDraft,
@@ -54,7 +55,9 @@ struct ReceiptPeopleView: View {
         } else if contactModel.canReadContacts {
           contactsSection
         } else {
-          unavailableContactsSection
+          ContactsUnavailableSection(
+            authorization: contactModel.authorization,
+            settingsMessage: "Allow Contacts access in Settings to add people from your contacts.")
         }
 
         if let errorDescription = contactModel.errorDescription ?? peopleModel.errorDescription {
@@ -72,15 +75,15 @@ struct ReceiptPeopleView: View {
       .haptics(haptic)
       .searchable(text: $contactModel.searchText, prompt: "Search people")
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
+        ToolbarItem(placement: .topBarLeading) {
+          Button("Close", systemImage: "xmark", role: .close) { dismiss() }
         }
       }
       .sheet(isPresented: $isNewPersonPresented) {
         NewPersonView { name in
           Task {
             guard let person = await peopleModel.include(name: name) else { return }
-            draft.addPerson(person)
+            addToDraft(person)
             haptic.play(.selection)
           }
         }
@@ -147,15 +150,13 @@ struct ReceiptPeopleView: View {
 
   private func selectOwner(_ contact: ContactSummary?) {
     guard let contact else {
-      draft.setOwner(nil)
-      haptic.play(.selection)
+      setDraftOwner(nil)
       return
     }
     let owner = ReceiptOwner(contact)
     Task {
       let avatar = await contactModel.avatar(for: contact.identifier)
-      draft.setOwner(owner, avatarData: avatar)
-      haptic.play(.selection)
+      setDraftOwner(owner, avatarData: avatar)
       await peopleModel.adoptOwner(owner)
     }
   }
@@ -173,7 +174,7 @@ struct ReceiptPeopleView: View {
             Task {
               guard let included = await peopleModel.include(person) else { return }
               let avatar = await avatar(for: included.contactIdentifier)
-              draft.addPerson(included, avatarData: avatar)
+              addToDraft(included, avatarData: avatar)
               haptic.play(.selection)
             }
           }
@@ -202,16 +203,8 @@ struct ReceiptPeopleView: View {
 
   private var contactsSection: some View {
     Section("Contacts") {
-      if contactModel.authorization == .limited {
-        Button("Choose More Contacts", systemImage: "person.crop.circle.badge.plus") {
-          contactModel.isContactAccessPickerPresented = true
-        }
-
-        if !contactModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          ContactAccessButton(queryString: contactModel.searchText) { identifiers in
-            Task { await addResolvedContacts(identifiers) }
-          }
-        }
+      LimitedContactAccessRows(model: contactModel) { identifiers in
+        Task { await addResolvedContacts(identifiers) }
       }
 
       if contactModel.filteredContacts.isEmpty {
@@ -222,22 +215,6 @@ struct ReceiptPeopleView: View {
           contactModel.filteredContacts.filter { $0.identifier != ownerContactIdentifier }
         ) { contact in
           contactRow(contact)
-        }
-      }
-    }
-  }
-
-  private var unavailableContactsSection: some View {
-    Section("Contacts") {
-      if contactModel.authorization == .restricted {
-        Text("Contacts are unavailable because this device restricts access.")
-          .foregroundStyle(.secondary)
-      } else if contactModel.authorization == .denied {
-        Text("Allow Contacts access in Settings to add people from your contacts.")
-          .foregroundStyle(.secondary)
-        Button("Open Settings") {
-          guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-          openURL(url)
         }
       }
     }
@@ -265,7 +242,7 @@ struct ReceiptPeopleView: View {
         Task {
           guard let person = await peopleModel.include(contact) else { return }
           let avatar = await contactModel.avatar(for: contact.identifier)
-          draft.addPerson(person, avatarData: avatar)
+          addToDraft(person, avatarData: avatar)
           haptic.play(.selection)
         }
       }
@@ -291,8 +268,23 @@ struct ReceiptPeopleView: View {
     }
   }
 
+  private func addToDraft(_ person: Person, avatarData: Data? = nil) {
+    withAnimation(Self.participantAnimation) {
+      _ = draft.addPerson(person, avatarData: avatarData)
+    }
+  }
+
   private func removeParticipant(_ id: ReceiptParticipant.ID) {
-    draft.removeParticipant(id: id)
+    withAnimation(Self.participantAnimation) {
+      draft.removeParticipant(id: id)
+    }
+    haptic.play(.selection)
+  }
+
+  private func setDraftOwner(_ owner: ReceiptOwner?, avatarData: Data? = nil) {
+    withAnimation(Self.participantAnimation) {
+      draft.setOwner(owner, avatarData: avatarData)
+    }
     haptic.play(.selection)
   }
 
@@ -313,7 +305,7 @@ struct ReceiptPeopleView: View {
     for contact in contacts {
       guard let person = await peopleModel.include(contact) else { continue }
       let avatar = await contactModel.avatar(for: contact.identifier)
-      draft.addPerson(person, avatarData: avatar)
+      addToDraft(person, avatarData: avatar)
       didAdd = true
     }
     if didAdd {
@@ -339,7 +331,7 @@ private struct NewPersonView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
+          Button(role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Add", action: addPerson)

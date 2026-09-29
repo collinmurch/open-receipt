@@ -1,133 +1,111 @@
 import SwiftUI
 
+/// A screen pushed from the receipt library.
+enum HomeRoute: Hashable {
+  /// A receipt. Receipts opened from a library row zoom out of that row.
+  case receipt(ReceiptFlowInput, zoomsFromRow: Bool = false)
+  case people
+  case settings
+  case recentlyDeleted
+}
+
 struct HomeView: View {
-  @State private var isHistoryPresented = true
-  @State private var navigationReceiptInput: ReceiptFlowInput?
-  @State private var capturedReceiptInput: ReceiptFlowInput?
+  @State private var path: [HomeRoute] = []
   @State private var isScannerPresented = false
-  @State private var isPeoplePresented = false
-  @State private var isPeoplePending = false
-  @State private var isSettingsPresented = false
-  @State private var isSettingsPending = false
+  @State private var scanErrorDescription: String?
+  @Namespace private var receiptTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.receiptStorageClient) private var storage
   @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(\.scenePhase) private var scenePhase
+
+  init(initialPath: [HomeRoute] = []) {
+    _path = State(initialValue: initialPath)
+  }
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       ReceiptLibraryView(
-        isHistoryPresented: $isHistoryPresented,
-        onHistoryDismiss: openPendingDestination,
-        onOpen: open
+        transitionNamespace: receiptTransition,
+        onScan: presentScanner,
+        onOpen: { path.append($0) }
       )
-      .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
-          Button {
-            isSettingsPending = true
-            isHistoryPresented = false
-          } label: {
-            Label("Settings", systemImage: "gearshape")
-              .labelStyle(.iconOnly)
-          }
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-          Button {
-            isPeoplePending = true
-            isHistoryPresented = false
-          } label: {
-            Label("People", systemImage: "person.2")
-              .labelStyle(.iconOnly)
-          }
-        }
-      }
-      .navigationDestination(isPresented: peopleNavigationBinding) {
-        PeopleView(storage: peopleStorage, receiptStorage: storage)
-      }
-      .navigationDestination(isPresented: settingsNavigationBinding) {
-        PaymentMethodSettingsView()
-      }
-      .navigationDestination(isPresented: receiptNavigationBinding) {
-        if let input = navigationReceiptInput {
-          ReceiptFlowView(input: input)
-        }
-      }
+      .navigationDestination(for: HomeRoute.self) { destination(for: $0) }
     }
-    .fullScreenCover(isPresented: $isScannerPresented, onDismiss: finishScannerDismissal) {
+    .fullScreenCover(isPresented: $isScannerPresented) {
       ReceiptScannerView(
         onCapture: capture,
-        onCancel: { isScannerPresented = false }
+        onCancel: { isScannerPresented = false },
+        onFailure: { error in
+          isScannerPresented = false
+          scanErrorDescription = error.localizedDescription
+        }
       )
       .ignoresSafeArea()
     }
+    .errorHaptic(scanErrorDescription)
+    .alert(
+      "Couldn’t Scan Receipt",
+      isPresented: Binding(
+        get: { scanErrorDescription != nil },
+        set: { if !$0 { scanErrorDescription = nil } })
+    ) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(scanErrorDescription ?? "The document scanner could not scan the receipt.")
+    }
     .environment(\.receiptLibraryRefresh, ReceiptLibraryRefreshAction(library: library))
-  }
-
-  private var receiptNavigationBinding: Binding<Bool> {
-    Binding(
-      get: { navigationReceiptInput != nil },
-      set: { isPresented in
-        guard !isPresented else { return }
-        navigationReceiptInput = nil
-        isHistoryPresented = true
-      })
-  }
-
-  private func open(_ destination: ReceiptLibraryDestination) {
-    switch destination {
-    case .scanner:
-      isScannerPresented = true
-    case .receipt(let input):
-      navigationReceiptInput = input
+    .task {
+      await library.load()
+      await recognitions.resumeDeferredReads()
+    }
+    .onChange(of: recognitions.finishedCount) {
+      Task { await library.load() }
+    }
+    .onChange(of: scenePhase) { _, newPhase in
+      guard newPhase == .active else { return }
+      Task {
+        await library.refreshTrashIfNeeded()
+        await recognitions.resumeDeferredReads()
+      }
     }
   }
 
-  /// Reading starts as soon as the scan exists; the receipt opens once the scanner has closed.
+  @ViewBuilder
+  private func destination(for route: HomeRoute) -> some View {
+    switch route {
+    case .receipt(let input, let zoomsFromRow):
+      if zoomsFromRow {
+        ReceiptFlowView(input: input)
+          .navigationTransition(.zoom(sourceID: input.id, in: receiptTransition))
+      } else {
+        ReceiptFlowView(input: input)
+      }
+    case .people:
+      PeopleView(storage: peopleStorage, receiptStorage: storage)
+    case .settings:
+      SettingsView()
+    case .recentlyDeleted:
+      ReceiptTrashView()
+    }
+  }
+
+  private func presentScanner() {
+    recognitions.prewarm()
+    isScannerPresented = true
+  }
+
+  /// Reading starts as soon as the scan exists, unless the model is unavailable. The receipt is pushed under the scanner, so closing
+  /// the scanner reveals it without a second transition.
   private func capture(_ scan: ReceiptScan) {
-    capturedReceiptInput = .recognition(recognitions.recognize(scan))
+    let input = ReceiptFlowInput.scan(scan, recognitions: recognitions)
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      path.append(.receipt(input))
+    }
     isScannerPresented = false
-  }
-
-  private func finishScannerDismissal() {
-    if let input = capturedReceiptInput {
-      capturedReceiptInput = nil
-      navigationReceiptInput = input
-    } else {
-      isHistoryPresented = true
-    }
-  }
-
-  private var peopleNavigationBinding: Binding<Bool> {
-    Binding(
-      get: { isPeoplePresented },
-      set: { isPresented in
-        isPeoplePresented = isPresented
-        if !isPresented {
-          isHistoryPresented = true
-        }
-      })
-  }
-
-  private var settingsNavigationBinding: Binding<Bool> {
-    Binding(
-      get: { isSettingsPresented },
-      set: { isPresented in
-        isSettingsPresented = isPresented
-        if !isPresented {
-          isHistoryPresented = true
-        }
-      })
-  }
-
-  private func openPendingDestination() {
-    if isSettingsPending {
-      isSettingsPending = false
-      isSettingsPresented = true
-    } else if isPeoplePending {
-      isPeoplePending = false
-      isPeoplePresented = true
-    }
   }
 }
 

@@ -110,6 +110,7 @@ extension ReceiptDocument {
     document.recognition.lastAttemptedAt = document.recognition.lastAttemptedAt ?? date
     document.recognition.completedAt = document.recognition.completedAt ?? date
     document.recognition.failureMessage = nil
+    document.recognition.deferredUntil = nil
     document.receipt = Receipt(
       merchant: Merchant(name: draft.merchantName),
       transaction: Transaction(localDate: draft.date),

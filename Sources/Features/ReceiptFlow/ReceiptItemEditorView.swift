@@ -6,10 +6,12 @@ struct ReceiptItemEditorView: View {
   let onSplit: (Int) -> Void
   let onDelete: () -> Void
   @State private var isSplitPresented = false
-  @State private var haptic = HapticEvent()
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
+    let currencyCode = ReceiptCurrency.displayCode(currency)
+    let issues = item.validationIssues
+
     Form {
       Section("Item") {
         TextField("Name", text: $item.description, axis: .vertical)
@@ -25,26 +27,16 @@ struct ReceiptItemEditorView: View {
           .accessibilityLabel("Quantity")
         }
         LabeledContent("Line Total") {
-          CurrencyAmountField(
-            "Amount",
-            value: $item.lineTotal,
-            currencyCode: currency.count == 3 ? currency : "USD"
-          )
-          .multilineTextAlignment(.trailing)
-          .accessibilityLabel("Line total")
+          CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currencyCode)
+            .multilineTextAlignment(.trailing)
+            .accessibilityLabel("Line total")
         }
       }
 
-      if item.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        || !item.quantity.isFinite || item.quantity <= 0
-      {
+      if !issues.isEmpty {
         Section("Fix Before Saving") {
-          if item.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Label("Enter an item name.", systemImage: "exclamationmark.circle")
-              .foregroundStyle(.red)
-          }
-          if !item.quantity.isFinite || item.quantity <= 0 {
-            Label("Quantity must be greater than zero.", systemImage: "exclamationmark.circle")
+          ForEach(issues) { issue in
+            Label(issue.itemMessage, systemImage: "exclamationmark.circle")
               .foregroundStyle(.red)
           }
         }
@@ -58,7 +50,6 @@ struct ReceiptItemEditorView: View {
 
       Section {
         Button("Delete Item", role: .destructive) {
-          haptic.play(.removal)
           onDelete()
           dismiss()
         }
@@ -67,14 +58,12 @@ struct ReceiptItemEditorView: View {
     .navigationTitle(item.description.isEmpty ? "New Item" : "Edit Item")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
-    .haptics(haptic)
     .sheet(isPresented: $isSplitPresented) {
       ReceiptItemSplitSheet(
         item: item,
-        currency: currency.count == 3 ? currency : "USD",
+        currency: currencyCode,
         onSplit: { count in
           isSplitPresented = false
-          haptic.play(.success)
           onSplit(count)
           dismiss()
         })
@@ -100,6 +89,8 @@ private struct ReceiptItemSplitSheet: View {
   private static let maximumCount = 50
 
   var body: some View {
+    let amountEach = item.lineTotal / Double(count)
+
     NavigationStack {
       Form {
         Section {
@@ -107,12 +98,14 @@ private struct ReceiptItemSplitSheet: View {
             LabeledContent("Items", value: "\(count)")
           }
           LabeledContent("Each") {
-            Text(item.lineTotal / Double(count), format: .currency(code: currency))
+            Text(amountEach, format: .currency(code: currency))
               .monospacedDigit()
+              .contentTransition(.numericText(value: amountEach))
+              .animation(.smooth, value: count)
           }
         } footer: {
           Text(
-            "Creates ^[\(count) item](inflect: true) at \((item.lineTotal / Double(count)).formatted(.currency(code: currency))) each."
+            "Creates ^[\(count) item](inflect: true) at \(amountEach.formatted(.currency(code: currency))) each."
           )
         }
       }
@@ -120,8 +113,7 @@ private struct ReceiptItemSplitSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel", systemImage: "xmark") { dismiss() }
-            .labelStyle(.iconOnly)
+          Button(role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Split") { onSplit(count) }
@@ -129,5 +121,16 @@ private struct ReceiptItemSplitSheet: View {
       }
     }
     .presentationDetents([.medium])
+  }
+}
+
+extension ReceiptEditorValidationIssue {
+  fileprivate var itemMessage: String {
+    switch self {
+    case .missingItemDescription: "Enter an item name."
+    case .invalidItemQuantity: "Quantity must be greater than zero."
+    case .invalidItemTotal: "Enter a valid line total."
+    default: message
+    }
   }
 }

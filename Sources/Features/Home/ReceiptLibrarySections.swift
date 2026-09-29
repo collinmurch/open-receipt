@@ -1,6 +1,6 @@
 import Foundation
 
-/// A month of receipts in the history drawer.
+/// A month of receipts in the library.
 struct ReceiptLibrarySection: Identifiable, Equatable {
   /// The month as `yyyy-MM`.
   let id: String
@@ -38,6 +38,18 @@ enum ReceiptLibrarySections {
       }
     }
     return sections
+  }
+
+  /// The receipts in `sections` that satisfy `isIncluded`, dropping sections left empty.
+  static func filtered(
+    _ sections: [ReceiptLibrarySection],
+    by isIncluded: (ReceiptSummary) -> Bool
+  ) -> [ReceiptLibrarySection] {
+    sections.compactMap { section in
+      let receipts = section.receipts.filter(isIncluded)
+      guard !receipts.isEmpty else { return nil }
+      return ReceiptLibrarySection(id: section.id, title: section.title, receipts: receipts)
+    }
   }
 
   private static func day(for receipt: ReceiptSummary, calendar: Calendar) -> String {

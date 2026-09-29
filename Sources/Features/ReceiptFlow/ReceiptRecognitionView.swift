@@ -1,15 +1,17 @@
 import SwiftUI
 
 /// A receipt while the model reads it. Rows appear as the model writes them, laid out like the
-/// review list so the finished receipt takes their place without moving.
+/// review list so the finished receipt takes their place without moving. While the read waits for
+/// a connection, the receipt can be entered by hand instead.
 struct ReceiptRecognitionView: View {
   let recognition: ReceiptRecognition
+  let onEnterManually: () -> Void
   @ScaledMetric(relativeTo: .caption2) private var headerHeight = ParticipantStrip.baseHeight
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     let preview = recognition.preview
-    let currency = preview.currency ?? "USD"
+    let currency = ReceiptCurrency.displayCode(preview.currency)
 
     List {
       Section("Items") {
@@ -39,27 +41,29 @@ struct ReceiptRecognitionView: View {
         .transition(.opacity)
       }
     }
-    .contentMargins(.top, headerHeight + 16, for: .scrollContent)
-    .receiptBackground(recognition.backgroundStyle)
+    .scrollContentBackground(.hidden)
     .animation(.smooth(duration: 0.4), value: preview.items.count)
     .animation(.smooth(duration: 0.4), value: preview.total)
-    .overlay(alignment: .top) {
+    .safeAreaBar(edge: .top) {
       ReceiptRecognitionStatusBar(recognition: recognition, height: headerHeight)
-        .padding(.horizontal)
-        .padding(.top, 8)
+        .receiptTopBarPadding()
+    }
+    .safeAreaBar(edge: .bottom) {
+      GlassEffectContainer {
+        if recognition.status == .waitingForConnection {
+          ReceiptActionButton(
+            title: recognition.isRescan ? "Back to Receipt" : "Enter Manually",
+            systemImage: recognition.isRescan ? "arrow.uturn.backward" : "square.and.pencil",
+            tint: recognition.backgroundStyle.prominentColor,
+            action: onEnterManually)
+        }
+      }
+      .padding(.bottom, 8)
+      .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: recognition.status)
     }
     .tint(recognition.backgroundStyle.accentColor(for: colorScheme))
     .navigationTitle(title(for: preview))
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        Text(title(for: preview))
-          .font(.headline)
-          .lineLimit(1)
-          .contentTransition(.opacity)
-          .animation(.smooth, value: preview.merchantName)
-      }
-    }
   }
 
   private func title(for preview: ReceiptParsePreview) -> String {
@@ -105,6 +109,7 @@ private struct ReceiptRecognitionStatusBar: View {
     .padding(.horizontal, 14)
     .frame(maxWidth: .infinity, minHeight: height)
     .glassEffect(in: .rect(cornerRadius: 22))
+    .screenshotHighlight("receipt-reading-status")
     .animation(.smooth(duration: 0.3), value: recognition.status)
     .animation(.smooth(duration: 0.3), value: recognition.preview.items.count)
     .accessibilityElement(children: .combine)
@@ -128,7 +133,7 @@ private struct ReceiptRecognitionStatusBar: View {
         return String(
           AttributedString(localized: "^[\(recognition.pageCount) page](inflect: true)").characters)
       }
-      let currency = preview.currency ?? "USD"
+      let currency = ReceiptCurrency.displayCode(preview.currency)
       let items = String(
         AttributedString(localized: "^[\(preview.items.count) item](inflect: true)").characters)
       let sum = preview.itemTotal.formatted(.currency(code: currency))
@@ -219,7 +224,7 @@ private struct ReceiptRecognitionPlaceholderRow: View {
     HStack {
       Text("Receipt item name")
       Spacer()
-      Text(0, format: .currency(code: "USD"))
+      Text(0, format: .currency(code: CurrencySettings.defaultCode()))
         .monospacedDigit()
     }
     .redacted(reason: .placeholder)

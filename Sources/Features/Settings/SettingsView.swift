@@ -1,8 +1,10 @@
 import SwiftUI
 
-struct PaymentMethodSettingsView: View {
+struct SettingsView: View {
   @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethodRawValue =
     PaymentSettings.initialDefaultMethod.rawValue
+  @AppStorage(CurrencySettings.defaultCodeKey) private var defaultCurrencyCode =
+    CurrencySettings.initialDefaultCode
 
   var body: some View {
     Form {
@@ -21,6 +23,21 @@ struct PaymentMethodSettingsView: View {
         .pickerStyle(.inline)
       } header: {
         Text("Default Payment Method")
+      }
+
+      Section {
+        NavigationLink {
+          ReceiptCurrencyPicker(selection: $defaultCurrencyCode)
+        } label: {
+          LabeledContent(
+            "Currency", value: ReceiptCurrency.localizedName(defaultCurrencyCode))
+        }
+      } header: {
+        Text("Default Currency")
+      } footer: {
+        Text(
+          "New receipts start in this currency. Changing it doesn't change existing receipts."
+        )
       }
 
       Section {

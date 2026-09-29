@@ -11,6 +11,8 @@ struct ParticipantStrip: View {
   let selectedParticipantIDs: Set<ReceiptParticipant.ID>
   let onSelect: (ReceiptParticipant.ID) -> Void
   let onManagePeople: () -> Void
+  /// Where the people sheet zooms from when the Add button opens it.
+  var addTransition: (id: AnyHashable, namespace: Namespace.ID)?
 
   @ScaledMetric(relativeTo: .caption2) private var height = Self.baseHeight
   @ScaledMetric(relativeTo: .caption2) private var avatarSize: CGFloat = 38
@@ -30,10 +32,7 @@ struct ParticipantStrip: View {
 
           Button(action: onManagePeople) {
             VStack(spacing: 4) {
-              Image(systemName: "plus")
-                .font(.headline)
-                .frame(width: avatarSize, height: avatarSize)
-                .background(.secondary.opacity(0.16), in: .circle)
+              addSymbol
               Text("Add")
                 .font(.caption2)
             }
@@ -48,6 +47,7 @@ struct ParticipantStrip: View {
       .scrollIndicators(.hidden)
       .frame(width: min(idealWidth, proxy.size.width), alignment: .leading)
       .glassEffect(in: .rect(cornerRadius: 22))
+      .screenshotHighlight("receipt-participants")
       .frame(maxWidth: .infinity, alignment: .center)
       .animation(.smooth(duration: 0.25), value: selectedParticipantIDs)
     }
@@ -97,6 +97,19 @@ struct ParticipantStrip: View {
     .accessibilityLabel(participant.displayName)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
     .accessibilityHint("Select this person for item assignment")
+  }
+
+  @ViewBuilder
+  private var addSymbol: some View {
+    let symbol = Image(systemName: "plus")
+      .font(.headline)
+      .frame(width: avatarSize, height: avatarSize)
+      .background(.secondary.opacity(0.16), in: .circle)
+    if let addTransition {
+      symbol.matchedTransitionSource(id: addTransition.id, in: addTransition.namespace)
+    } else {
+      symbol
+    }
   }
 
   private var idealWidth: CGFloat {
