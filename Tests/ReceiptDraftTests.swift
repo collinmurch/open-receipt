@@ -21,6 +21,12 @@ final class ReceiptDraftTests: XCTestCase {
     XCTAssertEqual(draft.currentUser?.displayName, "Alex")
   }
 
+  func testNewDraftUsesRequestedAdjustmentSplitMethod() {
+    let draft = ReceiptDraft(receipt: ParsedReceipt(), adjustmentSplitMethod: .even)
+
+    XCTAssertEqual(draft.adjustmentSplitMethod, .even)
+  }
+
   func testSetOwnerUpdatesCurrentUser() {
     let draft = makeDraft()
     let currentUserID = draft.currentUser?.id

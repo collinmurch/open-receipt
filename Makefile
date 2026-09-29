@@ -4,7 +4,8 @@ DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 export DEVELOPER_DIR
 SCHEME        = open-receipt
 PROJECT       = open-receipt.xcodeproj
-SIMULATOR     = platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
+SIM_NAME      = $(or $(device),iPhone 17 Pro)
+SIMULATOR     = platform=iOS Simulator,name=$(SIM_NAME),OS=latest
 BUILD_DESTINATION = generic/platform=iOS Simulator
 CONFIGURATION = $(if $(filter 1,$(release)),Release,Debug)
 DEVICE_HUB     = $(DEVELOPER_DIR)/../Applications/DeviceHub.app
@@ -189,11 +190,11 @@ test: gen ## Run tests. fast=1 uses SPM only.
 .PHONY: run
 run: build ## Build and run on simulator
 	@open "$(DEVICE_HUB)"
-	@xcrun simctl boot "iPhone 17 Pro" 2>/dev/null || true
-	@xcrun simctl bootstatus "iPhone 17 Pro" -b
-	xcrun simctl install booted \
+	@xcrun simctl boot "$(SIM_NAME)" 2>/dev/null || true
+	@xcrun simctl bootstatus "$(SIM_NAME)" -b
+	xcrun simctl install "$(SIM_NAME)" \
 		$(BUILD_DIR)/derived/Build/Products/$(CONFIGURATION)-iphonesimulator/$(SCHEME).app
-	xcrun simctl launch --console booted $(BUNDLE_ID)
+	xcrun simctl launch --console "$(SIM_NAME)" $(BUNDLE_ID)
 
 # ─── Device ───────────────────────────────────────────────────────────────────
 .PHONY: build-device

@@ -7,8 +7,8 @@ enum IMessageRequest {
       .currency(code: currency).locale(Locale(identifier: "en_US")))
     let normalizedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedContext.isEmpty else {
-      return "Could you send me \(formattedAmount) with Apple Cash?"
+      return "Could you pay me \(formattedAmount) when you get a chance?"
     }
-    return "Could you send me \(formattedAmount) with Apple Cash? \(normalizedContext)"
+    return "Could you pay me \(formattedAmount) when you get a chance? \(normalizedContext)"
   }
 }

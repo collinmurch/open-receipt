@@ -16,3 +16,14 @@ enum CurrencySettings {
     return code
   }
 }
+
+enum AdjustmentSplitSettings {
+  static let defaultMethodKey = "defaultAdjustmentSplitMethod"
+  static let initialDefaultMethod = ReceiptAdjustmentSplitMethod.proportional
+
+  /// How new receipts split tax and tip, or proportionally when none valid is stored.
+  static func defaultMethod(in defaults: UserDefaults = .standard) -> ReceiptAdjustmentSplitMethod {
+    defaults.string(forKey: defaultMethodKey).flatMap(ReceiptAdjustmentSplitMethod.init(rawValue:))
+      ?? initialDefaultMethod
+  }
+}

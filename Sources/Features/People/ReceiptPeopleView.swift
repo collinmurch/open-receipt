@@ -69,7 +69,7 @@ struct ReceiptPeopleView: View {
       .searchable(text: $contactModel.searchText, prompt: "Search people")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
-          Button("Close", systemImage: "xmark", role: .close) { dismiss() }
+          Button(role: .close) { dismiss() }
         }
       }
       .sheet(isPresented: $isNewPersonPresented) {
@@ -311,7 +311,7 @@ private struct NewPersonView: View {
           Button(role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Add", action: addPerson)
+          Button("Add", systemImage: "checkmark", role: .confirm, action: addPerson)
             .disabled(trimmedName.isEmpty)
         }
       }

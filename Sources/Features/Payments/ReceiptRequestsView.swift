@@ -1,18 +1,42 @@
 import SwiftUI
 
+/// What the payments page has lifted out of its list.
+enum ReceiptPaymentsFocus: Hashable {
+  /// A person's share, to request or share it.
+  case share(ReceiptParticipant.ID)
+  /// The receipt's breakdown, to message or share it to everyone.
+  case group
+}
+
 struct ReceiptRequestsView: View {
   let draft: ReceiptDraft
   let onFlush: () async -> Void
+  @Binding var focus: ReceiptPaymentsFocus?
   @State private var people: SavedPeopleModel
   @State private var hasLoadedPeople = false
+  @State private var selectedShareID: ReceiptParticipant.ID?
+  @State private var focusedRowFrame: CGRect?
+  /// Where each focused person's contact card says to message them.
+  @State private var messageRecipients: [ReceiptParticipant.ID: Person.IMessage.Recipient] = [:]
+  @State private var isFocusedRowPressed = false
+  @State private var requester = PaymentRequester()
+  @State private var haptic = HapticEvent()
   @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethod =
     PaymentSettings.initialDefaultMethod
+  @AppStorage("groupShareIncludesEveryBreakdown") private var includesEveryBreakdown = false
   @Environment(\.contactClient) private var contactClient
+  @Environment(\.openURL) private var openURL
+  @Environment(\.colorScheme) private var colorScheme
 
-  init(draft: ReceiptDraft, peopleStorage: PeopleStorageClient, onFlush: @escaping () async -> Void)
-  {
+  init(
+    draft: ReceiptDraft,
+    peopleStorage: PeopleStorageClient,
+    focus: Binding<ReceiptPaymentsFocus?>,
+    onFlush: @escaping () async -> Void
+  ) {
     self.draft = draft
     self.onFlush = onFlush
+    _focus = focus
     _people = State(initialValue: SavedPeopleModel(storage: peopleStorage))
   }
 
@@ -26,14 +50,20 @@ struct ReceiptRequestsView: View {
     List {
       if let ownShare {
         Section("Your Share") {
-          participantLink(ownShare, calculation: calculation, showsPaymentDestination: false)
+          shareRow(ownShare, calculation: calculation)
         }
       }
 
       if !requestShares.isEmpty {
-        Section("Requests") {
+        Section {
           ForEach(requestShares) { share in
-            participantLink(share, calculation: calculation, showsPaymentDestination: true)
+            shareRow(share, calculation: calculation)
+          }
+        } header: {
+          Text("Remaining Shares")
+        } footer: {
+          if calculation.unassignedItemCount == 0 {
+            groupShareButton
           }
         }
       }
@@ -49,32 +79,143 @@ struct ReceiptRequestsView: View {
       }
     }
     .scrollContentBackground(.hidden)
+    .overlay { shareFocus(calculation) }
+    .overlay { groupShare }
+    .navigationDestination(item: $selectedShareID) { id in
+      breakdownDestination(id: id)
+    }
     .task {
       guard !hasLoadedPeople else { return }
       await people.load()
       await people.adoptContactPaymentDefaults(from: contactClient)
       hasLoadedPeople = people.errorDescription == nil
     }
+    .task(id: focus) {
+      await loadMessageRecipients()
+    }
+    .haptics(haptic)
+    .paymentRequestPresentation(requester)
     .errorAlert("Couldn’t Update Contact", message: $people.errorDescription)
   }
 
-  private func participantLink(
+  private func shareRow(
     _ share: ReceiptParticipantShare,
-    calculation: ReceiptSplitCalculation,
-    showsPaymentDestination: Bool
+    calculation: ReceiptSplitCalculation
   ) -> some View {
-    let person = ReceiptPersonResolver.person(for: share.participant, in: people.people)
-    let isSplitComplete = calculation.unassignedItemCount == 0
-    return NavigationLink {
+    ReceiptShareRow(
+      content: rowContent(share, calculation: calculation),
+      isFocused: share.id == focusedShareID,
+      isLiftedOut: share.id == focusedShareID && focusedRowFrame != nil,
+      onTap: { selectedShareID = share.id },
+      onFocus: { focusShare(share.id, isPressed: $0) },
+      onFocusedFrameChange: { focusedRowFrame = $0 }
+    )
+    .screenshotHighlight("request-\(share.participant.displayName)")
+  }
+
+  private func rowContent(
+    _ share: ReceiptParticipantShare,
+    calculation: ReceiptSplitCalculation
+  ) -> ReceiptShareRowContent {
+    ReceiptShareRowContent(
+      share: share,
+      paymentDestination: paymentDestination(for: share),
+      showsPaymentDestination: !share.participant.source.isCurrentUser,
+      showsTotal: calculation.unassignedItemCount == 0,
+      currency: draft.displayCurrency)
+  }
+
+  @ViewBuilder
+  private func shareFocus(_ calculation: ReceiptSplitCalculation) -> some View {
+    if let focusedShareID, let focusedRowFrame,
+      let share = calculation.participantShares.first(where: { $0.id == focusedShareID })
+    {
+      ReceiptShareFocusView(
+        content: rowContent(share, calculation: calculation),
+        rowFrame: focusedRowFrame,
+        startsPressed: isFocusedRowPressed,
+        request: preparedRequest(for: share, calculation: calculation),
+        unavailableRequestReason: unavailableRequestReason(for: share, calculation: calculation),
+        breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
+        messageRecipient: messageRecipients[share.id],
+        onRequest: { request in
+          requester.open(
+            request,
+            breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
+            openURL: openURL,
+            onSent: { recordRequest(for: share.participant.id) })
+        },
+        onMessageBreakdown: { recipient in
+          guard let breakdown = draft.breakdown(for: share, accentScheme: colorScheme) else {
+            return
+          }
+          requester.message([breakdown], to: [recipient])
+        },
+        onDismiss: endFocus
+      )
+      .transition(.identity)
+    }
+  }
+
+  /// Opens the receipt's breakdown over the page, to message or share to everyone.
+  private var groupShareButton: some View {
+    HStack {
+      Spacer()
+      Button {
+        haptic.play(.impact(weight: .medium))
+        withAnimation(.smooth(duration: 0.35)) { focus = .group }
+      } label: {
+        Label("Share Breakdown", systemImage: "square.and.arrow.up")
+          .font(.body.weight(.semibold))
+          .foregroundStyle(.primary)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 6)
+      }
+      .buttonStyle(.glass)
+      .opacity(focus == .group ? 0 : 1)
+      Spacer()
+    }
+    .textCase(nil)
+    .padding(.top, 20)
+  }
+
+  @ViewBuilder
+  private var groupShare: some View {
+    if focus == .group, let breakdowns = draft.allBreakdowns(accentScheme: colorScheme) {
+      let others = draft.participants.filter { !$0.source.isCurrentUser }
+      ReceiptGroupShareView(
+        breakdowns: breakdowns,
+        messageRecipients: others.compactMap { participant in
+          messageRecipients[participant.id].map {
+            GroupMessageRecipient(name: participant.displayName, recipient: $0)
+          }
+        },
+        unreachableNames: others.filter { messageRecipients[$0.id] == nil }.map(\.displayName),
+        includesEveryBreakdown: $includesEveryBreakdown,
+        onMessage: { selected in
+          let recipients = others.compactMap { messageRecipients[$0.id] }
+          requester.message(selected, to: recipients)
+        },
+        onDismiss: endFocus
+      )
+      .transition(.identity)
+    }
+  }
+
+  @ViewBuilder
+  private func breakdownDestination(id: ReceiptParticipant.ID) -> some View {
+    let calculation = draft.splitCalculation
+    if let share = calculation.participantShares.first(where: { $0.id == id }) {
       ReceiptParticipantBreakdownView(
         share: share,
-        person: person,
+        person: person(for: share),
         currency: draft.displayCurrency,
         adjustmentMethod: draft.adjustmentSplitMethod,
         backgroundStyle: draft.backgroundStyle,
         requestNote: requestNote,
         globalDefault: defaultPaymentMethod,
-        isSplitComplete: isSplitComplete,
+        isSplitComplete: calculation.unassignedItemCount == 0,
+        breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
         onRequest: {
           draft.recordRequest(for: share.participant.id, at: $0)
           Task { await onFlush() }
@@ -82,46 +223,52 @@ struct ReceiptRequestsView: View {
         onSavePerson: { await people.save($0) },
         onDeletePerson: { await people.delete($0) }
       )
-    } label: {
-      participantRow(
-        share,
-        person: person,
-        showsPaymentDestination: showsPaymentDestination,
-        showsTotal: isSplitComplete)
+    } else {
+      ContentUnavailableView(
+        "Person Not Found", systemImage: "person.crop.circle.badge.questionmark")
     }
-    .screenshotHighlight("request-\(share.participant.displayName)")
   }
 
-  private func participantRow(
-    _ share: ReceiptParticipantShare,
-    person: Person?,
-    showsPaymentDestination: Bool,
-    showsTotal: Bool
-  ) -> some View {
-    HStack(spacing: 12) {
-      PersonAvatarView(
-        name: share.participant.displayName,
-        imageData: share.participant.avatarData)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(share.participant.displayName)
-        if showsPaymentDestination {
-          PaymentDestinationCaption(
-            destination: person?.paymentMethods.destination(globalDefault: defaultPaymentMethod))
-        }
-      }
-      Spacer()
-      VStack(alignment: .trailing, spacing: 2) {
-        ShareTotalText(amount: showsTotal ? share.total : nil, currency: draft.displayCurrency)
-        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
+  private func person(for share: ReceiptParticipantShare) -> Person? {
+    ReceiptPersonResolver.person(for: share.participant, in: people.people)
+  }
+
+  private func paymentDestination(for share: ReceiptParticipantShare) -> PaymentDestination? {
+    person(for: share)?.paymentMethods.destination(globalDefault: defaultPaymentMethod)
+  }
+
+  private func preparedRequest(
+    for share: ReceiptParticipantShare,
+    calculation: ReceiptSplitCalculation
+  ) -> PreparedPaymentRequest? {
+    PreparedPaymentRequest(
+      share: share,
+      destination: paymentDestination(for: share),
+      currency: draft.displayCurrency,
+      note: requestNote,
+      isSplitComplete: calculation.unassignedItemCount == 0)
+  }
+
+  /// Why a person's share can't be requested, or nil for the owner's own share.
+  private func unavailableRequestReason(
+    for share: ReceiptParticipantShare,
+    calculation: ReceiptSplitCalculation
+  ) -> String? {
+    guard !share.participant.source.isCurrentUser else { return nil }
+    if calculation.unassignedItemCount > 0 {
+      return "Assign every item before you send requests."
     }
+    guard let destination = paymentDestination(for: share) else {
+      return "Add a payment method to request from \(share.participant.displayName)."
+    }
+    if draft.displayCurrency != "USD" {
+      return "\(destination.method.title) requests require a USD receipt."
+    }
+    return nil
   }
 
   private var requestNote: String {
-    let merchant = draft.merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
-    return merchant.isEmpty ? "Receipt split" : "Receipt split: \(merchant)"
+    PreparedPaymentRequest.note(merchantName: draft.merchantName)
   }
 
   private func unassignedDescription(_ calculation: ReceiptSplitCalculation) -> String {
@@ -130,6 +277,143 @@ struct ReceiptRequestsView: View {
     let amount = calculation.unassignedItemTotal.formatted(
       .currency(code: draft.displayCurrency))
     return "\(items) totaling \(amount)"
+  }
+
+  private var focusedShareID: ReceiptParticipant.ID? {
+    if case .share(let id) = focus { return id }
+    return nil
+  }
+
+  /// Looks up the contact cards of the people in focus for a phone number, or an email address
+  /// when one has none, to message breakdowns to.
+  private func loadMessageRecipients() async {
+    messageRecipients = [:]
+    let participants: [ReceiptParticipant]
+    switch focus {
+    case .share(let id): participants = draft.participants.filter { $0.id == id }
+    case .group: participants = draft.participants.filter { !$0.source.isCurrentUser }
+    case nil: return
+    }
+    let contactIdentifiers = participants.compactMap {
+      participant -> (ReceiptParticipant.ID, String)? in
+      if case .contact(let identifier) = participant.source { return (participant.id, identifier) }
+      return nil
+    }
+    guard !contactIdentifiers.isEmpty,
+      let contacts = try? await contactClient.fetchContacts(contactIdentifiers.map(\.1))
+    else { return }
+    let contactsByIdentifier = Dictionary(
+      contacts.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+    messageRecipients = contactIdentifiers.reduce(into: [:]) { recipients, entry in
+      recipients[entry.0] = contactsByIdentifier[entry.1]?.defaultRecipient(
+        Person.IMessage.Recipient.self)
+    }
+  }
+
+  private func focusShare(_ id: ReceiptParticipant.ID, isPressed: Bool) {
+    guard focus == nil else { return }
+    haptic.play(.impact(weight: .medium))
+    isFocusedRowPressed = isPressed
+    withAnimation(.smooth(duration: 0.35)) {
+      focus = .share(id)
+    }
+  }
+
+  private func endFocus() {
+    withAnimation(.smooth(duration: 0.35)) {
+      focus = nil
+      focusedRowFrame = nil
+    }
+  }
+
+  private func recordRequest(for participantID: ReceiptParticipant.ID) {
+    draft.recordRequest(for: participantID, at: Date())
+    haptic.play(.success)
+    Task { await onFlush() }
+  }
+}
+
+/// One person's share in the list. Taps open the breakdown and long presses lift the share out to
+/// request or send it, as receipt items do.
+private struct ReceiptShareRow: View {
+  let content: ReceiptShareRowContent
+  let isFocused: Bool
+  let isLiftedOut: Bool
+  let onTap: () -> Void
+  let onFocus: (_ isPressed: Bool) -> Void
+  let onFocusedFrameChange: (CGRect) -> Void
+
+  @State private var isPressed = false
+
+  /// Taps and long presses are one gesture rather than a `NavigationLink`: a list row's button
+  /// takes its taps from the row's selection, which cancels any long press attached to it.
+  var body: some View {
+    HStack(spacing: 12) {
+      content
+      Image(systemName: "chevron.forward")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.tertiary)
+    }
+    .onGeometryChange(for: CGRect?.self) { proxy in
+      isFocused ? proxy.frame(in: .global) : nil
+    } action: { frame in
+      if let frame { onFocusedFrameChange(frame) }
+    }
+    .scaleEffect(isPressed ? ReceiptItemRowContent.pressedScale : 1)
+    .animation(
+      isPressed
+        ? .easeOut(duration: ReceiptRowPressRecognizer.pressGrowth)
+        : .spring(duration: 0.3, bounce: 0.3),
+      value: isPressed
+    )
+    .opacity(isLiftedOut ? 0 : 1)
+    .transaction(value: isLiftedOut) { $0.animation = nil }
+    .contentShape(.rect)
+    .gesture(
+      ReceiptRowPressGesture(
+        onPressingChanged: { isPressed = $0 },
+        onTap: onTap,
+        onLongPress: { onFocus(true) }
+      )
+    )
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction(.default, onTap)
+    .accessibilityHint("Show this person’s breakdown")
+    .accessibilityActions {
+      Button("Request or Share Individual Breakdown") { onFocus(false) }
+    }
+  }
+}
+
+/// What a share row draws, shared by the list and the share lifted into focus.
+struct ReceiptShareRowContent: View {
+  let share: ReceiptParticipantShare
+  let paymentDestination: PaymentDestination?
+  /// Whether to caption where requests go, which the owner's own share leaves out.
+  let showsPaymentDestination: Bool
+  let showsTotal: Bool
+  let currency: String
+
+  var body: some View {
+    HStack(spacing: 12) {
+      PersonAvatarView(
+        name: share.participant.displayName,
+        imageData: share.participant.avatarData)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(share.participant.displayName)
+        if showsPaymentDestination {
+          PaymentDestinationCaption(destination: paymentDestination)
+        }
+      }
+      Spacer()
+      VStack(alignment: .trailing, spacing: 2) {
+        ShareTotalText(amount: showsTotal ? share.total : nil, currency: currency)
+        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
   }
 }
 

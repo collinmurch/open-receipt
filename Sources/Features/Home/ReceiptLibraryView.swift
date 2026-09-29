@@ -92,12 +92,9 @@ struct ReceiptLibraryView: View {
 
   @ToolbarContentBuilder
   private var libraryToolbar: some ToolbarContent {
-    ToolbarItem(placement: .topBarLeading) {
-      Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
-    }
-
-    ToolbarItem(placement: .topBarTrailing) {
+    ToolbarItemGroup(placement: .topBarTrailing) {
       Button("People", systemImage: "person.2") { onOpen(.people) }
+      Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
     }
 
     DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -105,6 +102,7 @@ struct ReceiptLibraryView: View {
     ToolbarItem(placement: .bottomBar) {
       newReceiptMenu
     }
+    .matchedTransitionSource(id: HomeZoomSource.newReceipt, in: transitionNamespace)
   }
 
   private var newReceiptMenu: some View {
@@ -115,17 +113,20 @@ struct ReceiptLibraryView: View {
         isPhotoPickerPresented = true
       }
       Button("Create", systemImage: "square.and.pencil") {
-        onOpen(.receipt(.create()))
+        onOpen(.receipt(.create(), zoomingFrom: .newReceipt))
       }
     } label: {
       if isImporting {
         ProgressView()
+          .transition(.opacity)
       } else {
         Label("New Receipt", systemImage: "plus")
+          .transition(.opacity)
       }
     }
     .buttonStyle(.glassProminent)
     .disabled(isImporting)
+    .animation(.smooth(duration: 0.2), value: isImporting)
   }
 
   @ViewBuilder
@@ -140,7 +141,7 @@ struct ReceiptLibraryView: View {
         ReceiptLibraryRow(
           receipt: receipt,
           recognition: recognition,
-          transitionNamespace: transitionNamespace)
+          transition: (id: HomeZoomSource.row(receipt.id), namespace: transitionNamespace))
       }
       .tint(.primary)
       .screenshotHighlight("library-row-\(receipt.merchantName ?? "")")
@@ -157,7 +158,7 @@ struct ReceiptLibraryView: View {
   private func open(_ receipt: ReceiptSummary) {
     guard openingReceiptID == nil else { return }
     if let recognition = recognitions.recognition(for: receipt.id) {
-      onOpen(.receipt(.recognition(recognition), zoomsFromRow: true))
+      onOpen(.receipt(.recognition(recognition), zoomingFrom: .row(receipt.id)))
       return
     }
     openingReceiptID = receipt.id
@@ -166,7 +167,7 @@ struct ReceiptLibraryView: View {
       let document = try? await storage.load(receipt.id)
       let input = ReceiptFlowInput.storedReceipt(
         receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)
-      onOpen(.receipt(input, zoomsFromRow: true))
+      onOpen(.receipt(input, zoomingFrom: .row(receipt.id)))
     }
   }
 
@@ -232,7 +233,7 @@ struct ReceiptLibraryView: View {
       return
     }
     let scan = ReceiptScan(pages: pages, source: .photoLibrary)
-    onOpen(.receipt(.scan(scan, recognitions: recognitions)))
+    onOpen(.receipt(.scan(scan, recognitions: recognitions), zoomingFrom: .newReceipt))
   }
 }
 
@@ -247,14 +248,17 @@ private struct ReceiptLibraryEmptyState: View {
           .font(.system(size: 58))
           .foregroundStyle(.tint)
           .symbolEffect(.bounce, value: hasAppeared)
-        Text("Open Receipt")
-          .font(.largeTitle.bold())
-        Text("Scan. Split. Settle.")
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
+        VStack(spacing: 4) {
+          Text("Open Receipt")
+            .font(.largeTitle.bold())
+          Text("Scan. Split. Settle.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
       }
     } description: {
-      Text("Tap \(Image(systemName: "plus")) to scan, import, or enter your first receipt.")
+      Text("Tap \(Image(systemName: "plus")) to add your first receipt.")
+        .padding(.top, 20)
     }
     .onAppear { hasAppeared = true }
   }

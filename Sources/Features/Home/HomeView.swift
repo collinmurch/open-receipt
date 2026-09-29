@@ -2,18 +2,24 @@ import SwiftUI
 
 /// A screen pushed from the receipt library.
 enum HomeRoute: Hashable {
-  /// A receipt. Receipts opened from a library row zoom out of that row.
-  case receipt(ReceiptFlowInput, zoomsFromRow: Bool = false)
+  /// A receipt, zooming out of the library control that opened it, if any.
+  case receipt(ReceiptFlowInput, zoomingFrom: HomeZoomSource? = nil)
   case people
   case settings
   case recentlyDeleted
+}
+
+/// A control in the receipt library that a pushed screen zooms out of.
+enum HomeZoomSource: Hashable {
+  case row(UUID)
+  case newReceipt
 }
 
 struct HomeView: View {
   @State private var path: [HomeRoute] = []
   @State private var isScannerPresented = false
   @State private var scanErrorDescription: String?
-  @Namespace private var receiptTransition
+  @Namespace private var libraryTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.peopleStorageClient) private var peopleStorage
@@ -26,7 +32,7 @@ struct HomeView: View {
   var body: some View {
     NavigationStack(path: $path) {
       ReceiptLibraryView(
-        transitionNamespace: receiptTransition,
+        transitionNamespace: libraryTransition,
         onScan: presentScanner,
         onOpen: { path.append($0) }
       )
@@ -64,13 +70,9 @@ struct HomeView: View {
   @ViewBuilder
   private func destination(for route: HomeRoute) -> some View {
     switch route {
-    case .receipt(let input, let zoomsFromRow):
-      if zoomsFromRow {
-        ReceiptFlowView(input: input)
-          .navigationTransition(.zoom(sourceID: input.id, in: receiptTransition))
-      } else {
-        ReceiptFlowView(input: input)
-      }
+    case .receipt(let input, let source):
+      ReceiptFlowView(input: input)
+        .zoomTransition(from: source, in: libraryTransition)
     case .people:
       PeopleView(storage: peopleStorage)
     case .settings:
@@ -95,6 +97,19 @@ struct HomeView: View {
       path.append(.receipt(input))
     }
     isScannerPresented = false
+  }
+}
+
+extension View {
+  @ViewBuilder
+  fileprivate func zoomTransition(from source: HomeZoomSource?, in namespace: Namespace.ID)
+    -> some View
+  {
+    if let source {
+      navigationTransition(.zoom(sourceID: source, in: namespace))
+    } else {
+      self
+    }
   }
 }
 

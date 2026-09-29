@@ -1,4 +1,3 @@
-import MessageUI
 import SwiftUI
 
 struct ReceiptParticipantBreakdownView: View {
@@ -10,12 +9,13 @@ struct ReceiptParticipantBreakdownView: View {
   let requestNote: String
   let globalDefault: PaymentMethod
   let isSplitComplete: Bool
+  /// The breakdown to share, once the split is final.
+  let breakdown: ReceiptBreakdown?
   let onRequest: (Date) -> Void
   let onSavePerson: (Person) async -> Person?
   let onDeletePerson: (Person) async -> Bool
   @State private var selectedPerson: Person?
-  @State private var requestErrorDescription: String?
-  @State private var messageComposition: IMessageComposition?
+  @State private var requester = PaymentRequester()
   @State private var requestedAt: Date?
   @State private var haptic = HapticEvent()
   @Environment(\.openURL) private var openURL
@@ -33,17 +33,21 @@ struct ReceiptParticipantBreakdownView: View {
             }
           }
         }
+        ToolbarItem(placement: .topBarTrailing) {
+          ReceiptBreakdownShareButton(breakdown: breakdown)
+        }
       }
       .scrollEdgeEffectHidden(true, for: .bottom)
       .safeAreaBar(edge: .bottom) {
         if let preparedRequest {
           VStack(spacing: 6) {
             ReceiptActionButton(
-              title: requestButtonTitle(for: preparedRequest.method),
-              systemImage: requestButtonImage(for: preparedRequest.method),
+              title: preparedRequest.title,
+              systemImage: preparedRequest.systemImage,
               tint: preparedRequest.method.prominentColor
             ) {
-              open(preparedRequest)
+              requester.open(
+                preparedRequest, breakdown: breakdown, openURL: openURL, onSent: recordRequest)
             }
             .screenshotHighlight("request-button")
 
@@ -54,22 +58,16 @@ struct ReceiptParticipantBreakdownView: View {
               .accessibilityHidden(lastRequestedCaption == nil)
           }
           .padding(.bottom, 8)
+          .animation(.smooth(duration: 0.3), value: lastRequestedCaption)
         }
       }
       .haptics(haptic)
-      .sheet(item: $messageComposition) { composition in
-        IMessageComposerView(composition: composition) { sent in
-          messageComposition = nil
-          if sent {
-            recordRequest()
-            haptic.play(.success)
-          }
-        }
-      }
+      .paymentRequestPresentation(requester)
       .sheet(item: $selectedPerson) { selectedPerson in
         NavigationStack {
           PersonDetailView(
             person: selectedPerson,
+            showsReceipts: false,
             onSave: onSavePerson,
             onDelete: deletePerson
           )
@@ -82,7 +80,6 @@ struct ReceiptParticipantBreakdownView: View {
           }
         }
       }
-      .errorAlert("Couldn’t Open Payment Request", message: $requestErrorDescription)
   }
 
   /// The breakdown, subtitled with a missing payment method when there is one.
@@ -202,35 +199,12 @@ struct ReceiptParticipantBreakdownView: View {
   }
 
   private var preparedRequest: PreparedPaymentRequest? {
-    guard isSplitComplete,
-      currency == "USD",
-      !share.participant.source.isCurrentUser,
-      let paymentDestination
-    else { return nil }
-
-    switch paymentDestination {
-    case .venmo(let recipient):
-      guard
-        let url = VenmoRequestURL.make(
-          recipient: recipient,
-          amount: share.total,
-          note: requestNote)
-      else { return nil }
-      return PreparedPaymentRequest(method: .venmo, action: .openURL(url))
-    case .cashApp(let cashApp):
-      guard let url = CashAppPaymentURL.make(cashtag: cashApp.cashtag, amount: share.total)
-      else { return nil }
-      return PreparedPaymentRequest(method: .cashApp, action: .openURL(url))
-    case .iMessage(let recipient):
-      guard
-        let body = IMessageRequest.body(
-          amount: share.total,
-          currency: currency,
-          context: requestNote)
-      else { return nil }
-      let composition = IMessageComposition(recipient: recipient.value, body: body)
-      return PreparedPaymentRequest(method: .iMessage, action: .compose(composition))
-    }
+    PreparedPaymentRequest(
+      share: share,
+      destination: paymentDestination,
+      currency: currency,
+      note: requestNote,
+      isSplitComplete: isSplitComplete)
   }
 
   private var lastRequestedAt: Date? {
@@ -239,22 +213,6 @@ struct ReceiptParticipantBreakdownView: View {
 
   private var lastRequestedCaption: String? {
     lastRequestedAt.map { "Last requested \(PaymentRequestDateFormatter.formatted($0))" }
-  }
-
-  private func requestButtonTitle(for method: PaymentMethod) -> String {
-    let amount = share.total.formatted(.currency(code: currency))
-    switch method {
-    case .cashApp:
-      return "Open \(amount) in Cash App"
-    case .venmo, .iMessage:
-      return "Request \(amount) in \(method.title)"
-    case .none:
-      return "Request \(amount)"
-    }
-  }
-
-  private func requestButtonImage(for method: PaymentMethod) -> String {
-    method == .iMessage ? "message.fill" : "arrow.up.right"
   }
 
   private func breakdownRow(
@@ -282,28 +240,6 @@ struct ReceiptParticipantBreakdownView: View {
     fraction.formatted(.percent.precision(.fractionLength(0...1)))
   }
 
-  private func open(_ request: PreparedPaymentRequest) {
-    switch request.action {
-    case .openURL(let url):
-      openURL(url) { accepted in
-        if accepted {
-          recordRequest()
-        } else {
-          requestErrorDescription =
-            request.method == .venmo
-            ? "Install Venmo to open this payment request."
-            : "Cash App could not open this payment link."
-        }
-      }
-    case .compose(let composition):
-      guard MFMessageComposeViewController.canSendText() else {
-        requestErrorDescription = "iMessage is not available on this device."
-        return
-      }
-      messageComposition = composition
-    }
-  }
-
   /// Plays the removal haptic here because the contact sheet dismisses itself on delete.
   private func deletePerson(_ person: Person) async -> Bool {
     let didDelete = await onDeletePerson(person)
@@ -315,15 +251,6 @@ struct ReceiptParticipantBreakdownView: View {
     let date = Date()
     requestedAt = date
     onRequest(date)
+    haptic.play(.success)
   }
-}
-
-private struct PreparedPaymentRequest {
-  enum Action {
-    case openURL(URL)
-    case compose(IMessageComposition)
-  }
-
-  let method: PaymentMethod
-  let action: Action
 }

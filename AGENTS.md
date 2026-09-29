@@ -38,6 +38,7 @@ Build behavior:
 
 - Default `make build` / `make run` uses entitlement-free `Debug`. Scan and import remain functional, but `ReceiptParsingClient.sample` supplies stable parsed data without calling PCC.
 - Add `release=1` to select `Release`, attach `App/OpenReceipt.entitlements`, and use the live parser.
+- Add `device=<simulator name>` to `make run` / `make test` to use a simulator other than the default `iPhone 17 Pro`, e.g. `make run device="iPhone 17 Pro Max"`.
 - Keep capture and presentation shared between configurations; `ReceiptParsingClient` is the build seam.
 - `ReceiptFlowModel` owns receipt-flow phases, `ReceiptDraft` owns mutable review state, and `ContactClient` is the Contacts framework seam.
 - `ReceiptRecognitionCenter` owns in-flight reads. It streams partial results into `ReceiptRecognition`, stores the scan alongside the model request, and outlives the screen that started it.

@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReceiptItemShare: Identifiable {
+struct ReceiptItemShare: Identifiable, Equatable {
   let itemID: ReceiptDraftItem.ID
   let description: String
   let fraction: Double
@@ -9,14 +9,14 @@ struct ReceiptItemShare: Identifiable {
   var id: ReceiptDraftItem.ID { itemID }
 }
 
-struct ReceiptAdjustmentShare: Identifiable {
+struct ReceiptAdjustmentShare: Identifiable, Equatable {
   let id: String
   let title: String
   let fraction: Double
   let amount: Double
 }
 
-struct ReceiptParticipantShare: Identifiable {
+struct ReceiptParticipantShare: Identifiable, Equatable {
   let participant: ReceiptParticipant
   let items: [ReceiptItemShare]
   let adjustments: [ReceiptAdjustmentShare]

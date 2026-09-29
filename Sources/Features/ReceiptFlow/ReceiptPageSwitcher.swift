@@ -6,9 +6,11 @@ enum ReceiptReviewPage: Hashable {
   case payments
 }
 
-/// Switches a completed receipt between its items and its payment requests.
+/// Switches a completed receipt between its items and its payment requests, by tapping a page or
+/// dragging across the switcher.
 struct ReceiptPageSwitcher: View {
   @Binding var selection: ReceiptReviewPage
+  @State private var width: CGFloat = 0
   @Namespace private var selectionIndicator
 
   var body: some View {
@@ -17,6 +19,13 @@ struct ReceiptPageSwitcher: View {
       item(.payments, title: "Payments", systemImage: "dollarsign")
     }
     .padding(4)
+    .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 8).onChanged { value in
+        let page: ReceiptReviewPage = value.location.x < width / 2 ? .receipt : .payments
+        if selection != page { selection = page }
+      }
+    )
     .glassEffect(.regular.interactive(), in: .capsule)
     .animation(.smooth(duration: 0.3), value: selection)
     .sensoryFeedback(.selection, trigger: selection)

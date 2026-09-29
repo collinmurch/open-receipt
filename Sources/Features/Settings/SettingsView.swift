@@ -5,6 +5,8 @@ struct SettingsView: View {
     PaymentSettings.initialDefaultMethod
   @AppStorage(CurrencySettings.defaultCodeKey) private var defaultCurrencyCode =
     CurrencySettings.initialDefaultCode
+  @AppStorage(AdjustmentSplitSettings.defaultMethodKey) private var defaultAdjustmentSplitMethod =
+    AdjustmentSplitSettings.initialDefaultMethod
 
   var body: some View {
     Form {
@@ -35,9 +37,21 @@ struct SettingsView: View {
       } header: {
         Text("Default Currency")
       } footer: {
-        Text(
-          "New receipts start in this currency. Changing it doesn't change existing receipts."
-        )
+        Text("New receipts start in this currency.")
+      }
+
+      Section {
+        Picker("Split Tax/Tip", selection: $defaultAdjustmentSplitMethod) {
+          ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
+            Text(method.title)
+              .tag(method)
+          }
+        }
+        .pickerStyle(.menu)
+      } header: {
+        Text("Default Split")
+      } footer: {
+        Text("New receipts split tax and tip this way.")
       }
 
       Section {
@@ -55,6 +69,8 @@ struct SettingsView: View {
         )
       }
     }
+    .scrollContentBackground(.hidden)
+    .background { ReceiptLibraryBackground() }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
   }

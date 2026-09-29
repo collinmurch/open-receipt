@@ -1,12 +1,16 @@
 import SwiftUI
 
+/// Receipts deleted in the last 30 days. Selecting acts on the chosen receipts, or on all of them
+/// when none are chosen.
 struct ReceiptTrashView: View {
-  @State private var isEmptyConfirmationPresented = false
+  @State private var editMode = EditMode.inactive
+  @State private var selection: Set<DeletedReceiptSummary.ID> = []
+  @State private var isDeleteConfirmationPresented = false
   @State private var haptic = HapticEvent()
   @Environment(ReceiptLibraryModel.self) private var library
 
   var body: some View {
-    List {
+    List(selection: $selection) {
       if library.deletedReceipts.isEmpty {
         ContentUnavailableView(
           "No Deleted Receipts",
@@ -17,96 +21,124 @@ struct ReceiptTrashView: View {
       } else {
         Section {
           ForEach(library.deletedReceipts) { deletedReceipt in
-            ReceiptTrashRow(
-              deletedReceipt: deletedReceipt,
-              onRestore: { restore(deletedReceipt) }
-            )
-            .contextMenu {
-              Button("Restore", systemImage: "arrow.uturn.backward") {
-                restore(deletedReceipt)
+            ReceiptLibraryRow(receipt: deletedReceipt.receipt)
+              .contextMenu {
+                Button("Restore", systemImage: "arrow.uturn.backward") {
+                  restore([deletedReceipt])
+                }
+                Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+                  delete([deletedReceipt])
+                }
               }
-              Button("Delete Permanently", systemImage: "trash", role: .destructive) {
-                delete(deletedReceipt)
+              .swipeActions(edge: .leading) {
+                Button("Restore", systemImage: "arrow.uturn.backward") {
+                  restore([deletedReceipt])
+                }
+                .tint(.blue)
               }
-            }
-            .swipeActions(edge: .leading) {
-              Button("Restore", systemImage: "arrow.uturn.backward") {
-                restore(deletedReceipt)
+              .swipeActions(edge: .trailing) {
+                Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+                  delete([deletedReceipt])
+                }
               }
-              .tint(.blue)
-            }
-            .swipeActions(edge: .trailing) {
-              Button("Delete Permanently", systemImage: "trash", role: .destructive) {
-                delete(deletedReceipt)
-              }
-            }
           }
         } footer: {
           Text("Receipts are permanently deleted after 30 days.")
         }
       }
     }
+    .environment(\.editMode, $editMode)
     .scrollContentBackground(.hidden)
     .background { ReceiptLibraryBackground() }
     .navigationTitle("Recently Deleted")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Empty", role: .destructive) {
-          isEmptyConfirmationPresented = true
-        }
-        .disabled(library.deletedReceipts.isEmpty)
-        .confirmationDialog(
-          "Delete all receipts now?",
-          isPresented: $isEmptyConfirmationPresented,
-          titleVisibility: .visible
-        ) {
-          Button("Delete All", role: .destructive, action: empty)
-        } message: {
-          Text("You cannot restore these receipts after you delete them.")
-        }
-      }
+    .toolbar { trashToolbar }
+    .confirmationDialog(
+      deleteConfirmationTitle,
+      isPresented: $isDeleteConfirmationPresented,
+      titleVisibility: .visible
+    ) {
+      Button(deleteTitle, role: .destructive) { delete(targetedReceipts) }
+    } message: {
+      Text("You cannot restore these receipts after you delete them.")
+    }
+    .onChange(of: library.deletedReceipts.isEmpty) { _, isEmpty in
+      if isEmpty { setSelecting(false) }
     }
     .haptics(haptic)
   }
 
-  private func restore(_ deletedReceipt: DeletedReceiptSummary) {
-    haptic.play(.success)
-    Task { await library.restore(deletedReceipt) }
-  }
-
-  private func delete(_ deletedReceipt: DeletedReceiptSummary) {
-    haptic.play(.removal)
-    Task { await library.permanentlyDelete(deletedReceipt) }
-  }
-
-  private func empty() {
-    haptic.play(.removal)
-    Task { await library.emptyTrash() }
-  }
-}
-
-private struct ReceiptTrashRow: View {
-  let deletedReceipt: DeletedReceiptSummary
-  let onRestore: () -> Void
-  @State private var isRestorePopoverPresented = false
-
-  var body: some View {
-    Button {
-      isRestorePopoverPresented = true
-    } label: {
-      ReceiptLibraryRow(receipt: deletedReceipt.receipt)
+  @ToolbarContentBuilder
+  private var trashToolbar: some ToolbarContent {
+    ToolbarItem(placement: .topBarTrailing) {
+      Button(isSelecting ? "Cancel" : "Select") { setSelecting(!isSelecting) }
+        .disabled(library.deletedReceipts.isEmpty)
     }
-    .buttonStyle(.plain)
-    .popover(isPresented: $isRestorePopoverPresented, arrowEdge: .bottom) {
-      Button("Restore Receipt", systemImage: "arrow.uturn.backward") {
-        isRestorePopoverPresented = false
-        onRestore()
+
+    if isSelecting {
+      ToolbarItem(placement: .bottomBar) {
+        Button(selection.isEmpty ? "Restore All" : "Restore") {
+          restore(targetedReceipts)
+        }
       }
-      .font(.body.weight(.semibold))
-      .padding(.horizontal, 20)
-      .padding(.vertical, 14)
-      .presentationCompactAdaptation(.popover)
+      ToolbarSpacer(.flexible, placement: .bottomBar)
+      ToolbarItem(placement: .bottomBar) {
+        Button(deleteTitle, role: .destructive) {
+          isDeleteConfirmationPresented = true
+        }
+      }
+    }
+  }
+
+  private var isSelecting: Bool {
+    editMode.isEditing
+  }
+
+  /// The selected receipts, or every deleted receipt when none are selected.
+  private var targetedReceipts: [DeletedReceiptSummary] {
+    guard !selection.isEmpty else { return library.deletedReceipts }
+    return library.deletedReceipts.filter { selection.contains($0.id) }
+  }
+
+  private var deleteTitle: String {
+    selection.isEmpty ? "Delete All" : "Delete"
+  }
+
+  private var deleteConfirmationTitle: String {
+    selection.isEmpty
+      ? "Delete all receipts now?"
+      : "Delete \(String(inflecting: "^[\(selection.count) receipt](inflect: true)")) now?"
+  }
+
+  private func setSelecting(_ isSelecting: Bool) {
+    selection = []
+    withAnimation(.smooth(duration: 0.3)) {
+      editMode = isSelecting ? .active : .inactive
+    }
+  }
+
+  private func restore(_ deletedReceipts: [DeletedReceiptSummary]) {
+    haptic.play(.success)
+    setSelecting(false)
+    Task {
+      for deletedReceipt in deletedReceipts {
+        await library.restore(deletedReceipt)
+      }
+    }
+  }
+
+  private func delete(_ deletedReceipts: [DeletedReceiptSummary]) {
+    haptic.play(.removal)
+    let deletesAll = deletedReceipts.count == library.deletedReceipts.count
+    setSelecting(false)
+    Task {
+      if deletesAll {
+        await library.emptyTrash()
+      } else {
+        for deletedReceipt in deletedReceipts {
+          await library.permanentlyDelete(deletedReceipt)
+        }
+      }
     }
   }
 }

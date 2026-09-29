@@ -29,7 +29,8 @@ final class ReceiptDraft {
     receipt: ParsedReceipt,
     id: UUID = UUID(),
     owner: ReceiptOwner? = nil,
-    backgroundStyle: ReceiptBackgroundStyle = .random()
+    backgroundStyle: ReceiptBackgroundStyle = .random(),
+    adjustmentSplitMethod: ReceiptAdjustmentSplitMethod = AdjustmentSplitSettings.defaultMethod()
   ) {
     self.id = id
     self.backgroundStyle = backgroundStyle
@@ -44,7 +45,7 @@ final class ReceiptDraft {
     currency = receipt.currency
     payment = receipt.payment
     items = receipt.items.map { ReceiptDraftItem(item: $0) }
-    adjustmentSplitMethod = .proportional
+    self.adjustmentSplitMethod = adjustmentSplitMethod
     isCompleted = false
     participants = [.currentUser(owner: owner)]
   }

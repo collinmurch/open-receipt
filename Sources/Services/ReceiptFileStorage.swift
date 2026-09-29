@@ -43,7 +43,8 @@ actor ReceiptFileStorage {
   func createBlank(
     id: UUID,
     backgroundStyle: ReceiptBackgroundStyle = .random(),
-    currency: String = CurrencySettings.initialDefaultCode
+    currency: String = CurrencySettings.initialDefaultCode,
+    adjustmentMethod: ReceiptAdjustmentSplitMethod = AdjustmentSplitSettings.initialDefaultMethod
   ) throws -> ReceiptDocument {
     try insert(id: id) { _ in
       let now = Date()
@@ -66,7 +67,7 @@ actor ReceiptFileStorage {
           amounts: .init(subtotal: .init(0), adjustments: [], total: .init(0)),
           payment: nil),
         split: .init(
-          adjustmentMethod: .proportional,
+          adjustmentMethod: adjustmentMethod,
           participants: [
             .init(
               id: UUID(),

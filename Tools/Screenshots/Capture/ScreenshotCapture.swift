@@ -40,7 +40,7 @@ final class ScreenshotCapture: XCTestCase {
   func testBreakdown() throws {
     try capture(name: "04-breakdown", scenario: "requests", highlight: "request-button") { app in
       try self.waitForHighlight("request-Jillian")
-      app.staticTexts["Jillian"].firstMatch.tap()
+      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Jillian")).firstMatch.tap()
     }
   }
 

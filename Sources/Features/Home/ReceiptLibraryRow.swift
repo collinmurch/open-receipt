@@ -4,8 +4,8 @@ struct ReceiptLibraryRow: View {
   let receipt: ReceiptSummary
   /// The active read of this receipt, which the row follows as it streams.
   var recognition: ReceiptRecognition?
-  /// The namespace the receipt zooms out of when it opens from this row.
-  var transitionNamespace: Namespace.ID?
+  /// Where the receipt zooms out of when it opens from this row.
+  var transition: (id: AnyHashable, namespace: Namespace.ID)?
 
   var body: some View {
     HStack(spacing: 14) {
@@ -60,8 +60,8 @@ struct ReceiptLibraryRow: View {
       initials: recognition == nil && receipt.recognitionStatus == .succeeded
         ? receipt.merchantName.flatMap(ReceiptMonogram.initials) : nil,
       systemImage: tileSymbol)
-    if let transitionNamespace {
-      tile.matchedTransitionSource(id: receipt.id, in: transitionNamespace)
+    if let transition {
+      tile.matchedTransitionSource(id: transition.id, in: transition.namespace)
     } else {
       tile
     }

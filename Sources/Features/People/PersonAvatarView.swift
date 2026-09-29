@@ -4,19 +4,13 @@ struct PersonAvatarView: View {
   let name: String
   let imageData: Data?
   var size: CGFloat = 36
-  @State private var image: UIImage?
-
-  init(name: String, imageData: Data?, size: CGFloat = 36) {
-    self.name = name
-    self.imageData = imageData
-    self.size = size
-    _image = State(initialValue: imageData.flatMap(PersonAvatarImageCache.image))
-  }
 
   var body: some View {
     Group {
-      if let image {
+      if let image = imageData.flatMap(PersonAvatarImageCache.image) {
+        // Buttons in lists draw images as templates in their tint unless told otherwise.
         Image(uiImage: image)
+          .renderingMode(.original)
           .resizable()
           .scaledToFill()
       } else {
@@ -30,9 +24,6 @@ struct PersonAvatarView: View {
     .frame(width: size, height: size)
     .clipShape(.circle)
     .accessibilityHidden(true)
-    .onChange(of: imageData) { _, data in
-      image = data.flatMap(PersonAvatarImageCache.image)
-    }
   }
 
   private var initials: String {

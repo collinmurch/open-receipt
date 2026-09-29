@@ -1,10 +1,26 @@
 import MessageUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct IMessageComposition: Identifiable {
   let id = UUID()
-  let recipient: String
+  let recipients: [String]
   let body: String
+  var attachments: [IMessageAttachment] = []
+}
+
+/// An image sent along with a message.
+struct IMessageAttachment {
+  let data: Data
+  let filename: String
+}
+
+extension IMessageAttachment {
+  @MainActor
+  init?(breakdown: ReceiptBreakdown) {
+    guard let data = ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
+    self.init(data: data, filename: "\(breakdown.fileName).png")
+  }
 }
 
 struct IMessageComposerView: UIViewControllerRepresentable {
@@ -18,8 +34,12 @@ struct IMessageComposerView: UIViewControllerRepresentable {
   func makeUIViewController(context: Context) -> MFMessageComposeViewController {
     let controller = MFMessageComposeViewController()
     controller.messageComposeDelegate = context.coordinator
-    controller.recipients = [composition.recipient]
+    controller.recipients = composition.recipients
     controller.body = composition.body
+    for attachment in composition.attachments {
+      controller.addAttachmentData(
+        attachment.data, typeIdentifier: UTType.png.identifier, filename: attachment.filename)
+    }
     return controller
   }
 

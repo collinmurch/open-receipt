@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct PersonDetailView: View {
+  /// Whether the receipts this person is on are listed and can be opened. Left off where the
+  /// person is shown from inside a receipt, so receipts and people can't open each other without
+  /// end.
+  let showsReceipts: Bool
   let onSave: (Person) async -> Person?
   let onDelete: (Person) async -> Bool
   private let savedPerson: Person
@@ -15,17 +19,25 @@ struct PersonDetailView: View {
   @State private var isDeleteConfirmationPresented = false
   @State private var isDeleting = false
   @State private var isAppleContactPresented = false
+  @State private var expandedMethod: PaymentMethod?
+  @State private var receipts: [PersonReceipt] = []
   @State private var haptic = HapticEvent()
   @AppStorage(PaymentSettings.defaultMethodKey) private var globalDefaultMethod =
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
+  @Environment(\.receiptStorageClient) private var receiptStorage
+  @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(ReceiptLibraryModel.self) private var library
+  @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.dismiss) private var dismiss
 
   init(
     person: Person,
+    showsReceipts: Bool,
     onSave: @escaping (Person) async -> Person?,
     onDelete: @escaping (Person) async -> Bool
   ) {
+    self.showsReceipts = showsReceipts
     self.onSave = onSave
     self.onDelete = onDelete
     savedPerson = person
@@ -74,7 +86,7 @@ struct PersonDetailView: View {
       Section("Payment Methods") {
         defaultPaymentMethodRow
 
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: isExpanded(.venmo)) {
           if person.contactIdentifier != nil {
             ContactRecipientPicker(
               contact: contact,
@@ -88,13 +100,13 @@ struct PersonDetailView: View {
           paymentMethodDisclosureLabel(.venmo)
         }
 
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: isExpanded(.cashApp)) {
           cashAppField
         } label: {
           paymentMethodDisclosureLabel(.cashApp)
         }
 
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: isExpanded(.iMessage)) {
           if person.contactIdentifier != nil {
             ContactRecipientPicker(
               contact: contact,
@@ -108,20 +120,26 @@ struct PersonDetailView: View {
           paymentMethodDisclosureLabel(.iMessage)
         }
       }
+
+      if !receipts.isEmpty {
+        Section("Receipts") {
+          ForEach(receipts) { receipt in
+            NavigationLink {
+              ReceiptFlowView(input: flowInput(for: receipt))
+            } label: {
+              PersonReceiptRow(receipt: receipt)
+            }
+          }
+        }
+      }
     }
     .navigationTitle(person.displayName)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .confirmationAction) {
-        Button(role: .destructive) {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Delete Person", systemImage: "trash", role: .destructive) {
           isDeleteConfirmationPresented = true
-        } label: {
-          Image(systemName: "trash")
-            .font(.subheadline)
-            .foregroundStyle(.red)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Delete Person")
       }
     }
     .confirmationDialog(
@@ -145,6 +163,9 @@ struct PersonDetailView: View {
     .haptics(haptic)
     .task(id: person.contactIdentifier) {
       await loadContact()
+    }
+    .task(id: showsReceipts ? library.receipts : nil) {
+      await loadReceipts()
     }
     .sheet(isPresented: $isAppleContactPresented) {
       if let identifier = person.contactIdentifier {
@@ -236,7 +257,22 @@ struct PersonDetailView: View {
     }
   }
 
+  /// Expands one payment method at a time, collapsing the one open before it.
+  private func isExpanded(_ method: PaymentMethod) -> Binding<Bool> {
+    Binding(
+      get: { expandedMethod == method },
+      set: { isExpanded in
+        if isExpanded {
+          expandedMethod = method
+        } else if expandedMethod == method {
+          expandedMethod = nil
+        }
+      })
+  }
+
+  /// Makes `method` the default and expands it so its details can be filled in.
   private func selectDefaultMethod(_ method: PaymentMethod?) {
+    withAnimation(.smooth(duration: 0.3)) { expandedMethod = method }
     guard person.paymentMethods.defaultMethod != method else { return }
     person.paymentMethods.defaultMethod = method
     haptic.play(.selection)
@@ -271,6 +307,29 @@ struct PersonDetailView: View {
     }
   }
 
+  /// Reloads whenever the library does, so edits made in an opened receipt show on return.
+  private func loadReceipts() async {
+    guard showsReceipts else { return }
+    let people = (try? await peopleStorage.list()) ?? [savedPerson]
+    let loaded = await PersonReceipt.load(
+      for: savedPerson,
+      in: library.receipts,
+      people: people,
+      storage: receiptStorage)
+    guard !Task.isCancelled else { return }
+    withAnimation(.smooth(duration: 0.3)) { receipts = loaded }
+  }
+
+  private func flowInput(for receipt: PersonReceipt) -> ReceiptFlowInput {
+    if let recognition = recognitions.recognition(for: receipt.id) {
+      return .recognition(recognition)
+    }
+    return .storedReceipt(
+      receipt.id,
+      backgroundStyle: receipt.summary.backgroundStyle,
+      document: receipt.document)
+  }
+
   /// Saves the edited person, unless nothing changed or the name was cleared.
   private func saveChanges() {
     guard !isDeleting else { return }
@@ -301,6 +360,55 @@ struct PersonDetailView: View {
     Task {
       _ = await onSave(updatedPerson)
     }
+  }
+}
+
+/// A receipt on a person's page, with what they owe on it in place of the receipt's total.
+private struct PersonReceiptRow: View {
+  let receipt: PersonReceipt
+
+  var body: some View {
+    HStack(spacing: 12) {
+      ReceiptMonogramTile(
+        style: receipt.summary.backgroundStyle,
+        initials: receipt.summary.merchantName.flatMap(ReceiptMonogram.initials),
+        systemImage: "receipt")
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .lineLimit(1)
+        if let date {
+          Text(date)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer(minLength: 8)
+      owedValue
+    }
+  }
+
+  @ViewBuilder
+  private var owedValue: some View {
+    if let owed = receipt.owed {
+      Text(owed, format: .currency(code: receipt.currency))
+        .font(.body.monospacedDigit())
+        .fontWeight(.semibold)
+        .foregroundStyle(abs(owed) < 0.005 ? Color.secondary : Color.orange)
+        .accessibilityLabel(
+          "Owes \(owed.formatted(.currency(code: receipt.currency)))")
+    } else {
+      ShareTotalText(amount: nil, currency: receipt.currency)
+    }
+  }
+
+  private var title: String {
+    let merchant =
+      receipt.summary.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return merchant.isEmpty ? "Receipt" : merchant
+  }
+
+  private var date: String? {
+    receipt.summary.localDate.flatMap { ReceiptLibraryDateFormatter.formatted(localDate: $0) }
   }
 }
 

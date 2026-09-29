@@ -4,8 +4,16 @@ struct ReceiptItemsSection: View {
   let draft: ReceiptDraft
   let isEditing: Bool
   @Binding var selectedParticipantIDs: Set<ReceiptParticipant.ID>
+  /// The item whose people were copied into the selection, until anything else changes it.
+  @Binding var seededItemID: ReceiptDraftItem.ID?
   @Binding var haptic: HapticEvent
+  /// The item lifted into focus, and whether its focused copy is on screen yet.
+  let focusedItemID: ReceiptDraftItem.ID?
+  let isFocusPresented: Bool
   let onSelectItem: (ReceiptDraftItem.ID) -> Void
+  /// Focuses an item, noting whether it was pressed into focus and so is already bulging.
+  let onFocusItem: (_ id: ReceiptDraftItem.ID, _ isPressed: Bool) -> Void
+  let onFocusedRowFrameChange: (CGRect) -> Void
 
   var body: some View {
     let displayCurrency = draft.displayCurrency
@@ -17,8 +25,12 @@ struct ReceiptItemsSection: View {
           isAssignedToSelection: isAssignedToSelection(item),
           hasSelection: !selectedParticipantIDs.isEmpty,
           isEditing: isEditing,
+          isFocused: item.id == focusedItemID,
+          isLiftedOut: item.id == focusedItemID && isFocusPresented,
           displayCurrency: displayCurrency,
-          onTap: { tap(item.id) }
+          onTap: { tap(item.id) },
+          onFocus: { focus(item.id, isPressed: $0) },
+          onFocusedFrameChange: onFocusedRowFrameChange
         )
         .equatable()
       }
@@ -54,16 +66,32 @@ struct ReceiptItemsSection: View {
       return
     }
     if selectedParticipantIDs.isEmpty {
-      guard !item.participantIDs.isEmpty else { return }
+      guard !item.participantIDs.isEmpty else {
+        onFocusItem(id, false)
+        return
+      }
       withAnimation(.smooth(duration: 0.25)) {
         selectedParticipantIDs = item.participantIDs
       }
+      seededItemID = id
+    } else if seededItemID == id {
+      // Tapping the item again undoes copying its people rather than unassigning all of them.
+      withAnimation(.smooth(duration: 0.25)) {
+        selectedParticipantIDs = []
+      }
+      seededItemID = nil
     } else {
       withAnimation(.smooth(duration: 0.25)) {
         draft.toggleAssignment(of: selectedParticipantIDs, to: id)
       }
+      seededItemID = nil
     }
     haptic.play(.selection)
+  }
+
+  private func focus(_ id: ReceiptDraftItem.ID, isPressed: Bool) {
+    guard !isEditing, focusedItemID == nil else { return }
+    onFocusItem(id, isPressed)
   }
 
   private func isAssignedToSelection(_ item: ReceiptDraftItem) -> Bool {
@@ -78,8 +106,14 @@ private struct ReceiptItemRow: View, Equatable {
   let isAssignedToSelection: Bool
   let hasSelection: Bool
   let isEditing: Bool
+  let isFocused: Bool
+  let isLiftedOut: Bool
   let displayCurrency: String
   let onTap: () -> Void
+  let onFocus: (_ isPressed: Bool) -> Void
+  let onFocusedFrameChange: (CGRect) -> Void
+
+  @State private var isPressed = false
 
   nonisolated static func == (lhs: ReceiptItemRow, rhs: ReceiptItemRow) -> Bool {
     lhs.item == rhs.item
@@ -87,8 +121,79 @@ private struct ReceiptItemRow: View, Equatable {
       && lhs.isAssignedToSelection == rhs.isAssignedToSelection
       && lhs.hasSelection == rhs.hasSelection
       && lhs.isEditing == rhs.isEditing
+      && lhs.isFocused == rhs.isFocused
+      && lhs.isLiftedOut == rhs.isLiftedOut
       && lhs.displayCurrency == rhs.displayCurrency
   }
+
+  /// Taps and long presses are one gesture rather than a `Button`: a list row's button takes its
+  /// taps from the row's selection, which cancels any long press attached to it.
+  var body: some View {
+    ReceiptItemRowContent(
+      item: item,
+      assignedParticipants: assignedParticipants,
+      isAssignedToSelection: isAssignedToSelection,
+      isEditing: isEditing,
+      displayCurrency: displayCurrency
+    )
+    .onGeometryChange(for: CGRect?.self) { proxy in
+      isFocused ? proxy.frame(in: .global) : nil
+    } action: { frame in
+      if let frame { onFocusedFrameChange(frame) }
+    }
+    // Grows across the long press, then springs back if the finger lifts early.
+    .scaleEffect(isPressed ? ReceiptItemRowContent.pressedScale : 1)
+    .animation(
+      isPressed
+        ? .easeOut(duration: ReceiptRowPressRecognizer.pressGrowth)
+        : .spring(duration: 0.3, bounce: 0.3),
+      value: isPressed
+    )
+    // The focused copy stands in for the row, so the row hides and returns in one frame.
+    .opacity(isLiftedOut ? 0 : 1)
+    .transaction(value: isLiftedOut) { $0.animation = nil }
+    .contentShape(.rect)
+    .gesture(
+      ReceiptRowPressGesture(
+        onPressingChanged: { isPressed = $0 },
+        onTap: onTap,
+        onLongPress: { onFocus(true) }
+      )
+    )
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction(.default, onTap)
+    .accessibilityHint(accessibilityHint)
+    .accessibilityActions {
+      if !isEditing {
+        Button("Assign People") { onFocus(false) }
+      }
+    }
+  }
+
+  private var accessibilityHint: String {
+    if isEditing { return "Edit this item" }
+    if !hasSelection {
+      return item.participantIDs.isEmpty
+        ? "Choose the people who shared this item"
+        : "Select the people assigned to this item"
+    }
+    return isAssignedToSelection
+      ? "Remove the selected people from this item"
+      : "Assign the selected people to this item"
+  }
+}
+
+/// What a receipt item row draws, shared by the list and the item lifted into focus.
+struct ReceiptItemRowContent: View {
+  /// How much a row grows while pressed, and stays grown while lifted into focus.
+  static let pressedScale: CGFloat = 1.03
+
+  let item: ReceiptDraftItem
+  let assignedParticipants: [ReceiptParticipant]
+  let isAssignedToSelection: Bool
+  let isEditing: Bool
+  let displayCurrency: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
@@ -127,10 +232,6 @@ private struct ReceiptItemRow: View, Equatable {
         .transition(.move(edge: .top).combined(with: .opacity))
       }
     }
-    .contentShape(.rect)
-    .onTapGesture(perform: onTap)
-    .accessibilityAddTraits(.isButton)
-    .accessibilityHint(accessibilityHint)
   }
 
   @ViewBuilder
@@ -154,17 +255,5 @@ private struct ReceiptItemRow: View, Equatable {
       .accessibilityLabel(
         "Assigned to \(assignedParticipants.map(\.displayName).formatted())")
     }
-  }
-
-  private var accessibilityHint: String {
-    if isEditing { return "Edit this item" }
-    if !hasSelection {
-      return item.participantIDs.isEmpty
-        ? "Select one or more people before assigning this item"
-        : "Select the people assigned to this item"
-    }
-    return isAssignedToSelection
-      ? "Remove the selected people from this item"
-      : "Assign the selected people to this item"
   }
 }

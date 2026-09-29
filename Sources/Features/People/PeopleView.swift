@@ -21,6 +21,8 @@ struct PeopleView: View {
         peopleContent
       }
     }
+    .scrollContentBackground(.hidden)
+    .background { ReceiptLibraryBackground() }
     .navigationTitle("People")
     .haptics(haptic)
     .task {
@@ -79,12 +81,15 @@ struct PeopleView: View {
       ContentUnavailableView(
         "No Saved People",
         systemImage: "person.2",
-        description: Text("People appear here after you add them to a receipt."))
+        description: Text("People appear here after you add them to a receipt.")
+      )
+      .listRowBackground(Color.clear)
     } else {
       ForEach(savedPeople) { person in
         NavigationLink {
           PersonDetailView(
             person: person,
+            showsReceipts: true,
             onSave: { await model.save($0) },
             onDelete: { await deletePerson($0) })
         } label: {

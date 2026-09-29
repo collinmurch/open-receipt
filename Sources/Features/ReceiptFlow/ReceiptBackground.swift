@@ -279,7 +279,7 @@ extension ReceiptBackgroundStyle {
 }
 
 extension ReceiptThemeColor {
-  fileprivate func accentColor(for colorScheme: ColorScheme) -> Color {
+  func accentColor(for colorScheme: ColorScheme) -> Color {
     let isDark = colorScheme == .dark
     return switch self {
     case .blue:

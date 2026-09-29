@@ -1,7 +1,6 @@
 import SwiftUI
 
 private enum ReceiptReviewSheet: Hashable {
-  case pages
   case people
 }
 
@@ -10,6 +9,10 @@ private enum ReceiptReviewGlass: Hashable {
 }
 
 struct ReceiptReviewView: View {
+  /// How far the bottom bar slides to leave the screen while editing. It only slides: fading glass
+  /// renders it against the page background, which covers the rows behind it.
+  private static let bottomBarExitDistance: CGFloat = 300
+
   @Bindable var draft: ReceiptDraft
   let showsSampleNotice: Bool
   let pages: ReceiptPagesEditor
@@ -17,6 +20,12 @@ struct ReceiptReviewView: View {
   @State private var isEditing = false
   @State private var selectedItemID: ReceiptDraftItem.ID?
   @State private var selectedParticipantIDs: Set<ReceiptParticipant.ID> = []
+  @State private var seededItemID: ReceiptDraftItem.ID?
+  @State private var focusedItemID: ReceiptDraftItem.ID?
+  @State private var paymentsFocus: ReceiptPaymentsFocus?
+  @State private var focusedRowFrame: CGRect?
+  @State private var isFocusedItemPressed = false
+  @State private var participantStripFrame: CGRect?
   @State private var selectedPage: ReceiptReviewPage
   @State private var isPeoplePresented = false
   @State private var isPagesPresented = false
@@ -47,6 +56,8 @@ struct ReceiptReviewView: View {
     reviewContent
       .scrollEdgeEffectHidden(true, for: .bottom)
       .safeAreaBar(edge: .bottom) { bottomBar }
+      .overlay { itemFocus }
+      .navigationBarBackButtonHidden(isFocusing)
       .tint(draft.backgroundStyle.accentColor(for: colorScheme))
       .navigationTitle(navigationTitle)
       .navigationBarTitleDisplayMode(.inline)
@@ -66,7 +77,6 @@ struct ReceiptReviewView: View {
       .sheet(isPresented: $isPagesPresented) {
         ReceiptPagesView(receiptID: draft.id, editor: pages, style: draft.backgroundStyle)
           .environment(\.receiptBackgroundMotion, motion)
-          .navigationTransition(.zoom(sourceID: ReceiptReviewSheet.pages, in: sheetTransition))
       }
       .haptics(haptic)
       .sensoryFeedback(.success, trigger: draft.isCompleted) { wasCompleted, isCompleted in
@@ -78,20 +88,28 @@ struct ReceiptReviewView: View {
   /// Both pages of a completed receipt stay built, and switching only changes which one shows.
   /// Rebuilding a page on every switch stalls the frame that starts the switcher's animation.
   private var reviewContent: some View {
-    let showsPayments = draft.isCompleted && selectedPage == .payments && !isEditing
-    return ZStack {
+    ZStack {
       receiptList
         .pageVisibility(!showsPayments)
       if draft.isCompleted {
-        ReceiptRequestsView(draft: draft, peopleStorage: peopleStorage, onFlush: onFlush)
-          .pageVisibility(showsPayments)
+        ReceiptRequestsView(
+          draft: draft,
+          peopleStorage: peopleStorage,
+          focus: $paymentsFocus,
+          onFlush: onFlush
+        )
+        .pageVisibility(showsPayments)
       }
     }
   }
 
+  private var showsPayments: Bool {
+    draft.isCompleted && selectedPage == .payments && !isEditing
+  }
+
   private var receiptList: some View {
     List {
-      if showsSampleNotice && !isEditing {
+      if showsSampleNotice {
         Section {
           Label("Sample data for interface development", systemImage: "hammer")
             .foregroundStyle(.secondary)
@@ -106,8 +124,13 @@ struct ReceiptReviewView: View {
         draft: draft,
         isEditing: isEditing,
         selectedParticipantIDs: $selectedParticipantIDs,
+        seededItemID: $seededItemID,
         haptic: $haptic,
-        onSelectItem: { selectedItemID = $0 }
+        focusedItemID: focusedItemID,
+        isFocusPresented: isItemFocusPresented,
+        onSelectItem: { selectedItemID = $0 },
+        onFocusItem: focusItem,
+        onFocusedRowFrameChange: { focusedRowFrame = $0 }
       )
       ReceiptTotalsSection(
         draft: draft,
@@ -122,41 +145,90 @@ struct ReceiptReviewView: View {
       }
     }
     .scrollContentBackground(.hidden)
+    // Editing adds the receipt's fields above the items. Holding the top edge still lets them push
+    // the items down; holding the items still instead places the fields by estimated height and
+    // jumps once they're measured.
+    .defaultScrollAnchor(.top, for: .sizeChanges)
     .safeAreaBar(edge: .top) {
-      GlassEffectContainer {
-        if !isEditing {
-          ParticipantStrip(
-            participants: draft.participants,
-            amountsOwed: participantAmountsOwed,
-            currency: draft.displayCurrency,
-            selectedParticipantIDs: selectedParticipantIDs,
-            onSelect: toggleParticipantSelection,
-            onManagePeople: { isPeoplePresented = true },
-            addTransition: (id: ReceiptReviewSheet.people, namespace: sheetTransition)
-          )
-          .receiptTopBarPadding()
-        }
+      // Editing collapses the bar rather than removing the strip, so the list rises with it and
+      // the strip slides up behind the navigation bar instead of over it.
+      ParticipantStrip(
+        participants: draft.participants,
+        amountsOwed: participantAmountsOwed,
+        currency: draft.displayCurrency,
+        selectedParticipantIDs: selectedParticipantIDs,
+        onSelect: toggleParticipantSelection,
+        onManagePeople: { isPeoplePresented = true },
+        addTransition: isFocusingItem ? nil : peopleSheetTransition
+      )
+      .onGeometryChange(for: CGRect.self) { proxy in
+        proxy.frame(in: .global)
+      } action: { frame in
+        participantStripFrame = frame
       }
+      .opacity(isItemFocusPresented ? 0 : 1)
+      .transaction(value: isItemFocusPresented) { $0.animation = nil }
+      .receiptTopBarPadding()
+      .frame(height: isEditing ? 0 : nil, alignment: .bottom)
+      .clipped()
+      .allowsHitTesting(!isEditing)
+      .accessibilityHidden(isEditing)
     }
   }
 
   /// Done while the receipt is being split, then the switch between its items and payments. Done
-  /// morphs into the switcher when the receipt is completed.
+  /// morphs into the switcher when the receipt is completed. Editing slides the bar off-screen
+  /// but keeps it in place: changing the bottom inset hides the rows under the bar until the
+  /// change settles.
   private var bottomBar: some View {
     GlassEffectContainer {
-      if !isEditing {
-        if draft.isCompleted {
-          ReceiptPageSwitcher(selection: $selectedPage)
-            .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
-        } else {
-          completionButton
-            .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
-        }
+      if draft.isCompleted {
+        ReceiptPageSwitcher(selection: $selectedPage)
+          .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
+      } else {
+        completionButton
+          .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
       }
     }
     .padding(.bottom, 8)
     .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: draft.isCompleted)
-    .animation(.smooth(duration: 0.35), value: isEditing)
+    .offset(y: isEditing || isFocusing ? Self.bottomBarExitDistance : 0)
+    .allowsHitTesting(!isEditing && !isFocusing)
+    .accessibilityHidden(isEditing || isFocusing)
+  }
+
+  @ViewBuilder
+  private var itemFocus: some View {
+    if let focusedItemID, let focusedRowFrame, let participantStripFrame {
+      ReceiptItemFocusView(
+        draft: draft,
+        itemID: focusedItemID,
+        rowFrame: focusedRowFrame,
+        startsPressed: isFocusedItemPressed,
+        stripFrame: participantStripFrame,
+        stripSelection: selectedParticipantIDs,
+        amountsOwed: participantAmountsOwed,
+        haptic: $haptic,
+        onManagePeople: { isPeoplePresented = true },
+        addTransition: peopleSheetTransition,
+        onDismiss: endItemFocus
+      )
+      // The focus view animates its own arrival, starting over the views it copies.
+      .transition(.identity)
+    }
+  }
+
+  private var isFocusingItem: Bool { focusedItemID != nil }
+
+  /// Whether an item, or something on the payments page, is lifted out of its list.
+  private var isFocusing: Bool { focusedItemID != nil || paymentsFocus != nil }
+
+  private var isItemFocusPresented: Bool {
+    focusedItemID != nil && focusedRowFrame != nil && participantStripFrame != nil
+  }
+
+  private var peopleSheetTransition: (id: AnyHashable, namespace: Namespace.ID) {
+    (id: ReceiptReviewSheet.people, namespace: sheetTransition)
   }
 
   private var participantAmountsOwed: [ReceiptParticipant.ID: Double] {
@@ -178,7 +250,7 @@ struct ReceiptReviewView: View {
 
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
-    if draft.isCompleted && selectedPage == .payments { return "Request Payments" }
+    if showsPayments { return "Request Payments" }
     return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
   }
 
@@ -187,15 +259,20 @@ struct ReceiptReviewView: View {
     if isEditing {
       ToolbarItem(placement: .confirmationAction) {
         Button("Done", systemImage: "checkmark", role: .confirm, action: finishEditing)
-          .buttonStyle(.glassProminent)
       }
-    } else {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
+    } else if !isFocusing {
+      if selectedParticipantIDs.count > 1 && !showsPayments {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button(
+            "Clear Selection", systemImage: "person.2.slash", action: clearParticipantSelection)
+        }
       }
-      .matchedTransitionSource(id: ReceiptReviewSheet.pages, in: sheetTransition)
 
-      if selectedPage == .receipt || !draft.isCompleted {
+      if !showsPayments {
+        ToolbarTitleMenu {
+          Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
+        }
+
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit", systemImage: "pencil", action: beginEditing)
         }
@@ -262,8 +339,24 @@ struct ReceiptReviewView: View {
     }
   }
 
+  private func focusItem(_ id: ReceiptDraftItem.ID, isPressed: Bool) {
+    haptic.play(.impact(weight: .medium))
+    isFocusedItemPressed = isPressed
+    withAnimation(.smooth(duration: 0.35)) {
+      focusedItemID = id
+    }
+  }
+
+  private func endItemFocus() {
+    withAnimation(.smooth(duration: 0.35)) {
+      focusedItemID = nil
+      focusedRowFrame = nil
+    }
+  }
+
   private func toggleParticipantSelection(_ id: ReceiptParticipant.ID) {
     haptic.play(.selection)
+    seededItemID = nil
     withAnimation(.smooth(duration: 0.25)) {
       if selectedParticipantIDs.contains(id) {
         selectedParticipantIDs.remove(id)
@@ -273,8 +366,17 @@ struct ReceiptReviewView: View {
     }
   }
 
+  private func clearParticipantSelection() {
+    haptic.play(.selection)
+    seededItemID = nil
+    withAnimation(.smooth(duration: 0.25)) {
+      selectedParticipantIDs = []
+    }
+  }
+
   private func removeMissingParticipantSelections() {
     let participantIDs = Set(draft.participants.map(\.id))
+    seededItemID = nil
     selectedParticipantIDs.formIntersection(participantIDs)
   }
 

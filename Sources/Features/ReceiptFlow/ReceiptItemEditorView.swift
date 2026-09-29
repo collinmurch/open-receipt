@@ -116,8 +116,11 @@ private struct ReceiptItemSplitSheet: View {
           Button(role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Split") { onSplit(count) }
+          Button("Split", systemImage: "checkmark", role: .confirm) { onSplit(count) }
         }
+      }
+      .sensoryFeedback(trigger: count) { oldCount, newCount in
+        newCount > oldCount ? .increase : .decrease
       }
     }
     .presentationDetents([.medium])

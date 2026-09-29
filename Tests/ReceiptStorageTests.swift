@@ -66,6 +66,18 @@ final class ReceiptStorageTests: XCTestCase {
     XCTAssertEqual(document.receipt?.currency, "EUR")
   }
 
+  func testCreateBlankSplitsAdjustmentsProportionallyByDefault() async throws {
+    let document = try await storage.createBlank(id: UUID())
+
+    XCTAssertEqual(document.split?.adjustmentMethod, .proportional)
+  }
+
+  func testCreateBlankUsesRequestedAdjustmentMethod() async throws {
+    let document = try await storage.createBlank(id: UUID(), adjustmentMethod: .even)
+
+    XCTAssertEqual(document.split?.adjustmentMethod, .even)
+  }
+
   func testCreatedBlankCanBeLoaded() async throws {
     let id = UUID()
     _ = try await storage.createBlank(id: id)

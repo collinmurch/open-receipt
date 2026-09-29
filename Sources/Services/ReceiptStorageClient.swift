@@ -27,7 +27,10 @@ struct ReceiptStorageClient: Sendable {
       create: { try await storage.create(scan: $0, backgroundStyle: $1) },
       createBlank: {
         try await storage.createBlank(
-          id: $0, backgroundStyle: $1, currency: CurrencySettings.defaultCode())
+          id: $0,
+          backgroundStyle: $1,
+          currency: CurrencySettings.defaultCode(),
+          adjustmentMethod: AdjustmentSplitSettings.defaultMethod())
       },
       list: { try await storage.list() },
       load: { try await storage.load(id: $0) },
