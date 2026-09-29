@@ -192,8 +192,8 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
           throw ReceiptParserError.invalidResponse("The model returned no content.")
         }
         return try ReceiptModelContract.Response(latestContent)
-      } catch is CancellationError {
-        throw CancellationError()
+      } catch let error as CancellationError {
+        throw error
       } catch {
         throw parserError(for: error)
       }

@@ -112,6 +112,6 @@ private final class ContinuedProcessing: @unchecked Sendable {
   }
 
   private static func subtitle(itemCount: Int) -> String {
-    String(AttributedString(localized: "Read ^[\(itemCount) item](inflect: true)").characters)
+    String(inflecting: "Read ^[\(itemCount) item](inflect: true)")
   }
 }

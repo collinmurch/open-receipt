@@ -4,11 +4,11 @@ struct ReceiptItemsSection: View {
   let draft: ReceiptDraft
   let isEditing: Bool
   @Binding var selectedParticipantIDs: Set<ReceiptParticipant.ID>
-  let displayCurrency: String
   @Binding var haptic: HapticEvent
   let onSelectItem: (ReceiptDraftItem.ID) -> Void
 
   var body: some View {
+    let displayCurrency = draft.displayCurrency
     Section {
       ForEach(draft.items) { item in
         ReceiptItemRow(
@@ -23,7 +23,7 @@ struct ReceiptItemsSection: View {
         .equatable()
       }
       .onDelete { offsets in
-        draft.removeItems(at: offsets)
+        draft.items.remove(atOffsets: offsets)
         haptic.play(.removal)
       }
       .deleteDisabled(!isEditing)

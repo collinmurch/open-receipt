@@ -1,11 +1,12 @@
 import Foundation
 
 enum ReceiptCurrency {
-  /// `code` when it is a three-letter code, or `fallback` otherwise.
-  static func displayCode(_ code: String?, fallback: String = CurrencySettings.defaultCode())
-    -> String
-  {
-    guard let code, code.count == 3 else { return fallback }
+  /// `code` when it is a currency code, or `fallback` otherwise.
+  static func displayCode(
+    _ code: String?,
+    fallback: @autoclosure () -> String = CurrencySettings.defaultCode()
+  ) -> String {
+    guard let code, ReceiptValidator.isCurrencyCode(code) else { return fallback() }
     return code
   }
 
@@ -63,21 +64,4 @@ enum ReceiptCurrency {
     "TWD": "dollarsign", "UAH": "hryvniasign", "USD": "dollarsign", "UYU": "dollarsign",
     "VND": "dongsign",
   ]
-}
-
-enum CurrencySettings {
-  static let defaultCodeKey = "defaultCurrency"
-  static let initialDefaultCode = "USD"
-
-  /// The currency new receipts start with, or USD when none valid is stored.
-  static func defaultCode(in defaults: UserDefaults = .standard) -> String {
-    guard let code = defaults.string(forKey: defaultCodeKey), isCurrencyCode(code) else {
-      return initialDefaultCode
-    }
-    return code
-  }
-
-  private static func isCurrencyCode(_ value: String) -> Bool {
-    value.count == 3 && value.unicodeScalars.allSatisfy { ("A"..."Z").contains($0) }
-  }
 }

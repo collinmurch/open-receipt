@@ -57,7 +57,6 @@ struct ReceiptParticipantBreakdownView: View {
         }
       }
       .haptics(haptic)
-      .errorHaptic(requestErrorDescription)
       .sheet(item: $messageComposition) { composition in
         IMessageComposerView(composition: composition) { sent in
           messageComposition = nil
@@ -83,16 +82,7 @@ struct ReceiptParticipantBreakdownView: View {
           }
         }
       }
-      .alert(
-        "Couldn’t Open Payment Request",
-        isPresented: Binding(
-          get: { requestErrorDescription != nil },
-          set: { if !$0 { requestErrorDescription = nil } })
-      ) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text(requestErrorDescription ?? "The payment request could not open.")
-      }
+      .errorAlert("Couldn’t Open Payment Request", message: $requestErrorDescription)
   }
 
   /// The breakdown, subtitled with a missing payment method when there is one.
@@ -202,20 +192,9 @@ struct ReceiptParticipantBreakdownView: View {
     }
   }
 
-  @ViewBuilder
   private var totalValue: some View {
-    if isSplitComplete {
-      Text(share.total, format: .currency(code: currency))
-        .font(.body.monospacedDigit())
-        .fontWeight(.semibold)
-        .foregroundStyle(.secondary)
-    } else {
-      Text("—")
-        .font(.body.monospacedDigit())
-        .fontWeight(.semibold)
-        .foregroundStyle(.secondary)
-        .accessibilityLabel("Total unavailable")
-    }
+    ShareTotalText(amount: isSplitComplete ? share.total : nil, currency: currency)
+      .foregroundStyle(.secondary)
   }
 
   private var paymentDestination: PaymentDestination? {

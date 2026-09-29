@@ -6,8 +6,9 @@ import SwiftUI
 /// The shared motion of a receipt's backgrounds. Every page of a receipt reads the same motion,
 /// so they always show the same frame. The wash drifts only while the receipt is being read and
 /// otherwise rests, which lets its backgrounds stop redrawing.
+@MainActor
 @Observable
-final class ReceiptBackgroundMotion: @unchecked Sendable {
+final class ReceiptBackgroundMotion {
   fileprivate let pattern: ReceiptBackgroundMotionPattern
   /// Whether the wash is still. Resting backgrounds pause their timelines.
   private(set) var isResting: Bool
@@ -46,7 +47,6 @@ final class ReceiptBackgroundMotion: @unchecked Sendable {
   }
 
   /// Starts drifting from the current frame.
-  @MainActor
   func drift(now: Date = .now) {
     if case .drifting = mode { return }
     settleTask?.cancel()
@@ -57,18 +57,16 @@ final class ReceiptBackgroundMotion: @unchecked Sendable {
   }
 
   /// Eases from the current frame to the resting frame, then stops redrawing.
-  @MainActor
   func settle(now: Date = .now) {
     guard case .drifting = mode else { return }
     mode = .settling(from: phase(at: now), start: now)
-    settleTask = Task { @MainActor [weak self] in
+    settleTask = Task { [weak self] in
       try? await Task.sleep(for: .seconds(Self.settleDuration))
-      guard !Task.isCancelled, let self else { return }
-      self.rest()
+      guard !Task.isCancelled else { return }
+      self?.rest()
     }
   }
 
-  @MainActor
   func rest() {
     settleTask?.cancel()
     mode = .resting
@@ -76,15 +74,9 @@ final class ReceiptBackgroundMotion: @unchecked Sendable {
   }
 }
 
-private struct ReceiptBackgroundMotionKey: EnvironmentKey {
-  static let defaultValue = ReceiptBackgroundMotion()
-}
-
 extension EnvironmentValues {
-  var receiptBackgroundMotion: ReceiptBackgroundMotion {
-    get { self[ReceiptBackgroundMotionKey.self] }
-    set { self[ReceiptBackgroundMotionKey.self] = newValue }
-  }
+  /// The motion every background of the open receipt shares.
+  @Entry var receiptBackgroundMotion: ReceiptBackgroundMotion? = nil
 }
 
 extension View {
@@ -106,11 +98,14 @@ struct ReceiptInkWashBackground: View {
   let style: ReceiptBackgroundStyle
   @State private var isVisible = true
   @State private var isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+  /// Resting motion for a background shown outside a receipt, which has no shared motion.
+  @State private var restingMotion = ReceiptBackgroundMotion()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.receiptBackgroundMotion) private var motion
+  @Environment(\.receiptBackgroundMotion) private var sharedMotion
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
+    let motion = sharedMotion ?? restingMotion
     let palette = style.inkWashPalette(for: colorScheme)
     let pattern = motion.pattern
     let isDark = colorScheme == .dark

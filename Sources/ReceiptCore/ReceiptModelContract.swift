@@ -22,15 +22,11 @@ public enum ReceiptModelContract {
     "receipt-image-\(index + 1)"
   }
 
-  static func receipt(from response: Response) -> ParsedReceipt {
-    validatedReceipt(from: response)
-  }
-
   public static func receipt(from data: Data) throws -> ParsedReceipt {
-    validatedReceipt(from: try JSONDecoder().decode(Response.self, from: data))
+    receipt(from: try JSONDecoder().decode(Response.self, from: data))
   }
 
-  private static func validatedReceipt(from response: Response) -> ParsedReceipt {
+  static func receipt(from response: Response) -> ParsedReceipt {
     var receipt = ParsedReceipt(
       merchantName: response.merchantName.trimmingCharacters(in: .whitespacesAndNewlines),
       date: response.date.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -52,7 +48,7 @@ public enum ReceiptModelContract {
       merchantName: partial.merchantName.flatMap(nonEmpty),
       date: partial.date.flatMap(nonEmpty),
       total: partial.total,
-      currency: currency?.count == 3 ? currency : nil,
+      currency: currency.flatMap { ReceiptValidator.isCurrencyCode($0) ? $0 : nil },
       items: (partial.items ?? []).compactMap { item in
         guard let description = item.description.flatMap(nonEmpty) else { return nil }
         return ReceiptParsePreview.Item(
@@ -137,6 +133,11 @@ public enum ReceiptValidator {
   public static let totalReconciliationWarning =
     "Subtotal, tax, tip, and savings do not reconcile with the final total."
 
+  /// Whether `code` has the shape of an ISO 4217 code: three letters.
+  public static func isCurrencyCode(_ code: String) -> Bool {
+    code.count == 3 && code.unicodeScalars.allSatisfy(CharacterSet.letters.contains)
+  }
+
   public static func warnings(for receipt: ParsedReceipt) -> [String] {
     var warnings: [String] = []
     let amounts = [receipt.subtotal, receipt.tax, receipt.tip, receipt.savings, receipt.total]
@@ -149,10 +150,7 @@ public enum ReceiptValidator {
     if receipt.total == 0 {
       warnings.append("No nonzero final total was extracted.")
     }
-    if !receipt.currency.isEmpty
-      && (receipt.currency.count != 3
-        || receipt.currency.unicodeScalars.contains(where: { !CharacterSet.letters.contains($0) }))
-    {
+    if !receipt.currency.isEmpty, !isCurrencyCode(receipt.currency) {
       warnings.append("Currency is not a three-letter ISO code.")
     }
     if receipt.items.contains(where: { $0.description.isEmpty }) {

@@ -23,11 +23,4 @@ extension View {
   func haptics(_ event: HapticEvent) -> some View {
     sensoryFeedback(trigger: event) { _, newEvent in newEvent.feedback }
   }
-
-  /// Plays error feedback when `errorDescription` appears, alongside the alert that shows it.
-  func errorHaptic(_ errorDescription: String?) -> some View {
-    sensoryFeedback(.error, trigger: errorDescription) { oldValue, newValue in
-      oldValue == nil && newValue != nil
-    }
-  }
 }

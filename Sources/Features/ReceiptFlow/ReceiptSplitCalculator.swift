@@ -1,19 +1,5 @@
 import Foundation
 
-enum ReceiptAdjustmentSplitMethod: String, CaseIterable, Codable, Identifiable, Sendable {
-  case proportional
-  case even
-
-  var id: Self { self }
-
-  var title: String {
-    switch self {
-    case .proportional: "Proportionally"
-    case .even: "Evenly"
-    }
-  }
-}
-
 struct ReceiptItemShare: Identifiable {
   let itemID: ReceiptDraftItem.ID
   let description: String
@@ -73,7 +59,7 @@ enum ReceiptSplitCalculator {
         continue
       }
 
-      let amounts = allocate(item.lineTotal, weights: assignedIDs.map { ($0, 1) })
+      let amounts = allocate(item.lineTotal, weights: assignedIDs.map { (id: $0, weight: 1) })
       for participantID in assignedIDs {
         let amount = amounts[participantID, default: 0]
         itemShares[participantID, default: []].append(
@@ -90,14 +76,15 @@ enum ReceiptSplitCalculator {
       participantIDs: participantIDs,
       itemSubtotals: itemSubtotals,
       method: adjustmentMethod)
-    let totalWeight = weights.reduce(0) { $0 + $1.1 }
+    let weightsByID = Dictionary(uniqueKeysWithValues: weights.map { ($0.id, $0.weight) })
+    let totalWeight = weights.reduce(0) { $0 + $1.weight }
     var adjustmentShares: [ReceiptParticipant.ID: [ReceiptAdjustmentShare]] = [:]
 
     for component in adjustmentComponents(draft: draft) {
       let amounts = allocate(component.amount, weights: weights)
       for participantID in participantIDs {
         guard let amount = amounts[participantID] else { continue }
-        let weight = weights.first { $0.0 == participantID }?.1 ?? 0
+        let weight = weightsByID[participantID, default: 0]
         adjustmentShares[participantID, default: []].append(
           ReceiptAdjustmentShare(
             id: component.id,
@@ -119,24 +106,28 @@ enum ReceiptSplitCalculator {
       unassignedItemTotal: unassignedItemTotal)
   }
 
+  private typealias Weight = (id: ReceiptParticipant.ID, weight: Double)
+
   private static func adjustmentWeights(
     participantIDs: [ReceiptParticipant.ID],
     itemSubtotals: [ReceiptParticipant.ID: Double],
     method: ReceiptAdjustmentSplitMethod
-  ) -> [(ReceiptParticipant.ID, Double)] {
+  ) -> [Weight] {
     switch method {
     case .proportional:
-      participantIDs.map { ($0, max(0, itemSubtotals[$0, default: 0])) }
+      participantIDs.map { (id: $0, weight: max(0, itemSubtotals[$0, default: 0])) }
     case .even:
-      participantIDs.map { ($0, 1) }
+      participantIDs.map { (id: $0, weight: 1) }
     }
   }
 
+  /// The amounts between the item subtotal and the total that everyone shares: a printed
+  /// subtotal that differs from the items, each adjustment, and anything else the total
+  /// includes.
   @MainActor
   private static func adjustmentComponents(draft: ReceiptDraft) -> [AdjustmentComponent] {
     var components: [AdjustmentComponent] = []
-    let itemSubtotal = draft.items.reduce(0) { $0 + $1.lineTotal }
-    let subtotalDifference = draft.subtotal - itemSubtotal
+    let subtotalDifference = draft.subtotal - draft.expectedSubtotal
     if abs(subtotalDifference) >= 0.005 {
       components.append(
         AdjustmentComponent(
@@ -144,15 +135,11 @@ enum ReceiptSplitCalculator {
           title: "Subtotal adjustment",
           amount: subtotalDifference))
     }
-    if draft.adjustments.contains(.tax), abs(draft.tax) >= 0.005 {
-      components.append(AdjustmentComponent(id: "tax", title: "Tax", amount: draft.tax))
-    }
-    if draft.adjustments.contains(.tip), abs(draft.tip) >= 0.005 {
-      components.append(AdjustmentComponent(id: "tip", title: "Tip", amount: draft.tip))
-    }
-    if draft.adjustments.contains(.savings), abs(draft.savings) >= 0.005 {
+    for adjustment in ReceiptTotalAdjustment.allCases {
+      let amount = draft.signedAmount(of: adjustment)
+      guard abs(amount) >= 0.005 else { continue }
       components.append(
-        AdjustmentComponent(id: "savings", title: "Savings", amount: -draft.savings))
+        AdjustmentComponent(id: adjustment.rawValue, title: adjustment.title, amount: amount))
     }
 
     let knownTotal = draft.subtotal + draft.tax + draft.tip - draft.savings
@@ -164,47 +151,38 @@ enum ReceiptSplitCalculator {
     return components
   }
 
+  /// Splits `amount` into whole cents by weight. Leftover cents go to the largest remainders,
+  /// and ties go to whoever comes first.
   private static func allocate(
     _ amount: Double,
-    weights: [(ReceiptParticipant.ID, Double)]
+    weights: [Weight]
   ) -> [ReceiptParticipant.ID: Double] {
-    let positiveWeights = weights.filter { $0.1 > 0 }
-    let totalWeight = positiveWeights.reduce(0) { $0 + $1.1 }
+    let positiveWeights = weights.filter { $0.weight > 0 }
+    let totalWeight = positiveWeights.reduce(0) { $0 + $1.weight }
     guard totalWeight > 0 else { return [:] }
 
     let sign = amount < 0 ? -1 : 1
     let totalCents = Int((abs(amount) * 100).rounded())
     var cents: [ReceiptParticipant.ID: Int] = [:]
-    var fractions: [(ReceiptParticipant.ID, Double)] = []
+    var remainders: [(order: Int, id: ReceiptParticipant.ID, fraction: Double)] = []
     var allocatedCents = 0
 
-    for (participantID, weight) in positiveWeights {
-      let exactCents = Double(totalCents) * weight / totalWeight
+    for (order, entry) in positiveWeights.enumerated() {
+      let exactCents = Double(totalCents) * entry.weight / totalWeight
       let baseCents = Int(exactCents.rounded(.down))
-      cents[participantID] = baseCents
+      cents[entry.id] = baseCents
       allocatedCents += baseCents
-      fractions.append((participantID, exactCents - Double(baseCents)))
+      remainders.append((order: order, id: entry.id, fraction: exactCents - Double(baseCents)))
     }
 
-    fractions.sort {
-      if $0.1 == $1.1 {
-        return participantIndex($0.0, in: positiveWeights)
-          < participantIndex($1.0, in: positiveWeights)
-      }
-      return $0.1 > $1.1
+    remainders.sort {
+      $0.fraction == $1.fraction ? $0.order < $1.order : $0.fraction > $1.fraction
     }
-    for index in 0..<(totalCents - allocatedCents) {
-      cents[fractions[index].0, default: 0] += 1
+    for remainder in remainders.prefix(totalCents - allocatedCents) {
+      cents[remainder.id, default: 0] += 1
     }
 
     return cents.mapValues { Double($0 * sign) / 100 }
-  }
-
-  private static func participantIndex(
-    _ id: ReceiptParticipant.ID,
-    in weights: [(ReceiptParticipant.ID, Double)]
-  ) -> Int {
-    weights.firstIndex { $0.0 == id } ?? weights.endIndex
   }
 
   private struct AdjustmentComponent {

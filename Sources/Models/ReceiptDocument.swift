@@ -20,18 +20,7 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
 
   struct Presentation: Codable, Equatable, Sendable {
     var backgroundStyle: ReceiptBackgroundStyle
-    var isCompleted: Bool
-
-    init(backgroundStyle: ReceiptBackgroundStyle, isCompleted: Bool = false) {
-      self.backgroundStyle = backgroundStyle
-      self.isCompleted = isCompleted
-    }
-
-    init(from decoder: Decoder) throws {
-      let container = try decoder.container(keyedBy: CodingKeys.self)
-      backgroundStyle = try container.decode(ReceiptBackgroundStyle.self, forKey: .backgroundStyle)
-      isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
-    }
+    var isCompleted = false
   }
 
   struct Scan: Codable, Equatable, Sendable {
@@ -55,10 +44,9 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
 
     var status: Status
     var contractVersion: Int
-    var lastAttemptedAt: Date?
-    var completedAt: Date?
-    var warnings: [String]
-    var failureMessage: String?
+    var lastAttemptedAt: Date? = nil
+    var completedAt: Date? = nil
+    var failureMessage: String? = nil
     /// The scan pages the current receipt values were recognized from.
     var pageIDs: [UUID] = []
     /// When a read that stopped at the reading limit starts again on its own.
@@ -69,7 +57,6 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
       case contractVersion
       case lastAttemptedAt
       case completedAt
-      case warnings
       case failureMessage
       case pageIDs = "pageIds"
       case deferredUntil
@@ -212,6 +199,42 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   let unavailableDescription: String?
   /// When an unread receipt is read again on its own after the reading limit resets.
   var deferredUntil: Date?
+
+  /// A receipt whose stored file couldn't be read, dated by `date`.
+  static func unavailable(id: UUID, date: Date, error: any Error) -> ReceiptSummary {
+    ReceiptSummary(
+      id: id,
+      updatedAt: date,
+      capturedAt: date,
+      backgroundStyle: .blue,
+      recognitionStatus: .failed,
+      merchantName: nil,
+      localDate: nil,
+      total: nil,
+      currency: nil,
+      isUnavailable: true,
+      unavailableDescription: error.localizedDescription)
+  }
+
+  /// A new receipt that is being read before storage lists it.
+  static func reading(
+    id: UUID,
+    capturedAt: Date,
+    backgroundStyle: ReceiptBackgroundStyle
+  ) -> ReceiptSummary {
+    ReceiptSummary(
+      id: id,
+      updatedAt: capturedAt,
+      capturedAt: capturedAt,
+      backgroundStyle: backgroundStyle,
+      recognitionStatus: .pending,
+      merchantName: nil,
+      localDate: nil,
+      total: nil,
+      currency: nil,
+      isUnavailable: false,
+      unavailableDescription: nil)
+  }
 }
 
 enum ReceiptDocumentError: Error, LocalizedError, Equatable {

@@ -15,14 +15,12 @@ final class SavedPeopleModel {
     self.storage = storage
   }
 
-  func load(receiptStorage: ReceiptStorageClient) async {
+  func load() async {
     isLoading = true
     errorDescription = nil
     defer { isLoading = false }
 
     do {
-      let snapshots = try await receiptStorage.listPersonSnapshots()
-      try await storage.importReceiptParticipants(snapshots)
       people = try await storage.list()
       owner = try await storage.owner()
     } catch {
@@ -139,11 +137,6 @@ final class SavedPeopleModel {
   private func replace(_ person: Person) {
     people.removeAll { $0.id == person.id }
     people.append(person)
-    people.sort {
-      if $0.lastIncludedAt != $1.lastIncludedAt {
-        return $0.lastIncludedAt > $1.lastIncludedAt
-      }
-      return $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
-    }
+    people.sort(by: Person.sortsBefore)
   }
 }

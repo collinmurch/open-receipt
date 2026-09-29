@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReceiptItemEditorView: View {
   @Binding var item: ReceiptDraftItem
+  /// The display currency code the item's amounts are formatted with.
   let currency: String
   let onSplit: (Int) -> Void
   let onDelete: () -> Void
@@ -9,7 +10,6 @@ struct ReceiptItemEditorView: View {
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    let currencyCode = ReceiptCurrency.displayCode(currency)
     let issues = item.validationIssues
 
     Form {
@@ -27,7 +27,7 @@ struct ReceiptItemEditorView: View {
           .accessibilityLabel("Quantity")
         }
         LabeledContent("Line Total") {
-          CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currencyCode)
+          CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currency)
             .multilineTextAlignment(.trailing)
             .accessibilityLabel("Line total")
         }
@@ -61,7 +61,7 @@ struct ReceiptItemEditorView: View {
     .sheet(isPresented: $isSplitPresented) {
       ReceiptItemSplitSheet(
         item: item,
-        currency: currencyCode,
+        currency: currency,
         onSplit: { count in
           isSplitPresented = false
           onSplit(count)

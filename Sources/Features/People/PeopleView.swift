@@ -2,26 +2,20 @@ import SwiftUI
 
 struct PeopleView: View {
   @State private var model: SavedPeopleModel
-  @State private var avatars: [String: Data] = [:]
+  @State private var avatars = ContactAvatars()
   @State private var haptic = HapticEvent()
-  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethodRawValue =
-    PaymentSettings.initialDefaultMethod.rawValue
+  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethod =
+    PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
-  private let receiptStorage: ReceiptStorageClient
 
-  init(storage: PeopleStorageClient, receiptStorage: ReceiptStorageClient) {
+  init(storage: PeopleStorageClient) {
     model = SavedPeopleModel(storage: storage)
-    self.receiptStorage = receiptStorage
   }
 
   var body: some View {
     List {
       if model.isLoading {
-        HStack {
-          Spacer()
-          ProgressView("Loading people")
-          Spacer()
-        }
+        LoadingRow(title: "Loading people")
       } else {
         ownerSection
         peopleContent
@@ -29,21 +23,13 @@ struct PeopleView: View {
     }
     .navigationTitle("People")
     .haptics(haptic)
-    .errorHaptic(model.errorDescription)
     .task {
-      await model.load(receiptStorage: receiptStorage)
+      await model.load()
       await model.adoptContactPaymentDefaults(from: contactClient)
     }
-    .alert(
-      "Couldn’t Update People",
-      isPresented: Binding(
-        get: { model.errorDescription != nil },
-        set: { if !$0 { model.errorDescription = nil } })
-    ) {
-      Button("Retry") { Task { await model.load(receiptStorage: receiptStorage) } }
+    .errorAlert("Couldn’t Update People", message: $model.errorDescription) {
+      Button("Retry") { Task { await model.load() } }
       Button("OK", role: .cancel) {}
-    } message: {
-      Text(model.errorDescription ?? "The people list could not be updated.")
     }
   }
 
@@ -120,17 +106,8 @@ struct PeopleView: View {
         imageData: person.contactIdentifier.flatMap { avatars[$0] })
       VStack(alignment: .leading, spacing: 3) {
         Text(person.displayName)
-        if let destination = person.paymentMethods.destination(
-          globalDefault: defaultPaymentMethod)
-        {
-          Text("\(destination.method.title) \(destination.displayValue)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else {
-          Text("No payment method set")
-            .font(.caption)
-            .foregroundStyle(.orange)
-        }
+        PaymentDestinationCaption(
+          destination: person.paymentMethods.destination(globalDefault: defaultPaymentMethod))
       }
     }
     .task(id: person.contactIdentifier) {
@@ -139,16 +116,8 @@ struct PeopleView: View {
   }
 
   private func loadAvatar(for identifier: String?) async {
-    guard let identifier,
-      contactClient.authorizationStatus().canReadContacts,
-      let avatar = try? await contactClient.fetchAvatar(identifier)
-    else { return }
-    avatars[identifier] = avatar
-  }
-
-  private var defaultPaymentMethod: PaymentMethod {
-    PaymentMethod(rawValue: defaultPaymentMethodRawValue)
-      ?? PaymentSettings.initialDefaultMethod
+    guard let identifier else { return }
+    _ = await avatars.avatar(for: identifier, using: contactClient)
   }
 
   @discardableResult

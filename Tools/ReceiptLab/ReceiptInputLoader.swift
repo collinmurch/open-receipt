@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import PDFKit
 import ReceiptKit
 
@@ -46,7 +45,7 @@ enum ReceiptInputLoader {
     var pages: [ReceiptPage] = []
     for index in 0..<document.pageCount {
       guard let page = document.page(at: index), let image = render(page) else { continue }
-      pages.append(ReceiptPage(image: image, sourceURL: url, pageIndex: index))
+      pages.append(ReceiptPage(image: image))
     }
     guard !pages.isEmpty else { throw LoadError.empty(url) }
     return pages
@@ -77,14 +76,7 @@ enum ReceiptInputLoader {
   }
 
   private static func loadImage(_ url: URL) throws -> [ReceiptPage] {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-    else {
-      throw LoadError.decodingFailed(url)
-    }
-    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-    let rawOrientation = properties?[kCGImagePropertyOrientation] as? UInt32
-    let orientation = rawOrientation.flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
-    return [ReceiptPage(image: image, orientation: orientation, sourceURL: url, pageIndex: 0)]
+    guard let page = ReceiptPage(contentsOf: url) else { throw LoadError.decodingFailed(url) }
+    return [page]
   }
 }

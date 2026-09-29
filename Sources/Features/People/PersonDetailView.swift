@@ -3,6 +3,7 @@ import SwiftUI
 struct PersonDetailView: View {
   let onSave: (Person) async -> Person?
   let onDelete: (Person) async -> Bool
+  private let savedPerson: Person
   @State private var person: Person
   @State private var selectedVenmoRecipient: Person.Venmo.Recipient?
   @State private var customVenmoUsername: String
@@ -15,8 +16,8 @@ struct PersonDetailView: View {
   @State private var isDeleting = false
   @State private var isAppleContactPresented = false
   @State private var haptic = HapticEvent()
-  @AppStorage(PaymentSettings.defaultMethodKey) private var globalDefaultMethodRawValue =
-    PaymentSettings.initialDefaultMethod.rawValue
+  @AppStorage(PaymentSettings.defaultMethodKey) private var globalDefaultMethod =
+    PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
   @Environment(\.dismiss) private var dismiss
 
@@ -27,20 +28,14 @@ struct PersonDetailView: View {
   ) {
     self.onSave = onSave
     self.onDelete = onDelete
+    savedPerson = person
     _person = State(initialValue: person)
     let venmo = person.paymentMethods.venmo
     _selectedVenmoRecipient = State(
       initialValue: venmo?.recipient.kind == .username ? nil : venmo?.recipient)
-    let initialCustomUsername: String
-    if let venmo {
-      initialCustomUsername =
-        venmo.customUsername
-        ?? (venmo.recipient.kind == .username ? venmo.recipient.value : "")
-    } else {
-      initialCustomUsername = ""
-    }
     _customVenmoUsername = State(
-      initialValue: initialCustomUsername)
+      initialValue: venmo?.customUsername
+        ?? (venmo?.recipient.kind == .username ? venmo?.recipient.value : nil) ?? "")
     _cashAppCashtag = State(initialValue: person.paymentMethods.cashApp?.cashtag ?? "")
     let iMessage = person.paymentMethods.iMessage
     _selectedIMessageRecipient = State(
@@ -208,21 +203,19 @@ struct PersonDetailView: View {
 
   private var defaultPaymentMethodRow: some View {
     let isSelected = person.paymentMethods.defaultMethod == nil
-    let globalDefault =
-      PaymentMethod(rawValue: globalDefaultMethodRawValue) ?? PaymentSettings.initialDefaultMethod
     return Button {
       selectDefaultMethod(nil)
     } label: {
       HStack {
         selectionIndicator(isSelected: isSelected)
         Text("Default")
-        Text("(\(globalDefault.title))")
+        Text("(\(globalDefaultMethod.title))")
           .foregroundStyle(.secondary)
       }
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("Default (\(globalDefault.title))")
+    .accessibilityLabel("Default (\(globalDefaultMethod.title))")
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
@@ -266,24 +259,25 @@ struct PersonDetailView: View {
     contact = loadedContact
     if person.paymentMethods.venmo == nil,
       selectedVenmoRecipient == nil,
-      normalizedUsername(customVenmoUsername).isEmpty
+      Person.Venmo.normalizedUsername(customVenmoUsername).isEmpty
     {
-      selectedVenmoRecipient = loadedContact.defaultVenmoRecipient
+      selectedVenmoRecipient = loadedContact.defaultRecipient(Person.Venmo.Recipient.self)
     }
     if person.paymentMethods.iMessage == nil,
       selectedIMessageRecipient == nil,
-      normalizedValue(customIMessageRecipient).isEmpty
+      customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     {
-      selectedIMessageRecipient = loadedContact.defaultIMessageRecipient
+      selectedIMessageRecipient = loadedContact.defaultRecipient(Person.IMessage.Recipient.self)
     }
   }
 
+  /// Saves the edited person, unless nothing changed or the name was cleared.
   private func saveChanges() {
     guard !isDeleting else { return }
     var updatedPerson = person
     updatedPerson.displayName = person.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !updatedPerson.displayName.isEmpty else { return }
-    let username = normalizedUsername(customVenmoUsername)
+    let username = Person.Venmo.normalizedUsername(customVenmoUsername)
     if let selectedVenmoRecipient {
       updatedPerson.paymentMethods.venmo = .init(
         recipient: selectedVenmoRecipient,
@@ -291,61 +285,22 @@ struct PersonDetailView: View {
     } else {
       updatedPerson.paymentMethods.venmo = username.isEmpty ? nil : .init(username: username)
     }
-    let cashtag = normalizedCashtag(cashAppCashtag)
+    let cashtag = Person.CashApp.normalizedCashtag(cashAppCashtag)
     updatedPerson.paymentMethods.cashApp =
       cashtag.isEmpty ? nil : .init(cashtag: cashtag)
     if let selectedIMessageRecipient {
       updatedPerson.paymentMethods.iMessage = .init(recipient: selectedIMessageRecipient)
     } else {
-      let recipient = normalizedValue(customIMessageRecipient)
+      let recipient = customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines)
       updatedPerson.paymentMethods.iMessage =
         recipient.isEmpty
         ? nil
         : .init(recipient: .init(kind: .custom, value: recipient))
     }
+    guard updatedPerson != savedPerson else { return }
     Task {
       _ = await onSave(updatedPerson)
     }
-  }
-
-  private func normalizedUsername(_ username: String) -> String {
-    String(
-      username.trimmingCharacters(in: .whitespacesAndNewlines)
-        .trimmingPrefix("@"))
-  }
-
-  private func normalizedCashtag(_ cashtag: String) -> String {
-    Person.CashApp.normalizedCashtag(cashtag)
-  }
-
-  private func normalizedValue(_ value: String) -> String {
-    value.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-}
-
-private protocol ContactRecipient: Hashable, Identifiable {
-  static func phoneNumber(_ value: String) -> Self
-  static func emailAddress(_ value: String) -> Self
-  var displayValue: String { get }
-}
-
-extension Person.Venmo.Recipient: ContactRecipient {
-  fileprivate static func phoneNumber(_ value: String) -> Self {
-    .init(kind: .phoneNumber, value: value)
-  }
-
-  fileprivate static func emailAddress(_ value: String) -> Self {
-    .init(kind: .emailAddress, value: value)
-  }
-}
-
-extension Person.IMessage.Recipient: ContactRecipient {
-  fileprivate static func phoneNumber(_ value: String) -> Self {
-    .init(kind: .phoneNumber, value: value)
-  }
-
-  fileprivate static func emailAddress(_ value: String) -> Self {
-    .init(kind: .emailAddress, value: value)
   }
 }
 

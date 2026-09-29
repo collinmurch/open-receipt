@@ -6,7 +6,6 @@ struct PeopleStorageClient: Sendable {
   var include: @Sendable (Person.ID?, String, String?, Date) async throws -> Person
   var save: @Sendable (Person) async throws -> Person
   var delete: @Sendable (Person.ID) async throws -> Void
-  var importReceiptParticipants: @Sendable ([ReceiptPersonSnapshot]) async throws -> Void
   var owner: @Sendable () async throws -> ReceiptOwner? = { nil }
   var setOwner: @Sendable (ReceiptOwner?) async throws -> Void = { _ in }
   /// Stores the owner only when none is stored yet, and returns the stored owner.
@@ -23,7 +22,6 @@ struct PeopleStorageClient: Sendable {
       },
       save: { try await storage.save($0) },
       delete: { try await storage.delete(id: $0) },
-      importReceiptParticipants: { try await storage.importReceiptParticipants($0) },
       owner: { try await storage.owner() },
       setOwner: { try await storage.setOwner($0) },
       adoptOwner: { try await storage.adoptOwner($0) })
@@ -35,6 +33,7 @@ actor PeopleFileStorage {
 
   private let fileManager: FileManager
   private let rootOverride: URL?
+  private var cachedDocumentURL: URL?
 
   init(fileManager: FileManager = .default, rootURL: URL? = nil) {
     self.fileManager = fileManager
@@ -42,7 +41,7 @@ actor PeopleFileStorage {
   }
 
   func list() throws -> [Person] {
-    try load().people.sorted(by: Self.sortPeople)
+    try load().people.sorted(by: Person.sortsBefore)
   }
 
   func include(
@@ -91,11 +90,12 @@ actor PeopleFileStorage {
     guard !person.displayName.isEmpty else { throw PeopleStorageError.emptyDisplayName }
 
     if var venmo = person.paymentMethods.venmo {
-      venmo.recipient.value = Self.normalize(
-        venmo.recipient.value,
-        as: venmo.recipient.kind)
+      venmo.recipient.value =
+        venmo.recipient.kind == .username
+        ? Person.Venmo.normalizedUsername(venmo.recipient.value)
+        : venmo.recipient.value.trimmingCharacters(in: .whitespacesAndNewlines)
       venmo.customUsername = venmo.customUsername.flatMap { username in
-        let normalized = Self.normalize(username, as: .username)
+        let normalized = Person.Venmo.normalizedUsername(username)
         return normalized.isEmpty ? nil : normalized
       }
       person.paymentMethods.venmo = venmo.recipient.value.isEmpty ? nil : venmo
@@ -143,58 +143,14 @@ actor PeopleFileStorage {
     return owner
   }
 
-  func importReceiptParticipants(_ snapshots: [ReceiptPersonSnapshot]) throws {
-    var document = try load()
-    guard !document.didImportReceiptParticipants else { return }
-
-    for snapshot in snapshots.sorted(by: { $0.includedAt < $1.includedAt }) {
-      let index = document.people.firstIndex { person in
-        if let personID = snapshot.personID, person.id == personID { return true }
-        guard let contactIdentifier = snapshot.contactIdentifier else { return false }
-        return person.contactIdentifier == contactIdentifier
-      }
-
-      if let index {
-        if document.people[index].lastIncludedAt <= snapshot.includedAt {
-          document.people[index].displayName = snapshot.displayName
-        }
-        document.people[index].lastIncludedAt = max(
-          document.people[index].lastIncludedAt,
-          snapshot.includedAt)
-        document.people[index].updatedAt = max(
-          document.people[index].updatedAt, snapshot.includedAt)
-        continue
-      }
-
-      document.people.append(
-        Person(
-          id: snapshot.personID ?? UUID(),
-          createdAt: snapshot.includedAt,
-          updatedAt: snapshot.includedAt,
-          lastIncludedAt: snapshot.includedAt,
-          displayName: snapshot.displayName,
-          contactIdentifier: snapshot.contactIdentifier,
-          paymentMethods: .init()))
-    }
-
-    document.didImportReceiptParticipants = true
-    try write(document)
-  }
-
   private func load() throws -> PeopleDocument {
     let url = try documentURL()
-    guard fileManager.fileExists(atPath: url.path) else {
-      return PeopleDocument(
-        schemaVersion: PeopleDocument.currentSchemaVersion,
-        didImportReceiptParticipants: false,
-        people: [])
-    }
+    guard fileManager.fileExists(atPath: url.path) else { return PeopleDocument() }
     let data = try Data(contentsOf: url)
-    var document = try Self.decoder.decode(PeopleDocument.self, from: data)
-    guard (1...PeopleDocument.currentSchemaVersion).contains(document.schemaVersion) else {
+    let document = try Self.decoder.decode(PeopleDocument.self, from: data)
+    guard document.schemaVersion == PeopleDocument.currentSchemaVersion else {
       throw PeopleStorageError.unsupportedSchemaVersion(document.schemaVersion)
     }
-    document.schemaVersion = PeopleDocument.currentSchemaVersion
     return document
   }
 
@@ -208,6 +164,7 @@ actor PeopleFileStorage {
   }
 
   private func documentURL() throws -> URL {
+    if let cachedDocumentURL { return cachedDocumentURL }
     let root: URL
     if let rootOverride {
       root = rootOverride
@@ -226,23 +183,9 @@ actor PeopleFileStorage {
       at: root,
       withIntermediateDirectories: true,
       attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-    return root.appending(path: "people.json")
-  }
-
-  private static func sortPeople(_ lhs: Person, _ rhs: Person) -> Bool {
-    if lhs.lastIncludedAt != rhs.lastIncludedAt {
-      return lhs.lastIncludedAt > rhs.lastIncludedAt
-    }
-    return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-  }
-
-  private static func normalize(
-    _ value: String,
-    as kind: Person.Venmo.Recipient.Kind
-  ) -> String {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard kind == .username else { return trimmed }
-    return String(trimmed.trimmingPrefix("@"))
+    let documentURL = root.appending(path: "people.json")
+    cachedDocumentURL = documentURL
+    return documentURL
   }
 
   private static let encoder: JSONEncoder = {
@@ -276,13 +219,6 @@ enum PeopleStorageError: Error, LocalizedError, Equatable {
   }
 }
 
-private struct PeopleStorageClientKey: EnvironmentKey {
-  static let defaultValue = PeopleStorageClient.live
-}
-
 extension EnvironmentValues {
-  var peopleStorageClient: PeopleStorageClient {
-    get { self[PeopleStorageClientKey.self] }
-    set { self[PeopleStorageClientKey.self] = newValue }
-  }
+  @Entry var peopleStorageClient = PeopleStorageClient.live
 }

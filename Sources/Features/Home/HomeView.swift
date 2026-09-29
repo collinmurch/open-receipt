@@ -16,7 +16,6 @@ struct HomeView: View {
   @Namespace private var receiptTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
-  @Environment(\.receiptStorageClient) private var storage
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.scenePhase) private var scenePhase
 
@@ -44,17 +43,7 @@ struct HomeView: View {
       )
       .ignoresSafeArea()
     }
-    .errorHaptic(scanErrorDescription)
-    .alert(
-      "Couldn’t Scan Receipt",
-      isPresented: Binding(
-        get: { scanErrorDescription != nil },
-        set: { if !$0 { scanErrorDescription = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(scanErrorDescription ?? "The document scanner could not scan the receipt.")
-    }
+    .errorAlert("Couldn’t Scan Receipt", message: $scanErrorDescription)
     .environment(\.receiptLibraryRefresh, ReceiptLibraryRefreshAction(library: library))
     .task {
       await library.load()
@@ -83,7 +72,7 @@ struct HomeView: View {
         ReceiptFlowView(input: input)
       }
     case .people:
-      PeopleView(storage: peopleStorage, receiptStorage: storage)
+      PeopleView(storage: peopleStorage)
     case .settings:
       SettingsView()
     case .recentlyDeleted:
@@ -96,8 +85,8 @@ struct HomeView: View {
     isScannerPresented = true
   }
 
-  /// Reading starts as soon as the scan exists, unless the model is unavailable. The receipt is pushed under the scanner, so closing
-  /// the scanner reveals it without a second transition.
+  /// Reading starts as soon as the scan exists, unless the model is unavailable. The receipt is
+  /// pushed under the scanner, so closing the scanner reveals it without a second transition.
   private func capture(_ scan: ReceiptScan) {
     let input = ReceiptFlowInput.scan(scan, recognitions: recognitions)
     var transaction = Transaction()

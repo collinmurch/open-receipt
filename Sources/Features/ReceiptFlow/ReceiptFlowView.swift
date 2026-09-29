@@ -29,7 +29,6 @@ struct ReceiptFlowView: View {
         default: nil
         }
       }
-      .errorHaptic(model.saveErrorDescription)
       .onChange(of: model.isRecognizing) { _, isRecognizing in
         if isRecognizing {
           motion.drift()
@@ -38,10 +37,7 @@ struct ReceiptFlowView: View {
         }
       }
       .task(id: model.workID) {
-        let peopleStorage = peopleStorage
-        await model.performWork(using: recognitions, storage: storage) {
-          try? await peopleStorage.owner()
-        }
+        await model.performWork(using: recognitions, storage: storage, owner: owner)
       }
       .onChange(of: recognitions.recognition(for: model.receiptID) != nil) { _, isReading in
         if isReading { model.joinActiveRecognition(from: recognitions) }
@@ -56,11 +52,11 @@ struct ReceiptFlowView: View {
           refreshLibrary()
         }
       }
-      .alert(
+      .errorAlert(
         "Couldn’t Save Changes",
-        isPresented: Binding(
-          get: { model.saveErrorDescription != nil },
-          set: { if !$0 { model.clearSaveError() } })
+        message: Binding(
+          get: { model.saveErrorDescription },
+          set: { if $0 == nil { model.clearSaveError() } })
       ) {
         Button("Retry") {
           Task { _ = await model.flush(storage: storage) }
@@ -71,8 +67,6 @@ struct ReceiptFlowView: View {
           }
         }
         Button("OK", role: .cancel) {}
-      } message: {
-        Text(model.saveErrorDescription ?? "The receipt could not be saved.")
       }
   }
 
@@ -121,21 +115,20 @@ struct ReceiptFlowView: View {
     }
   }
 
-  private func enterManually() {
+  /// The contact new receipts start with as the person using the app.
+  private var owner: @Sendable () async -> ReceiptOwner? {
     let peopleStorage = peopleStorage
-    Task {
-      await model.enterManually(storage: storage) {
-        try? await peopleStorage.owner()
-      }
-    }
+    return { try? await peopleStorage.owner() }
+  }
+
+  private func enterManually() {
+    Task { await model.enterManually(storage: storage, owner: owner) }
   }
 
   private func stopReading() {
-    let peopleStorage = peopleStorage
     Task {
-      await model.stopReadingAndEnterManually(using: recognitions, storage: storage) {
-        try? await peopleStorage.owner()
-      }
+      await model.stopReadingAndEnterManually(
+        using: recognitions, storage: storage, owner: owner)
     }
   }
 

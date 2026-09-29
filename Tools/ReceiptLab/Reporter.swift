@@ -13,29 +13,10 @@ enum ReceiptLabReporter {
 
   static func renderSummary(_ report: ReceiptLabReport) -> String {
     let color = Color.active
-    var out = ""
-    var passed = 0
-    var failed = 0
-    var errored = 0
-    for fixture in report.fixtures {
-      let badge: String
-      if let evaluation = fixture.evaluation {
-        if evaluation.passed {
-          badge = color.green("PASS")
-          passed += 1
-        } else {
-          badge = color.red("FAIL")
-          failed += 1
-        }
-      } else if fixture.parseError != nil {
-        badge = color.yellow("ERR ")
-        errored += 1
-      } else {
-        badge = color.cyan("RAN ")
-      }
-      let duration = String(format: "%.2fs", fixture.durationSeconds)
-      out += "\(badge) \(fixture.label) \(color.dim("(\(duration))"))\n"
-    }
+    var out = report.fixtures.map { summaryLine($0, color: color, showsCache: false) }.joined()
+    let passed = report.fixtures.filter { $0.evaluation?.passed == true }.count
+    let failed = report.fixtures.filter { $0.evaluation?.passed == false }.count
+    let errored = report.fixtures.filter { $0.evaluation == nil && $0.parseError != nil }.count
     out += color.dim(String(repeating: "─", count: 40)) + "\n"
     out += "\(report.fixtures.count) fixtures  "
     out += "\(color.green("\(passed) pass"))  "
@@ -64,18 +45,7 @@ enum ReceiptLabReporter {
   }
 
   static func streamSummaryFixture(_ fixture: FixtureRunResult) -> String {
-    let color = Color.active
-    let badge: String
-    if let evaluation = fixture.evaluation {
-      badge = evaluation.passed ? color.green("PASS") : color.red("FAIL")
-    } else if fixture.parseError != nil {
-      badge = color.yellow("ERR ")
-    } else {
-      badge = color.cyan("RAN ")
-    }
-    let duration = String(format: "%.2fs", fixture.durationSeconds)
-    let cache = fixture.wasCached ? ", cached" : ""
-    return "\(badge) \(fixture.label) \(color.dim("(\(duration)\(cache))"))\n"
+    summaryLine(fixture, color: Color.active, showsCache: true)
   }
 
   static func streamSummary(_ report: ReceiptLabReport) -> String {
@@ -95,8 +65,6 @@ enum ReceiptLabReporter {
     return out
   }
 
-  // MARK: - Text
-
   private static func renderText(_ report: ReceiptLabReport, color: Color) -> String {
     var out = ""
     out += color.dim("ReceiptLab — \(report.inputPath)") + "\n"
@@ -109,35 +77,54 @@ enum ReceiptLabReporter {
     return out
   }
 
-  private static func renderFixtureText(_ f: FixtureRunResult, color: Color) -> String {
-    var out = ""
-    let badge: String
-    if let evaluation = f.evaluation {
-      badge = evaluation.passed ? color.green("[PASS]") : color.red("[FAIL]")
-    } else if f.parseError != nil {
-      badge = color.yellow("[ERR ]")
-    } else {
-      badge = color.cyan("[RAN ]")
-    }
-    let duration = String(format: "%.2fs", f.durationSeconds)
-    let pageWord = f.pages == 1 ? "page" : "pages"
-    let cache = f.wasCached ? ", cached" : ""
-    out +=
-      "\(badge) \(color.bold(f.label))  \(color.dim("(\(duration), \(f.pages) \(pageWord)\(cache))"))\n"
+  private static func summaryLine(
+    _ fixture: FixtureRunResult,
+    color: Color,
+    showsCache: Bool
+  ) -> String {
+    let duration = String(format: "%.2fs", fixture.durationSeconds)
+    let cache = showsCache && fixture.wasCached ? ", cached" : ""
+    let badge = Self.badge(for: fixture, color: color)
+    return "\(badge) \(fixture.label) \(color.dim("(\(duration)\(cache))"))\n"
+  }
 
-    if let error = f.parseError {
+  /// The fixture's outcome, or RAN when it has no expected result to compare against.
+  private static func badge(
+    for fixture: FixtureRunResult,
+    color: Color,
+    bracketed: Bool = false
+  ) -> String {
+    func paint(_ label: String, _ style: (String) -> String) -> String {
+      style(bracketed ? "[\(label)]" : label)
+    }
+    if let evaluation = fixture.evaluation {
+      return evaluation.passed ? paint("PASS", color.green) : paint("FAIL", color.red)
+    }
+    return fixture.parseError == nil ? paint("RAN ", color.cyan) : paint("ERR ", color.yellow)
+  }
+
+  private static func renderFixtureText(_ fixture: FixtureRunResult, color: Color) -> String {
+    var out = ""
+    let badge = Self.badge(for: fixture, color: color, bracketed: true)
+    let duration = String(format: "%.2fs", fixture.durationSeconds)
+    let pageWord = fixture.pages == 1 ? "page" : "pages"
+    let cache = fixture.wasCached ? ", cached" : ""
+    let details = color.dim("(\(duration), \(fixture.pages) \(pageWord)\(cache))")
+    out += "\(badge) \(color.bold(fixture.label))  \(details)\n"
+
+    if let error = fixture.parseError {
       out += "       \(color.red("error:")) \(error)\n"
       return out
     }
 
-    if let receipt = f.receipt {
+    if let receipt = fixture.receipt {
       out += "       merchant: \(receipt.merchantName.isEmpty ? "—" : receipt.merchantName)\n"
       out += "       totals:   \(formatTotals(receipt))\n"
       if !receipt.warnings.isEmpty {
         out += "       warnings: \(receipt.warnings.joined(separator: ", "))\n"
       }
     }
-    if let evaluation = f.evaluation {
+    if let evaluation = fixture.evaluation {
       for check in evaluation.checks {
         out += renderCheckText(check, color: color)
       }
@@ -173,8 +160,6 @@ enum ReceiptLabReporter {
       receipt.currency, receipt.subtotal, receipt.tax, receipt.tip, receipt.total)
   }
 
-  // MARK: - JSON
-
   private static func renderJSON(_ report: ReceiptLabReport) -> String {
     let payload = JSONReport(
       inputPath: report.inputPath,
@@ -209,18 +194,18 @@ enum ReceiptLabReporter {
     let evaluation: JSONEvaluation?
     let cached: Bool
 
-    init(_ f: FixtureRunResult) {
-      label = f.label
-      source = f.sourceURL.path
-      pages = f.pages
-      durationSeconds = f.durationSeconds
-      merchantName = f.receipt?.merchantName ?? ""
-      totals = f.receipt.map(JSONTotals.init)
-      items = f.receipt?.items.map(JSONItem.init) ?? []
-      warnings = f.receipt?.warnings ?? []
-      parseError = f.parseError
-      evaluation = f.evaluation.map(JSONEvaluation.init)
-      cached = f.wasCached
+    init(_ fixture: FixtureRunResult) {
+      label = fixture.label
+      source = fixture.sourceURL.path
+      pages = fixture.pages
+      durationSeconds = fixture.durationSeconds
+      merchantName = fixture.receipt?.merchantName ?? ""
+      totals = fixture.receipt.map(JSONTotals.init)
+      items = fixture.receipt?.items.map(JSONItem.init) ?? []
+      warnings = fixture.receipt?.warnings ?? []
+      parseError = fixture.parseError
+      evaluation = fixture.evaluation.map(JSONEvaluation.init)
+      cached = fixture.wasCached
     }
   }
 
@@ -253,9 +238,9 @@ enum ReceiptLabReporter {
   private struct JSONEvaluation: Encodable {
     let passed: Bool
     let checks: [JSONCheck]
-    init(_ e: FixtureEvaluation) {
-      passed = e.passed
-      checks = e.checks.map(JSONCheck.init)
+    init(_ evaluation: FixtureEvaluation) {
+      passed = evaluation.passed
+      checks = evaluation.checks.map(JSONCheck.init)
     }
   }
 
@@ -265,17 +250,15 @@ enum ReceiptLabReporter {
     let expected: String?
     let actual: String?
     let detail: String?
-    init(_ c: FixtureEvaluation.Check) {
-      field = c.field
-      status = c.status.rawValue
-      expected = c.expected
-      actual = c.actual
-      detail = c.detail
+    init(_ check: FixtureEvaluation.Check) {
+      field = check.field
+      status = check.status.rawValue
+      expected = check.expected
+      actual = check.actual
+      detail = check.detail
     }
   }
 }
-
-// MARK: - ANSI coloring
 
 private struct Color {
   let enabled: Bool

@@ -1,21 +1,5 @@
 import Foundation
 
-enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case tax
-  case tip
-  case savings
-
-  var id: Self { self }
-
-  var title: String {
-    switch self {
-    case .tax: "Tax"
-    case .tip: "Tip"
-    case .savings: "Savings"
-    }
-  }
-}
-
 struct ReceiptTotalAdjustments: Equatable {
   private var amounts: [ReceiptTotalAdjustment: Double]
 

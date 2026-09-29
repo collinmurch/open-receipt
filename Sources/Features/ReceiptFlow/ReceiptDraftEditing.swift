@@ -17,7 +17,7 @@ extension ReceiptDraft {
 
   var validationIssues: [ReceiptEditorValidationIssue] {
     var issues: [ReceiptEditorValidationIssue] = []
-    if !Self.isCurrencyCode(normalizedCurrency) {
+    if !ReceiptValidator.isCurrencyCode(normalizedCurrency) {
       issues.append(.invalidCurrency)
     }
     issues += items.flatMap(\.validationIssues)
@@ -27,10 +27,6 @@ extension ReceiptDraft {
     if adjustments.contains(.savings), !savings.isFinite { issues.append(.invalidSavings) }
     if !total.isFinite { issues.append(.invalidTotal) }
     return issues
-  }
-
-  var missingAdjustments: [ReceiptTotalAdjustment] {
-    adjustments.missing
   }
 
   var expectedSubtotal: Double {
@@ -77,12 +73,6 @@ extension ReceiptDraft {
     return item.id
   }
 
-  func removeItems(at offsets: IndexSet) {
-    for index in offsets.sorted(by: >) {
-      items.remove(at: index)
-    }
-  }
-
   func removeItem(id: ReceiptDraftItem.ID) {
     items.removeAll { $0.id == id }
   }
@@ -114,16 +104,10 @@ extension ReceiptDraft {
     total = expectedTotal
   }
 
-  func addAdjustment(_ adjustment: ReceiptTotalAdjustment) {
-    adjustments.add(adjustment)
-  }
-
-  func removeAdjustment(_ adjustment: ReceiptTotalAdjustment) {
-    adjustments.remove(adjustment)
-  }
-
-  private static func isCurrencyCode(_ value: String) -> Bool {
-    value.count == 3 && value.unicodeScalars.allSatisfy(CharacterSet.letters.contains)
+  /// The amount `adjustment` adds to the total, negative for savings.
+  func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
+    let amount = adjustments[adjustment] ?? 0
+    return amount == 0 ? 0 : amount * adjustment.sign
   }
 }
 

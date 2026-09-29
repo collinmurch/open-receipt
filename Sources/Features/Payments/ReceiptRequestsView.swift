@@ -3,12 +3,18 @@ import SwiftUI
 struct ReceiptRequestsView: View {
   let draft: ReceiptDraft
   let onFlush: () async -> Void
-  @State private var people = ReceiptRequestPeople()
-  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethodRawValue =
-    PaymentSettings.initialDefaultMethod.rawValue
+  @State private var people: SavedPeopleModel
+  @State private var hasLoadedPeople = false
+  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethod =
+    PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
-  @Environment(\.peopleStorageClient) private var peopleStorage
-  @Environment(\.receiptStorageClient) private var receiptStorage
+
+  init(draft: ReceiptDraft, peopleStorage: PeopleStorageClient, onFlush: @escaping () async -> Void)
+  {
+    self.draft = draft
+    self.onFlush = onFlush
+    _people = State(initialValue: SavedPeopleModel(storage: peopleStorage))
+  }
 
   var body: some View {
     let calculation = draft.splitCalculation
@@ -16,27 +22,18 @@ struct ReceiptRequestsView: View {
     let requestShares = calculation.participantShares.filter {
       !$0.participant.source.isCurrentUser
     }
-    let savedPeople = Array(people.peopleByID.values)
 
     List {
       if let ownShare {
         Section("Your Share") {
-          participantLink(
-            ownShare,
-            person: ReceiptPersonResolver.person(for: ownShare.participant, in: savedPeople),
-            calculation: calculation,
-            showsPaymentDestination: false)
+          participantLink(ownShare, calculation: calculation, showsPaymentDestination: false)
         }
       }
 
       if !requestShares.isEmpty {
         Section("Requests") {
           ForEach(requestShares) { share in
-            participantLink(
-              share,
-              person: ReceiptPersonResolver.person(for: share.participant, in: savedPeople),
-              calculation: calculation,
-              showsPaymentDestination: true)
+            participantLink(share, calculation: calculation, showsPaymentDestination: true)
           }
         }
       }
@@ -53,29 +50,22 @@ struct ReceiptRequestsView: View {
     }
     .scrollContentBackground(.hidden)
     .task {
-      await people.load(
-        receiptStorage: receiptStorage, peopleStorage: peopleStorage, contactClient: contactClient)
+      guard !hasLoadedPeople else { return }
+      await people.load()
+      await people.adoptContactPaymentDefaults(from: contactClient)
+      hasLoadedPeople = people.errorDescription == nil
     }
-    .errorHaptic(people.errorDescription)
-    .alert(
-      "Couldn’t Update Contact",
-      isPresented: Binding(
-        get: { people.errorDescription != nil },
-        set: { if !$0 { people.errorDescription = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(people.errorDescription ?? "The saved contact could not be updated.")
-    }
+    .errorAlert("Couldn’t Update Contact", message: $people.errorDescription)
   }
 
   private func participantLink(
     _ share: ReceiptParticipantShare,
-    person: Person?,
     calculation: ReceiptSplitCalculation,
     showsPaymentDestination: Bool
   ) -> some View {
-    NavigationLink {
+    let person = ReceiptPersonResolver.person(for: share.participant, in: people.people)
+    let isSplitComplete = calculation.unassignedItemCount == 0
+    return NavigationLink {
       ReceiptParticipantBreakdownView(
         share: share,
         person: person,
@@ -84,20 +74,20 @@ struct ReceiptRequestsView: View {
         backgroundStyle: draft.backgroundStyle,
         requestNote: requestNote,
         globalDefault: defaultPaymentMethod,
-        isSplitComplete: calculation.unassignedItemCount == 0,
+        isSplitComplete: isSplitComplete,
         onRequest: {
           draft.recordRequest(for: share.participant.id, at: $0)
           Task { await onFlush() }
         },
-        onSavePerson: savePerson,
-        onDeletePerson: deletePerson
+        onSavePerson: { await people.save($0) },
+        onDeletePerson: { await people.delete($0) }
       )
     } label: {
       participantRow(
         share,
         person: person,
         showsPaymentDestination: showsPaymentDestination,
-        showsTotal: calculation.unassignedItemCount == 0)
+        showsTotal: isSplitComplete)
     }
     .screenshotHighlight("request-\(share.participant.displayName)")
   }
@@ -115,27 +105,14 @@ struct ReceiptRequestsView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
         if showsPaymentDestination {
-          let destination = person?.paymentMethods.destination(
-            globalDefault: defaultPaymentMethod)
-          Text(paymentDestination(destination))
-            .font(.caption)
-            .foregroundStyle(destination == nil ? .orange : .secondary)
+          PaymentDestinationCaption(
+            destination: person?.paymentMethods.destination(globalDefault: defaultPaymentMethod))
         }
       }
       Spacer()
       VStack(alignment: .trailing, spacing: 2) {
-        if showsTotal {
-          Text(share.total, format: .currency(code: draft.displayCurrency))
-            .font(.body.monospacedDigit())
-            .fontWeight(.semibold)
-        } else {
-          Text("—")
-            .font(.body.monospacedDigit())
-            .fontWeight(.semibold)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Total unavailable")
-        }
-        Text(itemDescription(share.items.count))
+        ShareTotalText(amount: showsTotal ? share.total : nil, currency: draft.displayCurrency)
+        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -147,36 +124,48 @@ struct ReceiptRequestsView: View {
     return merchant.isEmpty ? "Receipt split" : "Receipt split: \(merchant)"
   }
 
-  private var defaultPaymentMethod: PaymentMethod {
-    PaymentMethod(rawValue: defaultPaymentMethodRawValue)
-      ?? PaymentSettings.initialDefaultMethod
-  }
-
-  private func paymentDestination(_ destination: PaymentDestination?) -> String {
-    guard let destination else {
-      return "No payment method set"
-    }
-    return "\(destination.method.title) \(destination.displayValue)"
-  }
-
-  private func itemDescription(_ count: Int) -> String {
-    String(AttributedString(localized: "^[\(count) item](inflect: true)").characters)
-  }
-
   private func unassignedDescription(_ calculation: ReceiptSplitCalculation) -> String {
     let count = calculation.unassignedItemCount
-    let items = String(
-      AttributedString(localized: "^[\(count) unassigned item](inflect: true)").characters)
+    let items = String(inflecting: "^[\(count) unassigned item](inflect: true)")
     let amount = calculation.unassignedItemTotal.formatted(
       .currency(code: draft.displayCurrency))
     return "\(items) totaling \(amount)"
   }
+}
 
-  private func savePerson(_ person: Person) async -> Person? {
-    await people.save(person, storage: peopleStorage)
+/// A person's share, or a dash while unassigned items keep the share from being final.
+struct ShareTotalText: View {
+  let amount: Double?
+  let currency: String
+
+  var body: some View {
+    Group {
+      if let amount {
+        Text(amount, format: .currency(code: currency))
+      } else {
+        Text("—")
+          .foregroundStyle(.secondary)
+          .accessibilityLabel("Total unavailable")
+      }
+    }
+    .font(.body.monospacedDigit())
+    .fontWeight(.semibold)
   }
+}
 
-  private func deletePerson(_ person: Person) async -> Bool {
-    await people.delete(person, storage: peopleStorage)
+/// Where a person's payment requests go, or a warning when they have no payment method.
+struct PaymentDestinationCaption: View {
+  let destination: PaymentDestination?
+
+  var body: some View {
+    if let destination {
+      Text("\(destination.method.title) \(destination.displayValue)")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    } else {
+      Text("No payment method set")
+        .font(.caption)
+        .foregroundStyle(.orange)
+    }
   }
 }

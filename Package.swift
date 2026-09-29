@@ -31,7 +31,7 @@ let package = Package(
         .testTarget(
             name: "ReceiptKitTests",
             dependencies: ["ReceiptKit"],
-            path: "Tests"
+            path: "Tests/ReceiptKitTests"
         ),
         .testTarget(
             name: "ReceiptLabTests",

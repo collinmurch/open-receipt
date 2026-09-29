@@ -10,7 +10,7 @@ private enum ReceiptReviewGlass: Hashable {
 }
 
 struct ReceiptReviewView: View {
-  let draft: ReceiptDraft
+  @Bindable var draft: ReceiptDraft
   let showsSampleNotice: Bool
   let pages: ReceiptPagesEditor
   let onFlush: () async -> Void
@@ -26,7 +26,6 @@ struct ReceiptReviewView: View {
   @Environment(\.receiptBackgroundMotion) private var motion
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
-  @Environment(\.receiptStorageClient) private var storage
   @Environment(\.colorScheme) private var colorScheme
 
   init(
@@ -60,8 +59,7 @@ struct ReceiptReviewView: View {
         ReceiptPeopleView(
           draft: draft,
           contactClient: contactClient,
-          peopleStorage: peopleStorage,
-          receiptStorage: storage
+          peopleStorage: peopleStorage
         )
         .navigationTransition(.zoom(sourceID: ReceiptReviewSheet.people, in: sheetTransition))
       }
@@ -85,7 +83,7 @@ struct ReceiptReviewView: View {
       receiptList
         .pageVisibility(!showsPayments)
       if draft.isCompleted {
-        ReceiptRequestsView(draft: draft, onFlush: onFlush)
+        ReceiptRequestsView(draft: draft, peopleStorage: peopleStorage, onFlush: onFlush)
           .pageVisibility(showsPayments)
       }
     }
@@ -108,14 +106,12 @@ struct ReceiptReviewView: View {
         draft: draft,
         isEditing: isEditing,
         selectedParticipantIDs: $selectedParticipantIDs,
-        displayCurrency: draft.displayCurrency,
         haptic: $haptic,
         onSelectItem: { selectedItemID = $0 }
       )
       ReceiptTotalsSection(
         draft: draft,
         isEditing: isEditing,
-        displayCurrency: draft.displayCurrency,
         haptic: $haptic
       )
 
@@ -209,19 +205,19 @@ struct ReceiptReviewView: View {
 
   private var receiptFields: some View {
     Section("Receipt") {
-      TextField("Merchant", text: binding(\.merchantName))
+      TextField("Merchant", text: $draft.merchantName)
         .textContentType(.organizationName)
-      Picker("Split Tax/Tip", selection: binding(\.adjustmentSplitMethod)) {
+      Picker("Split Tax/Tip", selection: $draft.adjustmentSplitMethod) {
         ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
           Text(method.title)
             .tag(method)
         }
       }
       .pickerStyle(.menu)
-      DatePicker("Date", selection: binding(\.purchaseDate), displayedComponents: .date)
+      DatePicker("Date", selection: $draft.purchaseDate, displayedComponents: .date)
       NavigationLink {
         ReceiptCurrencyPicker(
-          selection: binding(\.currency),
+          selection: $draft.currency,
           backgroundStyle: draft.backgroundStyle)
       } label: {
         LabeledContent("Currency", value: draft.normalizedCurrency)
@@ -310,14 +306,6 @@ struct ReceiptReviewView: View {
         draft.updateAvatar(avatar, forContactIdentifier: identifier)
       }
     }
-  }
-
-  private func binding<Value>(
-    _ keyPath: ReferenceWritableKeyPath<ReceiptDraft, Value>
-  ) -> Binding<Value> {
-    Binding(
-      get: { draft[keyPath: keyPath] },
-      set: { draft[keyPath: keyPath] = $0 })
   }
 }
 

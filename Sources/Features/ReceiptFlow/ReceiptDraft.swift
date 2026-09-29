@@ -19,7 +19,6 @@ final class ReceiptDraft {
   }
   private(set) var isCompleted: Bool
   private(set) var participants: [ReceiptParticipant]
-  private let extractionWarnings: [String]
   private(set) var persistenceRevision = 0
   @ObservationIgnored private var splitCalculationCache:
     [ReceiptAdjustmentSplitMethod: ReceiptSplitCalculation] = [:]
@@ -29,7 +28,6 @@ final class ReceiptDraft {
   init(
     receipt: ParsedReceipt,
     id: UUID = UUID(),
-    currentUserID: UUID = UUID(),
     owner: ReceiptOwner? = nil,
     backgroundStyle: ReceiptBackgroundStyle = .random()
   ) {
@@ -48,9 +46,7 @@ final class ReceiptDraft {
     items = receipt.items.map { ReceiptDraftItem(item: $0) }
     adjustmentSplitMethod = .proportional
     isCompleted = false
-    participants = [.currentUser(id: currentUserID, owner: owner)]
-    let validationWarnings = Set(ReceiptValidator.warnings(for: receipt))
-    extractionWarnings = receipt.warnings.filter { !validationWarnings.contains($0) }
+    participants = [.currentUser(owner: owner)]
   }
 
   /// Creates a draft from a new recognition of `previous`'s receipt. People, colors, the split
@@ -79,7 +75,6 @@ final class ReceiptDraft {
     adjustmentSplitMethod = state.adjustmentSplitMethod
     isCompleted = state.isCompleted
     participants = state.participants
-    extractionWarnings = state.extractionWarnings
   }
 
   var tax: Double {
@@ -97,15 +92,16 @@ final class ReceiptDraft {
     set { adjustments[.savings] = newValue }
   }
 
+  /// Validation warnings for the current values. The totals check is left out because the
+  /// totals section shows its own correction.
   var warnings: [String] {
     let revision = persistenceRevision
     if let warningsCache, warningsCache.revision == revision {
       return warningsCache.warnings
     }
-    let liveWarnings = ReceiptValidator.warnings(for: parsedReceipt).filter {
-      $0 != ReceiptValidator.totalReconciliationWarning
-    }
-    let warnings = Array(Set(extractionWarnings + liveWarnings)).sorted()
+    let warnings = ReceiptValidator.warnings(for: parsedReceipt)
+      .filter { $0 != ReceiptValidator.totalReconciliationWarning }
+      .sorted()
     warningsCache = (revision, warnings)
     return warnings
   }

@@ -6,12 +6,11 @@ import Observation
 final class PeoplePickerModel {
   private(set) var authorization: ContactAuthorization = .notDetermined
   private(set) var contacts: [ContactSummary] = []
-  private(set) var avatars: [String: Data] = [:]
-  private var loadedAvatarIdentifiers: Set<String> = []
   private(set) var isLoading = false
   var searchText = ""
   var errorDescription: String?
   var isContactAccessPickerPresented = false
+  let avatars = ContactAvatars()
 
   @ObservationIgnored private let client: ContactClient
 
@@ -78,17 +77,7 @@ final class PeoplePickerModel {
   }
 
   func avatar(for identifier: String) async -> Data? {
-    if loadedAvatarIdentifiers.contains(identifier) { return avatars[identifier] }
-    do {
-      let avatar = try await client.fetchAvatar(identifier)
-      loadedAvatarIdentifiers.insert(identifier)
-      if let avatar {
-        avatars[identifier] = avatar
-      }
-      return avatar
-    } catch {
-      return nil
-    }
+    await avatars.avatar(for: identifier, using: client)
   }
 
   private func merge(_ newContacts: [ContactSummary]) {

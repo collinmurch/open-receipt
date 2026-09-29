@@ -62,12 +62,8 @@ struct ReceiptRecognitionView: View {
       .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: recognition.status)
     }
     .tint(recognition.backgroundStyle.accentColor(for: colorScheme))
-    .navigationTitle(title(for: preview))
+    .navigationTitle(preview.merchantName ?? "Reading Receipt")
     .navigationBarTitleDisplayMode(.inline)
-  }
-
-  private func title(for preview: ReceiptParsePreview) -> String {
-    preview.merchantName ?? "Reading Receipt"
   }
 }
 
@@ -130,12 +126,10 @@ private struct ReceiptRecognitionStatusBar: View {
       return "Reading resumes when you’re back online."
     case .reading, .saving, .finished:
       guard !preview.items.isEmpty else {
-        return String(
-          AttributedString(localized: "^[\(recognition.pageCount) page](inflect: true)").characters)
+        return String(inflecting: "^[\(recognition.pageCount) page](inflect: true)")
       }
       let currency = ReceiptCurrency.displayCode(preview.currency)
-      let items = String(
-        AttributedString(localized: "^[\(preview.items.count) item](inflect: true)").characters)
+      let items = String(inflecting: "^[\(preview.items.count) item](inflect: true)")
       let sum = preview.itemTotal.formatted(.currency(code: currency))
       guard let total = preview.total, total != 0 else { return "\(items) · \(sum)" }
       return "\(items) · \(sum) of \(total.formatted(.currency(code: currency)))"

@@ -45,14 +45,11 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
       _ controller: VNDocumentCameraViewController,
       didFinishWith scan: VNDocumentCameraScan
     ) {
-      let images = (0..<scan.pageCount).map { scan.imageOfPage(at: $0) }
-      let pages = images.enumerated().compactMap { index, image -> ReceiptPage? in
+      let pages = (0..<scan.pageCount).compactMap { index -> ReceiptPage? in
+        let image = scan.imageOfPage(at: index)
         guard let cgImage = image.cgImage else { return nil }
         return ReceiptPage(
-          image: cgImage,
-          orientation: CGImagePropertyOrientation(image.imageOrientation),
-          sourceURL: URL(fileURLWithPath: "document-scanner"),
-          pageIndex: index)
+          image: cgImage, orientation: CGImagePropertyOrientation(image.imageOrientation))
       }
       onCapture(ReceiptScan(pages: pages, source: .documentCamera))
     }

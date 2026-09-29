@@ -1,22 +1,22 @@
 import SwiftUI
 
 struct SettingsView: View {
-  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethodRawValue =
-    PaymentSettings.initialDefaultMethod.rawValue
+  @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethod =
+    PaymentSettings.initialDefaultMethod
   @AppStorage(CurrencySettings.defaultCodeKey) private var defaultCurrencyCode =
     CurrencySettings.initialDefaultCode
 
   var body: some View {
     Form {
       Section {
-        Picker("Payment Method", selection: $defaultPaymentMethodRawValue) {
+        Picker("Payment Method", selection: $defaultPaymentMethod) {
           ForEach(PaymentMethod.allCases) { method in
             Label {
               Text(method.title)
             } icon: {
               PaymentMethodIcon(method: method)
             }
-            .tag(method.rawValue)
+            .tag(method)
           }
         }
         .labelsHidden()

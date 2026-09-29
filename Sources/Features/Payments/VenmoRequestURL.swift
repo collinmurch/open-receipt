@@ -22,15 +22,12 @@ enum VenmoRequestURL {
   }
 
   private static func requestValue(for recipient: Person.Venmo.Recipient) -> String? {
-    let value = recipient.value.trimmingCharacters(in: .whitespacesAndNewlines)
-    switch recipient.kind {
-    case .phoneNumber:
-      return recipient.normalizedUSPhoneNumber
-    case .emailAddress:
-      return value.isEmpty ? nil : value
-    case .username:
-      let username = String(value.trimmingPrefix("@"))
-      return username.isEmpty ? nil : username
-    }
+    let value: String? =
+      switch recipient.kind {
+      case .phoneNumber: recipient.normalizedUSPhoneNumber
+      case .emailAddress: recipient.value.trimmingCharacters(in: .whitespacesAndNewlines)
+      case .username: Person.Venmo.normalizedUsername(recipient.value)
+      }
+    return value?.isEmpty == false ? value : nil
   }
 }

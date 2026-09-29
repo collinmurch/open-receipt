@@ -1,208 +1,207 @@
-#if !SWIFT_PACKAGE
-  import XCTest
-  @testable import open_receipt
+import XCTest
 
-  @MainActor
-  final class ReceiptLibraryModelTests: XCTestCase {
-    func testSuccessfulDeleteRemovesReceipt() async {
-      let receipt = makeSummary()
-      let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
-      await model.load()
+@testable import open_receipt
 
-      await model.delete(receipt)
+@MainActor
+final class ReceiptLibraryModelTests: XCTestCase {
+  func testSuccessfulDeleteRemovesReceipt() async {
+    let receipt = makeSummary()
+    let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
+    await model.load()
 
-      XCTAssertTrue(model.receipts.isEmpty)
-      XCTAssertNil(model.errorDescription)
-    }
+    await model.delete(receipt)
 
-    func testFailedDeleteRestoresReceipt() async {
-      let receipt = makeSummary()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(receipts: [receipt], deleteError: .deleteFailed))
-      await model.load()
+    XCTAssertTrue(model.receipts.isEmpty)
+    XCTAssertNil(model.errorDescription)
+  }
 
-      await model.delete(receipt)
+  func testFailedDeleteRestoresReceipt() async {
+    let receipt = makeSummary()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(receipts: [receipt], deleteError: .deleteFailed))
+    await model.load()
 
-      XCTAssertEqual(model.receipts, [receipt])
-      XCTAssertNotNil(model.errorDescription)
-    }
+    await model.delete(receipt)
 
-    func testDeletingUnlistedReceiptDeletesStoredReceipt() async {
-      let model = ReceiptLibraryModel(storage: makeStorage(receipts: []))
-      await model.load()
+    XCTAssertEqual(model.receipts, [receipt])
+    XCTAssertNotNil(model.errorDescription)
+  }
 
-      await model.delete(makeSummary())
+  func testDeletingUnlistedReceiptDeletesStoredReceipt() async {
+    let model = ReceiptLibraryModel(storage: makeStorage(receipts: []))
+    await model.load()
 
-      XCTAssertTrue(model.receipts.isEmpty)
-      XCTAssertNil(model.errorDescription)
-    }
+    await model.delete(makeSummary())
 
-    func testFailedDeleteOfUnlistedReceiptShowsError() async {
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(receipts: [], deleteError: .deleteFailed))
-      await model.load()
+    XCTAssertTrue(model.receipts.isEmpty)
+    XCTAssertNil(model.errorDescription)
+  }
 
-      await model.delete(makeSummary())
+  func testFailedDeleteOfUnlistedReceiptShowsError() async {
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(receipts: [], deleteError: .deleteFailed))
+    await model.load()
 
-      XCTAssertNotNil(model.errorDescription)
-    }
+    await model.delete(makeSummary())
 
-    func testLoadGroupsReceiptsIntoSections() async {
-      let receipt = makeSummary()
-      let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
+    XCTAssertNotNil(model.errorDescription)
+  }
 
-      await model.load()
+  func testLoadGroupsReceiptsIntoSections() async {
+    let receipt = makeSummary()
+    let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
 
-      XCTAssertEqual(model.sections.map(\.id), ["2026-08"])
-      XCTAssertEqual(model.sections.first?.receipts, [receipt])
-    }
+    await model.load()
 
-    func testDeleteRemovesReceiptFromSections() async {
-      let receipt = makeSummary()
-      let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
-      await model.load()
+    XCTAssertEqual(model.sections.map(\.id), ["2026-08"])
+    XCTAssertEqual(model.sections.first?.receipts, [receipt])
+  }
 
-      await model.delete(receipt)
+  func testDeleteRemovesReceiptFromSections() async {
+    let receipt = makeSummary()
+    let model = ReceiptLibraryModel(storage: makeStorage(receipts: [receipt]))
+    await model.load()
 
-      XCTAssertTrue(model.sections.isEmpty)
-    }
+    await model.delete(receipt)
 
-    func testFailedDeleteRestoresReceiptToSections() async {
-      let receipt = makeSummary()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(receipts: [receipt], deleteError: .deleteFailed))
-      await model.load()
+    XCTAssertTrue(model.sections.isEmpty)
+  }
 
-      await model.delete(receipt)
+  func testFailedDeleteRestoresReceiptToSections() async {
+    let receipt = makeSummary()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(receipts: [receipt], deleteError: .deleteFailed))
+    await model.load()
 
-      XCTAssertEqual(model.sections.first?.receipts, [receipt])
-    }
+    await model.delete(receipt)
 
-    func testLoadIncludesRecentlyDeletedReceipts() async {
-      let deletedReceipt = makeDeletedSummary()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(receipts: [], deletedReceipts: [deletedReceipt]))
+    XCTAssertEqual(model.sections.first?.receipts, [receipt])
+  }
 
-      await model.load()
+  func testLoadIncludesRecentlyDeletedReceipts() async {
+    let deletedReceipt = makeDeletedSummary()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(receipts: [], deletedReceipts: [deletedReceipt]))
 
-      XCTAssertEqual(model.deletedReceipts, [deletedReceipt])
-    }
+    await model.load()
 
-    func testFailedRestoreKeepsRecentlyDeletedReceipt() async {
-      let deletedReceipt = makeDeletedSummary()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(
-          receipts: [],
-          deletedReceipts: [deletedReceipt],
-          restoreError: .restoreFailed))
-      await model.load()
+    XCTAssertEqual(model.deletedReceipts, [deletedReceipt])
+  }
 
-      await model.restore(deletedReceipt)
+  func testFailedRestoreKeepsRecentlyDeletedReceipt() async {
+    let deletedReceipt = makeDeletedSummary()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(
+        receipts: [],
+        deletedReceipts: [deletedReceipt],
+        restoreError: .restoreFailed))
+    await model.load()
 
-      XCTAssertEqual(model.deletedReceipts, [deletedReceipt])
-      XCTAssertNotNil(model.errorDescription)
-    }
+    await model.restore(deletedReceipt)
 
-    func testSuccessfulEmptyTrashClearsRecentlyDeletedReceipts() async {
-      let deletedReceipt = makeDeletedSummary()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(receipts: [], deletedReceipts: [deletedReceipt]))
-      await model.load()
+    XCTAssertEqual(model.deletedReceipts, [deletedReceipt])
+    XCTAssertNotNil(model.errorDescription)
+  }
 
-      await model.emptyTrash()
+  func testSuccessfulEmptyTrashClearsRecentlyDeletedReceipts() async {
+    let deletedReceipt = makeDeletedSummary()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(receipts: [], deletedReceipts: [deletedReceipt]))
+    await model.load()
 
-      XCTAssertTrue(model.deletedReceipts.isEmpty)
-      XCTAssertNil(model.errorDescription)
-    }
+    await model.emptyTrash()
 
-    func testTrashPurgeCheckIsLimitedToOncePerDay() async {
-      let counter = CallCounter()
-      let start = Date(timeIntervalSince1970: 1_000_000)
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(
-          receipts: [],
-          purgeExpiredTrash: { _ in await counter.increment() }))
+    XCTAssertTrue(model.deletedReceipts.isEmpty)
+    XCTAssertNil(model.errorDescription)
+  }
 
-      await model.refreshTrashIfNeeded(now: start)
-      await model.refreshTrashIfNeeded(now: start.addingTimeInterval(60 * 60))
-      await model.refreshTrashIfNeeded(now: start.addingTimeInterval(25 * 60 * 60))
+  func testTrashPurgeCheckIsLimitedToOncePerDay() async {
+    let counter = CallCounter()
+    let start = Date(timeIntervalSince1970: 1_000_000)
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(
+        receipts: [],
+        purgeExpiredTrash: { _ in await counter.increment() }))
 
-      let purgeCount = await counter.value
-      XCTAssertEqual(purgeCount, 2)
-    }
+    await model.refreshTrashIfNeeded(now: start)
+    await model.refreshTrashIfNeeded(now: start.addingTimeInterval(60 * 60))
+    await model.refreshTrashIfNeeded(now: start.addingTimeInterval(25 * 60 * 60))
 
-    func testLoadChecksForExpiredTrash() async {
-      let counter = CallCounter()
-      let model = ReceiptLibraryModel(
-        storage: makeStorage(
-          receipts: [],
-          purgeExpiredTrash: { _ in await counter.increment() }))
+    let purgeCount = await counter.value
+    XCTAssertEqual(purgeCount, 2)
+  }
 
-      await model.load()
+  func testLoadChecksForExpiredTrash() async {
+    let counter = CallCounter()
+    let model = ReceiptLibraryModel(
+      storage: makeStorage(
+        receipts: [],
+        purgeExpiredTrash: { _ in await counter.increment() }))
 
-      let purgeCount = await counter.value
-      XCTAssertEqual(purgeCount, 1)
-    }
+    await model.load()
 
-    private func makeSummary() -> ReceiptSummary {
-      ReceiptSummary(
-        id: UUID(),
-        updatedAt: Date(),
-        capturedAt: Date(),
-        backgroundStyle: .blue,
-        recognitionStatus: .succeeded,
-        merchantName: "Cafe",
-        localDate: "2026-08-20",
-        total: 12,
-        currency: "USD",
-        isUnavailable: false,
-        unavailableDescription: nil)
-    }
+    let purgeCount = await counter.value
+    XCTAssertEqual(purgeCount, 1)
+  }
 
-    private func makeDeletedSummary() -> DeletedReceiptSummary {
-      DeletedReceiptSummary(receipt: makeSummary(), deletedAt: Date())
-    }
+  private func makeSummary() -> ReceiptSummary {
+    ReceiptSummary(
+      id: UUID(),
+      updatedAt: Date(),
+      capturedAt: Date(),
+      backgroundStyle: .blue,
+      recognitionStatus: .succeeded,
+      merchantName: "Cafe",
+      localDate: "2026-08-20",
+      total: 12,
+      currency: "USD",
+      isUnavailable: false,
+      unavailableDescription: nil)
+  }
 
-    private func makeStorage(
-      receipts: [ReceiptSummary],
-      deletedReceipts: [DeletedReceiptSummary] = [],
-      deleteError: TestError? = nil,
-      restoreError: TestError? = nil,
-      purgeExpiredTrash: @escaping @Sendable (Date) async throws -> Void = { _ in }
-    ) -> ReceiptStorageClient {
-      ReceiptStorageClient(
-        create: { _, _ in throw TestError.unused },
-        createBlank: { _, _ in throw TestError.unused },
-        list: { receipts },
-        load: { _ in throw TestError.unused },
-        loadPages: { _ in throw TestError.unused },
-        pageURLs: { _ in throw TestError.unused },
-        addPages: { _, _ in throw TestError.unused },
-        deletePage: { _, _ in throw TestError.unused },
-        reorderPages: { _, _ in throw TestError.unused },
-        save: { _ in throw TestError.unused },
-        delete: { _ in
-          if let deleteError { throw deleteError }
-        },
-        listDeleted: { deletedReceipts },
-        restore: { _ in
-          if let restoreError { throw restoreError }
-        },
-        purgeExpiredTrash: purgeExpiredTrash)
-    }
+  private func makeDeletedSummary() -> DeletedReceiptSummary {
+    DeletedReceiptSummary(receipt: makeSummary(), deletedAt: Date())
+  }
 
-    private enum TestError: Error {
-      case deleteFailed
-      case restoreFailed
-      case unused
-    }
+  private func makeStorage(
+    receipts: [ReceiptSummary],
+    deletedReceipts: [DeletedReceiptSummary] = [],
+    deleteError: TestError? = nil,
+    restoreError: TestError? = nil,
+    purgeExpiredTrash: @escaping @Sendable (Date) async throws -> Void = { _ in }
+  ) -> ReceiptStorageClient {
+    ReceiptStorageClient(
+      create: { _, _ in throw TestError.unused },
+      createBlank: { _, _ in throw TestError.unused },
+      list: { receipts },
+      load: { _ in throw TestError.unused },
+      loadPages: { _ in throw TestError.unused },
+      pageURLs: { _ in throw TestError.unused },
+      addPages: { _, _ in throw TestError.unused },
+      deletePage: { _, _ in throw TestError.unused },
+      reorderPages: { _, _ in throw TestError.unused },
+      save: { _ in throw TestError.unused },
+      delete: { _ in
+        if let deleteError { throw deleteError }
+      },
+      listDeleted: { deletedReceipts },
+      restore: { _ in
+        if let restoreError { throw restoreError }
+      },
+      purgeExpiredTrash: purgeExpiredTrash)
+  }
 
-    private actor CallCounter {
-      private(set) var value = 0
+  private enum TestError: Error {
+    case deleteFailed
+    case restoreFailed
+    case unused
+  }
 
-      func increment() {
-        value += 1
-      }
+  private actor CallCounter {
+    private(set) var value = 0
+
+    func increment() {
+      value += 1
     }
   }
-#endif
+}

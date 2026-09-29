@@ -17,28 +17,21 @@ enum ReceiptPhotoImporter {
           guard let data = try? await item.loadTransferable(type: Data.self) else {
             return (index, nil)
           }
-          return (index, ReceiptPhotoImporter.page(from: data, pageIndex: index))
+          return (index, ReceiptPhotoImporter.page(from: data))
         }
       }
-      var pages: [(Int, ReceiptPage)] = []
+      var pages: [(index: Int, page: ReceiptPage)] = []
       for await (index, page) in group {
         if let page { pages.append((index, page)) }
       }
       return pages
     }
-    return loaded.sorted { $0.0 < $1.0 }.enumerated().map { pageIndex, element in
-      ReceiptPage(
-        image: element.1.image,
-        orientation: element.1.orientation,
-        sourceURL: element.1.sourceURL,
-        pageIndex: pageIndex)
-    }
+    return loaded.sorted { $0.index < $1.index }.map(\.page)
   }
 
   /// Decodes an upright page no larger than `maximumPixelDimension` on its longest side.
   static func page(
     from data: Data,
-    pageIndex: Int,
     maximumPixelDimension: Int = ReceiptPhotoImporter.maximumPixelDimension
   ) -> ReceiptPage? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
@@ -55,10 +48,6 @@ enum ReceiptPhotoImporter {
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
       return nil
     }
-    return ReceiptPage(
-      image: image,
-      orientation: .up,
-      sourceURL: URL(fileURLWithPath: "photo-library"),
-      pageIndex: pageIndex)
+    return ReceiptPage(image: image)
   }
 }

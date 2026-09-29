@@ -193,14 +193,14 @@ final class ReceiptRecognitionCenter {
     _ recognition: ReceiptRecognition,
     activity: ReceiptReadActivity
   ) async -> ReceiptRecognition.Outcome {
-    let creation = createDocumentIfNeeded(for: recognition)
+    let storedDocument = self.storedDocument(for: recognition)
     let attemptedAt = Date()
 
     let receipt: ParsedReceipt
     do {
       receipt = try await parsedReceipt(for: recognition, activity: activity)
     } catch {
-      if let creation, let document = try? await creation.value {
+      if let document = try? await storedDocument.value {
         recognition.document = document
       }
       if error is CancellationError { return .cancelled }
@@ -210,14 +210,11 @@ final class ReceiptRecognitionCenter {
 
     let document: ReceiptDocument
     do {
-      if let creation {
-        recognition.document = try await creation.value
-      }
-      guard let stored = recognition.document else { throw ReceiptStorageError.emptyScan }
-      document = stored
+      document = try await storedDocument.value
     } catch {
       return .failed(message: error.localizedDescription, isRetryable: true)
     }
+    recognition.document = document
 
     recognition.update(.saving)
     let completed = completedDocument(
@@ -234,10 +231,13 @@ final class ReceiptRecognitionCenter {
     return .recognized(completed)
   }
 
-  private func createDocumentIfNeeded(
+  /// The receipt's stored document. A new scan is written to storage while the model reads it.
+  private func storedDocument(
     for recognition: ReceiptRecognition
-  ) -> Task<ReceiptDocument, any Error>? {
-    guard recognition.document == nil else { return nil }
+  ) -> Task<ReceiptDocument, any Error> {
+    if let document = recognition.document {
+      return Task { () async throws in document }
+    }
     let storage = storage
     let scan = recognition.scan
     let backgroundStyle = recognition.backgroundStyle
@@ -332,8 +332,6 @@ final class ReceiptRecognitionCenter {
     completed.recognition.lastAttemptedAt = attemptedAt
     completed.recognition.completedAt = Date()
     completed.recognition.pageIDs = document.scan.pages.map(\.id)
-    let validationWarnings = Set(ReceiptValidator.warnings(for: receipt))
-    completed.recognition.warnings = receipt.warnings.filter { !validationWarnings.contains($0) }
     return completed
   }
 }

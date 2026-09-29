@@ -36,10 +36,6 @@ struct ReceiptParsingClient: Sendable {
     self.init(usesSampleData: usesSampleData, stream: { pages, _ in try await parse(pages) })
   }
 
-  func parse(_ pages: [ReceiptPage]) async throws -> ParsedReceipt {
-    try await stream(pages) { _ in }
-  }
-
   #if DEBUG
     static let sample: ReceiptParsingClient = .sample(pacing: .milliseconds(280))
 
@@ -117,13 +113,6 @@ extension ReceiptParsingClient {
   }
 }
 
-private struct ReceiptParsingClientKey: EnvironmentKey {
-  static let defaultValue = ReceiptParsingClient.standard
-}
-
 extension EnvironmentValues {
-  var receiptParsingClient: ReceiptParsingClient {
-    get { self[ReceiptParsingClientKey.self] }
-    set { self[ReceiptParsingClientKey.self] = newValue }
-  }
+  @Entry var receiptParsingClient = ReceiptParsingClient.standard
 }

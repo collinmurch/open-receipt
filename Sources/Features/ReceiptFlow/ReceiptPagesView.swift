@@ -87,7 +87,6 @@ struct ReceiptPagesView: View {
     }
     .task(id: orderedPageIDs) { await saveOrder() }
     .haptics(haptic)
-    .errorHaptic(errorDescription)
     .quickLookPreview($previewURL, in: displayedPages.compactMap { pageURLs[$0.id] })
     .fullScreenCover(isPresented: $isScannerPresented) {
       ReceiptScannerView(
@@ -115,16 +114,7 @@ struct ReceiptPagesView: View {
       photoItems = []
       addPages { await ReceiptPhotoImporter.pages(from: items) }
     }
-    .alert(
-      "Couldn’t Update Pages",
-      isPresented: Binding(
-        get: { errorDescription != nil },
-        set: { if !$0 { errorDescription = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(errorDescription ?? "The receipt pages could not be updated.")
-    }
+    .errorAlert("Couldn’t Update Pages", message: $errorDescription)
   }
 
   private var footnote: String? {

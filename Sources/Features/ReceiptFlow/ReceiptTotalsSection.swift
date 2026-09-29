@@ -8,9 +8,8 @@ private enum AdjustmentInputMode: CaseIterable, Identifiable {
 }
 
 struct ReceiptTotalsSection: View {
-  let draft: ReceiptDraft
+  @Bindable var draft: ReceiptDraft
   let isEditing: Bool
-  let displayCurrency: String
   @Binding var haptic: HapticEvent
   @State private var tipInputMode = AdjustmentInputMode.amount
   @State private var savingsInputMode = AdjustmentInputMode.amount
@@ -21,29 +20,29 @@ struct ReceiptTotalsSection: View {
         if !draft.adjustments.isEmpty || draft.subtotalNeedsCorrection {
           amountField(
             "Subtotal",
-            value: binding(\.subtotal),
+            value: $draft.subtotal,
             expectedValue: draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil)
         }
         if draft.adjustments.contains(.tax) {
-          adjustmentField(.tax, value: binding(\.tax))
+          adjustmentField(.tax, value: $draft.tax)
         }
         if draft.adjustments.contains(.tip) {
           percentageAdjustmentField(
             .tip,
-            amount: binding(\.tip),
-            percentage: binding(\.tipPercentage),
+            amount: $draft.tip,
+            percentage: $draft.tipPercentage,
             mode: $tipInputMode)
         }
         if draft.adjustments.contains(.savings) {
           percentageAdjustmentField(
             .savings,
-            amount: binding(\.savings),
-            percentage: binding(\.savingsPercentage),
+            amount: $draft.savings,
+            percentage: $draft.savingsPercentage,
             mode: $savingsInputMode)
         }
         amountField(
           "Total",
-          value: binding(\.total),
+          value: $draft.total,
           isEmphasized: true,
           expectedValue: draft.totalNeedsCorrection ? draft.expectedTotal : nil)
       } else {
@@ -53,14 +52,8 @@ struct ReceiptTotalsSection: View {
             value: draft.subtotal,
             expectedValue: draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil)
         }
-        if draft.adjustments.contains(.tax) {
-          totalRow("Tax", value: draft.tax)
-        }
-        if draft.adjustments.contains(.tip) {
-          totalRow("Tip", value: draft.tip)
-        }
-        if draft.adjustments.contains(.savings) {
-          totalRow("Savings", value: draft.savings == 0 ? 0 : -draft.savings)
+        ForEach(ReceiptTotalAdjustment.allCases.filter(draft.adjustments.contains)) { kind in
+          totalRow(kind.title, value: draft.signedAmount(of: kind))
         }
         totalRow(
           "Total",
@@ -71,11 +64,11 @@ struct ReceiptTotalsSection: View {
     } header: {
       HStack {
         Text("Totals")
-        if isEditing, !draft.missingAdjustments.isEmpty {
+        if isEditing, !draft.adjustments.missing.isEmpty {
           Menu {
-            ForEach(draft.missingAdjustments) { adjustment in
+            ForEach(draft.adjustments.missing) { adjustment in
               Button {
-                withAnimation(.smooth) { draft.addAdjustment(adjustment) }
+                withAnimation(.smooth) { draft.adjustments.add(adjustment) }
                 haptic.play(.selection)
               } label: {
                 Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
@@ -161,7 +154,7 @@ struct ReceiptTotalsSection: View {
     if let expectedValue {
       let difference = (actualValue - expectedValue).formatted(
         .currency(code: displayCurrency).sign(strategy: .always()))
-      Text("Expected \(formattedCurrency(expectedValue)) (\(difference))")
+      Text("Expected \(expectedValue.formatted(.currency(code: displayCurrency))) (\(difference))")
         .font(.caption)
         .foregroundStyle(.orange)
         .lineLimit(1)
@@ -223,7 +216,7 @@ struct ReceiptTotalsSection: View {
         systemImage: "minus.circle.fill",
         role: .destructive
       ) {
-        withAnimation(.smooth) { draft.removeAdjustment(adjustment) }
+        withAnimation(.smooth) { draft.adjustments.remove(adjustment) }
         haptic.play(.removal)
       }
       .labelStyle(.iconOnly)
@@ -240,16 +233,8 @@ struct ReceiptTotalsSection: View {
     }
   }
 
-  private func formattedCurrency(_ value: Double) -> String {
-    value.formatted(.currency(code: displayCurrency))
-  }
-
-  private func binding<Value>(
-    _ keyPath: ReferenceWritableKeyPath<ReceiptDraft, Value>
-  ) -> Binding<Value> {
-    Binding(
-      get: { draft[keyPath: keyPath] },
-      set: { draft[keyPath: keyPath] = $0 })
+  private var displayCurrency: String {
+    draft.displayCurrency
   }
 }
 

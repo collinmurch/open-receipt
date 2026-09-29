@@ -50,9 +50,8 @@ enum ReceiptModelClient {
     configuration: ReceiptParserConfiguration = .standard,
     in directory: URL
   ) throws -> URL {
-    directory
-      .appendingPathComponent(try cacheKey(for: pages, configuration: configuration))
-      .appendingPathExtension("json")
+    let key = try cacheKey(for: pages, configuration: configuration)
+    return directory.appending(path: "\(key).json")
   }
 
   static func cacheKey(

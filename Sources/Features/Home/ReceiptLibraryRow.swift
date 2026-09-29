@@ -91,8 +91,7 @@ struct ReceiptLibraryRow: View {
       if recognition.status == .waitingForConnection { return "Waiting for connection" }
       let count = recognition.preview.items.count
       guard count > 0 else { return "Reading…" }
-      let items = String(AttributedString(localized: "^[\(count) item](inflect: true)").characters)
-      return "Reading · \(items)"
+      return "Reading · \(String(inflecting: "^[\(count) item](inflect: true)"))"
     }
     if receipt.isUnavailable { return "This receipt cannot be opened." }
     if receipt.recognitionStatus != .succeeded {

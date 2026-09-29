@@ -54,20 +54,8 @@ final class ReceiptLibraryModel {
       await load()
       return
     }
-    withAnimation(.smooth(duration: 0.4)) {
-      _ = receipts.remove(at: index)
-    }
-
-    do {
-      try await storage.delete(receipt.id)
-      errorDescription = nil
-    } catch {
-      withAnimation(.smooth(duration: 0.3)) {
-        receipts.insert(receipt, at: min(index, receipts.endIndex))
-      }
-      errorDescription = error.localizedDescription
-      return
-    }
+    guard await remove(at: index, from: \.receipts, while: { try await storage.delete(receipt.id) })
+    else { return }
     await reloadDeletedReceipts()
   }
 
@@ -75,19 +63,9 @@ final class ReceiptLibraryModel {
     guard let index = deletedReceipts.firstIndex(where: { $0.id == deletedReceipt.id }) else {
       return
     }
-    withAnimation(.smooth(duration: 0.4)) {
-      _ = deletedReceipts.remove(at: index)
-    }
-
-    do {
+    await remove(at: index, from: \.deletedReceipts) {
       try await storage.restore(deletedReceipt.id)
       receipts = try await storage.list()
-      errorDescription = nil
-    } catch {
-      withAnimation(.smooth(duration: 0.3)) {
-        deletedReceipts.insert(deletedReceipt, at: min(index, deletedReceipts.endIndex))
-      }
-      errorDescription = error.localizedDescription
     }
   }
 
@@ -95,18 +73,8 @@ final class ReceiptLibraryModel {
     guard let index = deletedReceipts.firstIndex(where: { $0.id == deletedReceipt.id }) else {
       return
     }
-    withAnimation(.smooth(duration: 0.4)) {
-      _ = deletedReceipts.remove(at: index)
-    }
-
-    do {
+    await remove(at: index, from: \.deletedReceipts) {
       try await storage.permanentlyDelete(deletedReceipt.id)
-      errorDescription = nil
-    } catch {
-      withAnimation(.smooth(duration: 0.3)) {
-        deletedReceipts.insert(deletedReceipt, at: min(index, deletedReceipts.endIndex))
-      }
-      errorDescription = error.localizedDescription
     }
   }
 
@@ -150,6 +118,29 @@ final class ReceiptLibraryModel {
     return true
   }
 
+  /// Removes the element at `index` right away, then puts it back if `operation` fails.
+  @discardableResult
+  private func remove<Element>(
+    at index: Int,
+    from list: ReferenceWritableKeyPath<ReceiptLibraryModel, [Element]>,
+    while operation: () async throws -> Void
+  ) async -> Bool {
+    let element = withAnimation(.smooth(duration: 0.4)) {
+      self[keyPath: list].remove(at: index)
+    }
+    do {
+      try await operation()
+      errorDescription = nil
+      return true
+    } catch {
+      withAnimation(.smooth(duration: 0.3)) {
+        self[keyPath: list].insert(element, at: min(index, self[keyPath: list].endIndex))
+      }
+      errorDescription = error.localizedDescription
+      return false
+    }
+  }
+
   private func reloadDeletedReceipts() async {
     do {
       deletedReceipts = try await storage.listDeleted()
@@ -180,13 +171,6 @@ struct ReceiptLibraryRefreshAction: Sendable {
   }
 }
 
-private struct ReceiptLibraryRefreshKey: EnvironmentKey {
-  static let defaultValue = ReceiptLibraryRefreshAction()
-}
-
 extension EnvironmentValues {
-  var receiptLibraryRefresh: ReceiptLibraryRefreshAction {
-    get { self[ReceiptLibraryRefreshKey.self] }
-    set { self[ReceiptLibraryRefreshKey.self] = newValue }
-  }
+  @Entry var receiptLibraryRefresh = ReceiptLibraryRefreshAction()
 }

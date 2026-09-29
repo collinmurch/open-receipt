@@ -48,9 +48,7 @@
         ReceiptFileStorage(rootURL: root.appending(path: "Receipts", directoryHint: .isDirectory)))
       let people = PeopleStorageClient.files(
         PeopleFileStorage(rootURL: root.appending(path: "People", directoryHint: .isDirectory)))
-      guard
-        let page = ReceiptPhotoImporter.page(
-          from: try Data(contentsOf: scene.imageURL), pageIndex: 0)
+      guard let page = ReceiptPhotoImporter.page(from: try Data(contentsOf: scene.imageURL))
       else { throw ScreenshotSceneError.unreadableImage(scene.imageURL) }
       let scan = ReceiptScan(id: scene.id, pages: [page], source: .photoLibrary)
       let receipt = scene.receipt
@@ -204,11 +202,8 @@
     }
 
     private static func localDate(daysBefore days: Int, now: Date) -> String {
-      let calendar = Calendar.current
-      let date = calendar.date(byAdding: .day, value: -days, to: now) ?? now
-      let parts = calendar.dateComponents([.year, .month, .day], from: date)
-      return String(
-        format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+      let date = Calendar.current.date(byAdding: .day, value: -days, to: now) ?? now
+      return ReceiptLocalDate.string(from: date, in: .current)
     }
   }
 

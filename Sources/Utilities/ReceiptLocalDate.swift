@@ -27,8 +27,9 @@ enum ReceiptLocalDate {
     return date
   }
 
-  /// `date`'s day as a zero-padded `yyyy-MM-dd`, which sorts chronologically as a string.
-  static func string(from date: Date) -> String {
+  /// `date`'s day in `calendar` as a zero-padded `yyyy-MM-dd`, which sorts chronologically as a
+  /// string.
+  static func string(from date: Date, in calendar: Calendar = ReceiptLocalDate.calendar) -> String {
     let components = calendar.dateComponents([.year, .month, .day], from: date)
     return String(
       format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)

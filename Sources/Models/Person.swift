@@ -35,11 +35,6 @@ enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Senda
   }
 }
 
-enum PaymentSettings {
-  static let defaultMethodKey = "defaultPaymentMethod"
-  static let initialDefaultMethod = PaymentMethod.venmo
-}
-
 struct Person: Codable, Equatable, Identifiable, Sendable {
   struct PaymentMethods: Codable, Equatable, Sendable {
     var defaultMethod: PaymentMethod?
@@ -107,7 +102,7 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
     }
 
     var recipient: Recipient
-    var customUsername: String?
+    var customUsername: String? = nil
 
     init(recipient: Recipient, customUsername: String? = nil) {
       self.recipient = recipient
@@ -115,32 +110,12 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
     }
 
     init(username: String) {
-      recipient = Recipient(kind: .username, value: username)
-      customUsername = username
+      self.init(recipient: Recipient(kind: .username, value: username), customUsername: username)
     }
 
-    private enum CodingKeys: String, CodingKey {
-      case recipient
-      case customUsername
-      case username
-    }
-
-    init(from decoder: Decoder) throws {
-      let container = try decoder.container(keyedBy: CodingKeys.self)
-      if let recipient = try container.decodeIfPresent(Recipient.self, forKey: .recipient) {
-        self.init(
-          recipient: recipient,
-          customUsername: try container.decodeIfPresent(String.self, forKey: .customUsername))
-      } else {
-        let username = try container.decode(String.self, forKey: .username)
-        self.init(username: username)
-      }
-    }
-
-    func encode(to encoder: Encoder) throws {
-      var container = encoder.container(keyedBy: CodingKeys.self)
-      try container.encode(recipient, forKey: .recipient)
-      try container.encodeIfPresent(customUsername, forKey: .customUsername)
+    /// `value` without surrounding whitespace or a leading "@".
+    static func normalizedUsername(_ value: String) -> String {
+      String(value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingPrefix("@"))
     }
   }
 
@@ -186,6 +161,14 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
   var displayName: String
   var contactIdentifier: String?
   var paymentMethods: PaymentMethods
+
+  /// The order people are listed in: most recently included first, then by name.
+  static func sortsBefore(_ lhs: Person, _ rhs: Person) -> Bool {
+    if lhs.lastIncludedAt != rhs.lastIncludedAt {
+      return lhs.lastIncludedAt > rhs.lastIncludedAt
+    }
+    return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+  }
 }
 
 enum PaymentDestination: Equatable, Sendable {
@@ -216,13 +199,16 @@ enum PaymentDestination: Equatable, Sendable {
   }
 }
 
-private enum USPhoneNumber {
+enum USPhoneNumber {
+  /// The digits of `value`, dropping a leading US country code of 1 from an 11-digit number.
+  static func nationalDigits(_ value: String) -> String {
+    let digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })
+    return digits.count == 11 && digits.hasPrefix("1") ? String(digits.dropFirst()) : digits
+  }
+
   /// The ten digits of a US phone number, dropping a leading country code of 1.
   static func digits(_ value: String) -> String? {
-    var digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })
-    if digits.count == 11, digits.hasPrefix("1") {
-      digits.removeFirst()
-    }
+    let digits = nationalDigits(value)
     return digits.count == 10 ? digits : nil
   }
 
@@ -242,17 +228,34 @@ struct ReceiptOwner: Codable, Equatable, Sendable {
 struct PeopleDocument: Codable, Equatable, Sendable {
   static let currentSchemaVersion = 3
 
-  var schemaVersion: Int
-  var didImportReceiptParticipants: Bool
-  var people: [Person]
+  var schemaVersion = currentSchemaVersion
+  var people: [Person] = []
   var owner: ReceiptOwner?
 }
 
-struct ReceiptPersonSnapshot: Codable, Equatable, Sendable {
-  let receiptID: UUID
-  let participantID: UUID
-  let personID: UUID?
-  let displayName: String
-  let contactIdentifier: String?
-  let includedAt: Date
+/// A payment recipient that can be one of a contact's phone numbers or email addresses.
+protocol ContactRecipient: Hashable, Identifiable {
+  static func phoneNumber(_ value: String) -> Self
+  static func emailAddress(_ value: String) -> Self
+  var displayValue: String { get }
+}
+
+extension Person.Venmo.Recipient: ContactRecipient {
+  static func phoneNumber(_ value: String) -> Self {
+    .init(kind: .phoneNumber, value: value)
+  }
+
+  static func emailAddress(_ value: String) -> Self {
+    .init(kind: .emailAddress, value: value)
+  }
+}
+
+extension Person.IMessage.Recipient: ContactRecipient {
+  static func phoneNumber(_ value: String) -> Self {
+    .init(kind: .phoneNumber, value: value)
+  }
+
+  static func emailAddress(_ value: String) -> Self {
+    .init(kind: .emailAddress, value: value)
+  }
 }

@@ -37,9 +37,9 @@ struct ReceiptLab {
       exit(64)
     }
 
-    let inputURL = URL(fileURLWithPath: positional[0])
+    let inputURL = URL(filePath: positional[0])
     let runner = ReceiptLabRunner(
-      cacheDirectory: URL(fileURLWithPath: cache),
+      cacheDirectory: URL(filePath: cache, directoryHint: .isDirectory),
       cachedOnly: cachedOnly,
       configuration: configuration,
       respond: ReceiptModelClient.privateCloudCompute(configuration: configuration))
@@ -56,9 +56,7 @@ struct ReceiptLab {
           write(ReceiptLabReporter.streamSummaryFixture(fixture))
         }
       }
-      if format == .text && !quiet {
-        write(ReceiptLabReporter.streamSummary(report))
-      } else if format == .summary && !quiet {
+      if format != .json && !quiet {
         write(ReceiptLabReporter.streamSummary(report))
       } else {
         let output = ReceiptLabReporter.render(report, format: format)

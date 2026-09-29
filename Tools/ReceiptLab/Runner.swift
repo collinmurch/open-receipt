@@ -113,7 +113,7 @@ struct ReceiptLabRunner {
   }
 
   private func fixtureSamples(in folder: URL) -> [URL]? {
-    let fixtures = folder.appendingPathComponent("fixtures", isDirectory: true)
+    let fixtures = folder.appending(path: "fixtures", directoryHint: .isDirectory)
     var isDirectory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: fixtures.path, isDirectory: &isDirectory),
       isDirectory.boolValue
@@ -132,7 +132,7 @@ struct ReceiptLabRunner {
   }
 
   private func existingFile(in folder: URL, named name: String) -> URL? {
-    let candidate = folder.appendingPathComponent(name)
+    let candidate = folder.appending(path: name)
     return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
   }
 

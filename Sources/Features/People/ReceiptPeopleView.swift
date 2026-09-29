@@ -7,7 +7,6 @@ struct ReceiptPeopleView: View {
 
   let draft: ReceiptDraft
   private let contactClient: ContactClient
-  private let receiptStorage: ReceiptStorageClient
   @State private var contactModel: PeoplePickerModel
   @State private var peopleModel: SavedPeopleModel
   @State private var isNewPersonPresented = false
@@ -17,12 +16,10 @@ struct ReceiptPeopleView: View {
   init(
     draft: ReceiptDraft,
     contactClient: ContactClient,
-    peopleStorage: PeopleStorageClient,
-    receiptStorage: ReceiptStorageClient
+    peopleStorage: PeopleStorageClient
   ) {
     self.draft = draft
     self.contactClient = contactClient
-    self.receiptStorage = receiptStorage
     contactModel = PeoplePickerModel(client: contactClient)
     peopleModel = SavedPeopleModel(storage: peopleStorage)
   }
@@ -46,11 +43,7 @@ struct ReceiptPeopleView: View {
 
         if contactModel.isLoading || peopleModel.isLoading {
           Section {
-            HStack {
-              Spacer()
-              ProgressView("Loading people")
-              Spacer()
-            }
+            LoadingRow(title: "Loading people")
           }
         } else if contactModel.canReadContacts {
           contactsSection
@@ -179,19 +172,10 @@ struct ReceiptPeopleView: View {
             }
           }
         } label: {
-          HStack(spacing: 12) {
-            PersonAvatarView(
-              name: person.displayName,
-              imageData: person.contactIdentifier.flatMap { contactModel.avatars[$0] })
-            Text(person.displayName)
-              .foregroundStyle(.primary)
-            Spacer()
-            if participant != nil {
-              Image(systemName: "checkmark")
-                .fontWeight(.semibold)
-            }
-          }
-          .contentShape(.rect)
+          PersonSelectionRow(
+            name: person.displayName,
+            avatarData: person.contactIdentifier.flatMap { contactModel.avatars[$0] },
+            isSelected: participant != nil)
         }
         .buttonStyle(.plain)
         .task(id: person.contactIdentifier) {
@@ -247,17 +231,10 @@ struct ReceiptPeopleView: View {
         }
       }
     } label: {
-      HStack(spacing: 12) {
-        PersonAvatarView(name: contact.displayName, imageData: avatarData)
-        Text(contact.displayName)
-          .foregroundStyle(.primary)
-        Spacer()
-        if participant != nil {
-          Image(systemName: "checkmark")
-            .fontWeight(.semibold)
-        }
-      }
-      .contentShape(.rect)
+      PersonSelectionRow(
+        name: contact.displayName,
+        avatarData: avatarData,
+        isSelected: participant != nil)
     }
     .buttonStyle(.plain)
     .task(id: contact.identifier) {
@@ -290,7 +267,7 @@ struct ReceiptPeopleView: View {
 
   private func load() async {
     async let contacts: Void = contactModel.load()
-    async let people: Void = peopleModel.load(receiptStorage: receiptStorage)
+    async let people: Void = peopleModel.load()
     _ = await (contacts, people)
   }
 

@@ -53,11 +53,9 @@ enum ReceiptLibrarySections {
   }
 
   private static func day(for receipt: ReceiptSummary, calendar: Calendar) -> String {
-    if let day = receipt.localDate.flatMap(ReceiptLibraryDateFormatter.normalizedDay) {
-      return day
+    if let date = receipt.localDate.flatMap(ReceiptLocalDate.date(from:)) {
+      return ReceiptLocalDate.string(from: date)
     }
-    let components = calendar.dateComponents([.year, .month, .day], from: receipt.capturedAt)
-    return String(
-      format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    return ReceiptLocalDate.string(from: receipt.capturedAt, in: calendar)
   }
 }

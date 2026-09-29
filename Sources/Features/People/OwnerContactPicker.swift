@@ -26,7 +26,7 @@ struct OwnerContactPicker: View {
         Button {
           select(nil)
         } label: {
-          row(
+          PersonSelectionRow(
             name: ReceiptParticipant.defaultCurrentUserName,
             avatarData: nil,
             isSelected: selectedIdentifier == nil)
@@ -38,11 +38,7 @@ struct OwnerContactPicker: View {
 
       if model.isLoading {
         Section {
-          HStack {
-            Spacer()
-            ProgressView("Loading contacts")
-            Spacer()
-          }
+          LoadingRow(title: "Loading contacts")
         }
       } else if model.canReadContacts {
         contactsSection
@@ -75,7 +71,7 @@ struct OwnerContactPicker: View {
           Button {
             select(contact)
           } label: {
-            row(
+            PersonSelectionRow(
               name: contact.displayName,
               avatarData: model.avatars[contact.identifier],
               isSelected: contact.identifier == selectedIdentifier)
@@ -89,22 +85,6 @@ struct OwnerContactPicker: View {
     }
   }
 
-  private func row(name: String, avatarData: Data?, isSelected: Bool) -> some View {
-    HStack(spacing: 12) {
-      PersonAvatarView(name: name, imageData: avatarData)
-      Text(name)
-        .foregroundStyle(.primary)
-      Spacer()
-      if isSelected {
-        Image(systemName: "checkmark")
-          .fontWeight(.semibold)
-          .foregroundStyle(.tint)
-      }
-    }
-    .contentShape(.rect)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
-  }
-
   private func select(_ contact: ContactSummary?) {
     onSelect(contact)
     dismiss()
@@ -113,11 +93,5 @@ struct OwnerContactPicker: View {
   private func selectResolvedContact(_ identifiers: [String]) async {
     guard let contact = await model.resolveContacts(identifiers: identifiers).first else { return }
     select(contact)
-  }
-}
-
-extension ReceiptOwner {
-  init(_ contact: ContactSummary) {
-    self.init(contactIdentifier: contact.identifier, displayName: contact.displayName)
   }
 }

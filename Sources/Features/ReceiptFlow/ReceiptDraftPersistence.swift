@@ -14,7 +14,6 @@ struct ReceiptDraftPersistenceState {
   let adjustmentSplitMethod: ReceiptAdjustmentSplitMethod
   let isCompleted: Bool
   let participants: [ReceiptParticipant]
-  let extractionWarnings: [String]
 
   init(document: ReceiptDocument) throws {
     guard let receipt = document.receipt, let split = document.split else {
@@ -70,7 +69,6 @@ struct ReceiptDraftPersistenceState {
         avatarData: nil,
         lastRequestedAt: participant.lastRequestedAt)
     }
-    extractionWarnings = document.recognition.warnings
   }
 }
 

@@ -1,82 +1,81 @@
-#if !SWIFT_PACKAGE
-  import UIKit
-  import XCTest
-  @testable import open_receipt
+import UIKit
+import XCTest
 
-  final class CurrencySettingsTests: XCTestCase {
-    private var suiteName: String!
-    private var defaults: UserDefaults!
+@testable import open_receipt
 
-    override func setUp() {
-      super.setUp()
-      suiteName = "CurrencySettingsTests-\(UUID().uuidString)"
-      defaults = UserDefaults(suiteName: suiteName)
-    }
+final class CurrencySettingsTests: XCTestCase {
+  private var suiteName: String!
+  private var defaults: UserDefaults!
 
-    override func tearDown() {
-      defaults.removePersistentDomain(forName: suiteName)
-      defaults = nil
-      suiteName = nil
-      super.tearDown()
-    }
+  override func setUp() {
+    super.setUp()
+    suiteName = "CurrencySettingsTests-\(UUID().uuidString)"
+    defaults = UserDefaults(suiteName: suiteName)
+  }
 
-    func testDefaultCodeIsUSDWhenUnset() {
-      XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "USD")
-    }
+  override func tearDown() {
+    defaults.removePersistentDomain(forName: suiteName)
+    defaults = nil
+    suiteName = nil
+    super.tearDown()
+  }
 
-    func testDefaultCodeUsesStoredCode() {
-      defaults.set("EUR", forKey: CurrencySettings.defaultCodeKey)
+  func testDefaultCodeIsUSDWhenUnset() {
+    XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "USD")
+  }
 
-      XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "EUR")
-    }
+  func testDefaultCodeUsesStoredCode() {
+    defaults.set("EUR", forKey: CurrencySettings.defaultCodeKey)
 
-    func testDefaultCodeIgnoresInvalidStoredCode() {
-      defaults.set("euro", forKey: CurrencySettings.defaultCodeKey)
+    XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "EUR")
+  }
 
-      XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "USD")
-    }
+  func testDefaultCodeIgnoresInvalidStoredCode() {
+    defaults.set("euro", forKey: CurrencySettings.defaultCodeKey)
 
-    func testDisplayCodeKeepsValidCode() {
-      XCTAssertEqual(ReceiptCurrency.displayCode("GBP", fallback: "EUR"), "GBP")
-    }
+    XCTAssertEqual(CurrencySettings.defaultCode(in: defaults), "USD")
+  }
 
-    func testDisplayCodeUsesFallbackForMissingCode() {
-      XCTAssertEqual(ReceiptCurrency.displayCode(nil, fallback: "EUR"), "EUR")
-    }
+  func testDisplayCodeKeepsValidCode() {
+    XCTAssertEqual(ReceiptCurrency.displayCode("GBP", fallback: "EUR"), "GBP")
+  }
 
-    func testDisplayCodeUsesFallbackForIncompleteCode() {
-      XCTAssertEqual(ReceiptCurrency.displayCode("EU", fallback: "JPY"), "JPY")
-    }
+  func testDisplayCodeUsesFallbackForMissingCode() {
+    XCTAssertEqual(ReceiptCurrency.displayCode(nil, fallback: "EUR"), "EUR")
+  }
 
-    func testSymbolsIncludeDollarSignForUSD() {
-      XCTAssertTrue(ReceiptCurrency.symbols("USD").contains("$"))
-    }
+  func testDisplayCodeUsesFallbackForIncompleteCode() {
+    XCTAssertEqual(ReceiptCurrency.displayCode("EU", fallback: "JPY"), "JPY")
+  }
 
-    func testSymbolsIncludeEuroSign() {
-      XCTAssertTrue(ReceiptCurrency.symbols("EUR").contains("€"))
-    }
+  func testSymbolsIncludeDollarSignForUSD() {
+    XCTAssertTrue(ReceiptCurrency.symbols("USD").contains("$"))
+  }
 
-    func testSymbolsIncludeNativeSign() {
-      XCTAssertTrue(ReceiptCurrency.symbols("PLN").contains("zł"))
-    }
+  func testSymbolsIncludeEuroSign() {
+    XCTAssertTrue(ReceiptCurrency.symbols("EUR").contains("€"))
+  }
 
-    func testSymbolNameUsesCurrencySign() {
-      XCTAssertEqual(ReceiptCurrency.symbolName("EUR"), "eurosign")
-    }
+  func testSymbolsIncludeNativeSign() {
+    XCTAssertTrue(ReceiptCurrency.symbols("PLN").contains("zł"))
+  }
 
-    func testSymbolNameIgnoresCase() {
-      XCTAssertEqual(ReceiptCurrency.symbolName("gbp"), "sterlingsign")
-    }
+  func testSymbolNameUsesCurrencySign() {
+    XCTAssertEqual(ReceiptCurrency.symbolName("EUR"), "eurosign")
+  }
 
-    func testSymbolNameUsesBanknoteWithoutSign() {
-      XCTAssertEqual(ReceiptCurrency.symbolName("XAF"), "banknote")
-    }
+  func testSymbolNameIgnoresCase() {
+    XCTAssertEqual(ReceiptCurrency.symbolName("gbp"), "sterlingsign")
+  }
 
-    func testSymbolNamesExist() {
-      for code in Locale.commonISOCurrencyCodes {
-        let name = ReceiptCurrency.symbolName(code)
-        XCTAssertNotNil(UIImage(systemName: name), "\(code) uses missing symbol \(name)")
-      }
+  func testSymbolNameUsesBanknoteWithoutSign() {
+    XCTAssertEqual(ReceiptCurrency.symbolName("XAF"), "banknote")
+  }
+
+  func testSymbolNamesExist() {
+    for code in Locale.commonISOCurrencyCodes {
+      let name = ReceiptCurrency.symbolName(code)
+      XCTAssertNotNil(UIImage(systemName: name), "\(code) uses missing symbol \(name)")
     }
   }
-#endif
+}

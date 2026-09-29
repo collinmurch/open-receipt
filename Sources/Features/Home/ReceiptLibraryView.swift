@@ -18,6 +18,7 @@ struct ReceiptLibraryView: View {
   @Environment(\.receiptStorageClient) private var storage
 
   var body: some View {
+    @Bindable var library = library
     let reading = readingReceipts
     let query = searchQuery
     let sections = displayedSections(reading: reading, query: query)
@@ -82,28 +83,11 @@ struct ReceiptLibraryView: View {
       Task { await importImages(items) }
     }
     .sensoryFeedback(.removal, trigger: deletionCount)
-    .errorHaptic(library.errorDescription ?? importErrorDescription)
-    .alert(
-      "Couldn’t Update Receipts",
-      isPresented: Binding(
-        get: { library.errorDescription != nil },
-        set: { if !$0 { library.errorDescription = nil } })
-    ) {
+    .errorAlert("Couldn’t Update Receipts", message: $library.errorDescription) {
       Button("Retry") { Task { await library.load() } }
       Button("OK", role: .cancel) {}
-    } message: {
-      Text(library.errorDescription ?? "The receipt library could not be updated.")
     }
-    .alert(
-      "Couldn’t Import Receipt",
-      isPresented: Binding(
-        get: { importErrorDescription != nil },
-        set: { if !$0 { importErrorDescription = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(importErrorDescription ?? "The selected images could not be imported.")
-    }
+    .errorAlert("Couldn’t Import Receipt", message: $importErrorDescription)
   }
 
   @ToolbarContentBuilder
@@ -192,24 +176,13 @@ struct ReceiptLibraryView: View {
 
   /// New receipts being read that storage has not listed yet, newest first.
   private var readingReceipts: [ReceiptSummary] {
-    recognitions.recognitions.values
-      .filter { recognition in
-        !recognition.isRescan && !library.receipts.contains { $0.id == recognition.id }
-      }
+    let storedIDs = Set(library.receipts.map(\.id))
+    return recognitions.recognitions.values
+      .filter { !$0.isRescan && !storedIDs.contains($0.id) }
       .sorted { $0.capturedAt > $1.capturedAt }
-      .map { recognition in
-        ReceiptSummary(
-          id: recognition.id,
-          updatedAt: recognition.capturedAt,
-          capturedAt: recognition.capturedAt,
-          backgroundStyle: recognition.backgroundStyle,
-          recognitionStatus: .pending,
-          merchantName: nil,
-          localDate: nil,
-          total: nil,
-          currency: nil,
-          isUnavailable: false,
-          unavailableDescription: nil)
+      .map {
+        ReceiptSummary.reading(
+          id: $0.id, capturedAt: $0.capturedAt, backgroundStyle: $0.backgroundStyle)
       }
   }
 

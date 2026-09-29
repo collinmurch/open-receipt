@@ -69,9 +69,8 @@ struct ContactSummary: Identifiable, Sendable, Equatable {
   }
 
   private static func normalizedPhoneNumber(_ value: String) -> String {
-    let digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })
-    guard !digits.isEmpty else { return value.lowercased() }
-    return digits.count == 11 && digits.hasPrefix("1") ? String(digits.dropFirst()) : digits
+    let digits = USPhoneNumber.nationalDigits(value)
+    return digits.isEmpty ? value.lowercased() : digits
   }
 
   private static func isMobileLabel(_ label: String?) -> Bool {
@@ -82,31 +81,21 @@ struct ContactSummary: Identifiable, Sendable, Equatable {
       || label.caseInsensitiveCompare(mobileLabel) == .orderedSame
   }
 
-  var defaultVenmoRecipient: Person.Venmo.Recipient? {
+  /// The contact's first phone number, or its first email address when it has none.
+  func defaultRecipient<Recipient: ContactRecipient>(_: Recipient.Type) -> Recipient? {
     if let phoneNumber = phoneNumbers.first {
-      return .init(kind: .phoneNumber, value: phoneNumber.value)
+      return Recipient.phoneNumber(phoneNumber.value)
     }
-    if let emailAddress = emailAddresses.first {
-      return .init(kind: .emailAddress, value: emailAddress.value)
-    }
-    return nil
-  }
-
-  var defaultIMessageRecipient: Person.IMessage.Recipient? {
-    if let phoneNumber = phoneNumbers.first {
-      return .init(kind: .phoneNumber, value: phoneNumber.value)
-    }
-    if let emailAddress = emailAddresses.first {
-      return .init(kind: .emailAddress, value: emailAddress.value)
-    }
-    return nil
+    return emailAddresses.first.map { Recipient.emailAddress($0.value) }
   }
 
   /// The payment methods this contact suggests for those `person` hasn't set.
   func paymentDefaults(for person: Person) -> ContactPaymentDefaults {
     ContactPaymentDefaults(
-      venmo: person.paymentMethods.venmo == nil ? defaultVenmoRecipient : nil,
-      iMessage: person.paymentMethods.iMessage == nil ? defaultIMessageRecipient : nil)
+      venmo: person.paymentMethods.venmo == nil
+        ? defaultRecipient(Person.Venmo.Recipient.self) : nil,
+      iMessage: person.paymentMethods.iMessage == nil
+        ? defaultRecipient(Person.IMessage.Recipient.self) : nil)
   }
 }
 
@@ -128,6 +117,12 @@ extension Person {
       didChange = true
     }
     return didChange
+  }
+}
+
+extension ReceiptOwner {
+  init(_ contact: ContactSummary) {
+    self.init(contactIdentifier: contact.identifier, displayName: contact.displayName)
   }
 }
 
@@ -256,13 +251,6 @@ extension ContactAuthorization {
   }
 }
 
-private struct ContactClientKey: EnvironmentKey {
-  static let defaultValue = ContactClient.live
-}
-
 extension EnvironmentValues {
-  var contactClient: ContactClient {
-    get { self[ContactClientKey.self] }
-    set { self[ContactClientKey.self] = newValue }
-  }
+  @Entry var contactClient = ContactClient.live
 }

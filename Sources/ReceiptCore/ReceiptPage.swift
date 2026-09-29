@@ -5,18 +5,22 @@ import ImageIO
 public struct ReceiptPage: Sendable {
   public let image: CGImage
   public let orientation: CGImagePropertyOrientation
-  public let sourceURL: URL
-  public let pageIndex: Int
 
-  public init(
-    image: CGImage,
-    orientation: CGImagePropertyOrientation = .up,
-    sourceURL: URL,
-    pageIndex: Int
-  ) {
+  public init(image: CGImage, orientation: CGImagePropertyOrientation = .up) {
     self.image = image
     self.orientation = orientation
-    self.sourceURL = sourceURL
-    self.pageIndex = pageIndex
+  }
+
+  /// Reads the first image in the file at `url` with the orientation recorded in its metadata,
+  /// or returns `nil` when the file can't be decoded.
+  public init?(contentsOf url: URL) {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { return nil }
+    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    let rawOrientation = properties?[kCGImagePropertyOrientation] as? UInt32
+    self.init(
+      image: image,
+      orientation: rawOrientation.flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up)
   }
 }

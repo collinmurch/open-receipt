@@ -25,12 +25,17 @@ extension View {
 private struct ScreenshotHighlightModifier: ViewModifier {
   let name: String
 
+  @ViewBuilder
   func body(content: Content) -> some View {
     #if DEBUG
-      content.onGeometryChange(for: CGRect.self) { proxy in
-        proxy.frame(in: .global)
-      } action: { frame in
-        ScreenshotHighlights.record(name, frame: frame)
+      if ScreenshotHighlights.isCapturing {
+        content.onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .global)
+        } action: { frame in
+          ScreenshotHighlights.record(name, frame: frame)
+        }
+      } else {
+        content
       }
     #else
       content

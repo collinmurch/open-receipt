@@ -13,11 +13,6 @@ enum ReceiptLibraryDateFormatter {
     return date.formatted(style(locale).month(.abbreviated).day())
   }
 
-  /// The date as a zero-padded `yyyy-MM-dd`, which sorts chronologically as a string.
-  static func normalizedDay(localDate: String) -> String? {
-    ReceiptLocalDate.date(from: localDate).map(ReceiptLocalDate.string(from:))
-  }
-
   /// A `yyyy-MM` month as a section title, leaving out the year when it is the current one.
   static func monthTitle(month: String, currentYear: Int, locale: Locale = .current) -> String? {
     guard let date = ReceiptLocalDate.date(from: "\(month)-01") else { return nil }

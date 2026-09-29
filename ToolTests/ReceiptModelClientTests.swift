@@ -136,8 +136,8 @@ final class ReceiptModelClientTests: XCTestCase {
     let directory = makeCacheDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let pages = [
-      makePage(image: try makeImage(gray: 255), pageIndex: 0),
-      makePage(image: try makeImage(gray: 0), pageIndex: 1),
+      makePage(image: try makeImage(gray: 255)),
+      makePage(image: try makeImage(gray: 0)),
     ]
 
     _ = try await ReceiptModelClient.response(
@@ -145,14 +145,15 @@ final class ReceiptModelClientTests: XCTestCase {
       cacheDirectory: directory,
       cachedOnly: false,
       respond: { received in
-        XCTAssertEqual(received.map(\.pageIndex), [0, 1])
+        XCTAssertEqual(received.count, pages.count)
+        XCTAssertTrue(zip(received, pages).allSatisfy { $0.image === $1.image })
         return Data("{}".utf8)
       })
   }
 
   private func makeCacheDirectory() -> URL {
     FileManager.default.temporaryDirectory
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+      .appending(path: UUID().uuidString, directoryHint: .isDirectory)
   }
 
   private func makePage(gray: UInt8) throws -> ReceiptPage {
@@ -179,13 +180,8 @@ final class ReceiptModelClientTests: XCTestCase {
 
   private func makePage(
     image: CGImage,
-    orientation: CGImagePropertyOrientation = .up,
-    pageIndex: Int = 0
+    orientation: CGImagePropertyOrientation = .up
   ) -> ReceiptPage {
-    ReceiptPage(
-      image: image,
-      orientation: orientation,
-      sourceURL: URL(fileURLWithPath: "fixture.png"),
-      pageIndex: pageIndex)
+    ReceiptPage(image: image, orientation: orientation)
   }
 }
