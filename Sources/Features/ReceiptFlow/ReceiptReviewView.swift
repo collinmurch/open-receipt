@@ -250,7 +250,6 @@ struct ReceiptReviewView: View {
 
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
-    if showsPayments { return "Request Payments" }
     return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
   }
 
@@ -268,11 +267,11 @@ struct ReceiptReviewView: View {
         }
       }
 
-      if !showsPayments {
-        ToolbarTitleMenu {
-          Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
-        }
+      ToolbarTitleMenu {
+        Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
+      }
 
+      if !showsPayments {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit", systemImage: "pencil", action: beginEditing)
         }
