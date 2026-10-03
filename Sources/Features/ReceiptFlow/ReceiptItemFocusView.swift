@@ -6,8 +6,6 @@ import SwiftUI
 struct ReceiptItemFocusView: View {
   /// How far the card's background reaches past the item, matching a list row's margins.
   private static let cardPadding = CGSize(width: 20, height: 12)
-  private static let liftAnimation = Animation.spring(duration: 0.35, bounce: 0.2)
-  private static let returnAnimation = Animation.smooth(duration: 0.35)
 
   let draft: ReceiptDraft
   let itemID: ReceiptDraftItem.ID
@@ -77,7 +75,7 @@ struct ReceiptItemFocusView: View {
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape, dismiss)
     .onAppear {
-      withAnimation(Self.liftAnimation) { isLifted = true }
+      withAnimation(.lift) { isLifted = true }
     }
   }
 
@@ -114,7 +112,7 @@ struct ReceiptItemFocusView: View {
 
   private func toggleAssignment(_ participantID: ReceiptParticipant.ID) {
     haptic.play(.selection)
-    withAnimation(.smooth(duration: 0.25)) {
+    withAnimation(.selectionChange) {
       draft.toggleAssignment(of: [participantID], to: itemID)
     }
   }
@@ -122,7 +120,7 @@ struct ReceiptItemFocusView: View {
   private func dismiss() {
     guard !isDismissing else { return }
     isDismissing = true
-    withAnimation(Self.returnAnimation) {
+    withAnimation(.settle) {
       isLifted = false
     } completion: {
       onDismiss()

@@ -98,14 +98,15 @@ struct ReceiptInkWashBackground: View {
   let style: ReceiptBackgroundStyle
   @State private var isVisible = true
   @State private var isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-  /// Resting motion for a background shown outside a receipt, which has no shared motion.
-  @State private var restingMotion = ReceiptBackgroundMotion()
+  /// Resting motion for a background shown outside a receipt, which has no shared motion. It is
+  /// static because a `@State` initial value is rebuilt, and discarded, on every parent update.
+  private static let restingMotion = ReceiptBackgroundMotion()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.receiptBackgroundMotion) private var sharedMotion
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    let motion = sharedMotion ?? restingMotion
+    let motion = sharedMotion ?? Self.restingMotion
     let palette = style.inkWashPalette(for: colorScheme)
     let pattern = motion.pattern
     let isDark = colorScheme == .dark

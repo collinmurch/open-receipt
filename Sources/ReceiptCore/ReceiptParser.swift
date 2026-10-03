@@ -92,9 +92,9 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
     }
 
     /// Prepares a session ahead of a likely request, such as when the scanner opens. The next
-    /// parse uses it.
+    /// parse uses it. A session that is already warm is kept.
     public static func prewarm() {
-      guard model.isAvailable else { return }
+      guard model.isAvailable, prewarmedSession.withLock({ $0 == nil }) else { return }
       let session = makeSession()
       session.prewarm(promptPrefix: Prompt { ReceiptModelContract.prompt })
       prewarmedSession.withLock { $0 = session }

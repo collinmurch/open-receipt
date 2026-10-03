@@ -83,6 +83,7 @@ struct ReceiptReviewView: View {
         !wasCompleted && isCompleted
       }
       .task { await refreshContactAvatars() }
+      .task { await ReceiptCurrencyPicker.prepareCatalog() }
   }
 
   /// Both pages of a completed receipt stay built, and switching only changes which one shows.
@@ -191,7 +192,7 @@ struct ReceiptReviewView: View {
       }
     }
     .padding(.bottom, 8)
-    .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: draft.isCompleted)
+    .animation(.glassMorph, value: draft.isCompleted)
     .offset(y: isEditing || isFocusing ? Self.bottomBarExitDistance : 0)
     .allowsHitTesting(!isEditing && !isFocusing)
     .accessibilityHidden(isEditing || isFocusing)
@@ -250,7 +251,6 @@ struct ReceiptReviewView: View {
 
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
-    if showsPayments { return "Request Payments" }
     return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
   }
 
@@ -261,18 +261,18 @@ struct ReceiptReviewView: View {
         Button("Done", systemImage: "checkmark", role: .confirm, action: finishEditing)
       }
     } else if !isFocusing {
-      if selectedParticipantIDs.count > 1 && !showsPayments {
+      if !selectedParticipantIDs.isEmpty && !showsPayments {
         ToolbarItem(placement: .topBarTrailing) {
           Button(
             "Clear Selection", systemImage: "person.2.slash", action: clearParticipantSelection)
         }
       }
 
-      if !showsPayments {
-        ToolbarTitleMenu {
-          Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
-        }
+      ToolbarTitleMenu {
+        Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
+      }
 
+      if !showsPayments {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit", systemImage: "pencil", action: beginEditing)
         }
@@ -334,21 +334,21 @@ struct ReceiptReviewView: View {
   }
 
   private func beginEditing() {
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       isEditing = true
     }
   }
 
   private func focusItem(_ id: ReceiptDraftItem.ID, isPressed: Bool) {
-    haptic.play(.impact(weight: .medium))
+    haptic.play(.lift)
     isFocusedItemPressed = isPressed
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       focusedItemID = id
     }
   }
 
   private func endItemFocus() {
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       focusedItemID = nil
       focusedRowFrame = nil
     }
@@ -357,7 +357,7 @@ struct ReceiptReviewView: View {
   private func toggleParticipantSelection(_ id: ReceiptParticipant.ID) {
     haptic.play(.selection)
     seededItemID = nil
-    withAnimation(.smooth(duration: 0.25)) {
+    withAnimation(.selectionChange) {
       if selectedParticipantIDs.contains(id) {
         selectedParticipantIDs.remove(id)
       } else {
@@ -369,7 +369,7 @@ struct ReceiptReviewView: View {
   private func clearParticipantSelection() {
     haptic.play(.selection)
     seededItemID = nil
-    withAnimation(.smooth(duration: 0.25)) {
+    withAnimation(.selectionChange) {
       selectedParticipantIDs = []
     }
   }
@@ -383,7 +383,7 @@ struct ReceiptReviewView: View {
   private func finishEditing() {
     draft.normalizeEditableFields()
     selectedItemID = nil
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       isEditing = false
     }
     Task { await onFlush() }

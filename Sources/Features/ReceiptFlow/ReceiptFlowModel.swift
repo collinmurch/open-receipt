@@ -181,22 +181,25 @@ final class ReceiptFlowModel {
     }
   }
 
-  var workID: String? {
+  /// The work the current phase needs done, which restarts whenever it changes.
+  enum Work: Hashable {
+    case create(UUID)
+    case load(UUID)
+    case store(UUID)
+    case read(UUID)
+    case recognize(ObjectIdentifier)
+    case rescan(UUID)
+  }
+
+  var workID: Work? {
     switch phase {
-    case .creating(let id):
-      "create-\(id.uuidString)"
-    case .loading(let id):
-      "load-\(id.uuidString)"
-    case .storing(let scan):
-      "store-\(scan.id.uuidString)"
-    case .preparingRead(let id):
-      "read-\(id.uuidString)"
-    case .recognizing(let recognition):
-      "recognize-\(ObjectIdentifier(recognition).hashValue)"
-    case .rescanning(let draft):
-      "rescan-\(draft.id.uuidString)"
-    case .reviewing, .failed:
-      nil
+    case .creating(let id): .create(id)
+    case .loading(let id): .load(id)
+    case .storing(let scan): .store(scan.id)
+    case .preparingRead(let id): .read(id)
+    case .recognizing(let recognition): .recognize(ObjectIdentifier(recognition))
+    case .rescanning(let draft): .rescan(draft.id)
+    case .reviewing, .failed: nil
     }
   }
 

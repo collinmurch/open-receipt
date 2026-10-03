@@ -8,6 +8,7 @@ struct ReceiptRecognitionView: View {
   let onEnterManually: () -> Void
   @ScaledMetric(relativeTo: .caption2) private var headerHeight = ParticipantStrip.baseHeight
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     let preview = recognition.preview
@@ -22,7 +23,9 @@ struct ReceiptRecognitionView: View {
         } else {
           ForEach(preview.items.indices, id: \.self) { index in
             ReceiptRecognitionItemRow(item: preview.items[index], currency: currency)
-              .transition(.move(edge: .bottom).combined(with: .opacity))
+              .transition(
+                reduceMotion ? AnyTransition.opacity : .move(edge: .bottom).combined(with: .opacity)
+              )
           }
         }
       }
@@ -42,8 +45,8 @@ struct ReceiptRecognitionView: View {
       }
     }
     .scrollContentBackground(.hidden)
-    .animation(.smooth(duration: 0.4), value: preview.items.count)
-    .animation(.smooth(duration: 0.4), value: preview.total)
+    .animation(.smooth(duration: 0.3), value: preview.items.count)
+    .animation(.smooth(duration: 0.3), value: preview.total)
     .safeAreaBar(edge: .top) {
       ReceiptRecognitionStatusBar(recognition: recognition, height: headerHeight)
         .receiptTopBarPadding()
@@ -59,7 +62,7 @@ struct ReceiptRecognitionView: View {
         }
       }
       .padding(.bottom, 8)
-      .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: recognition.status)
+      .animation(.glassMorph, value: recognition.status)
     }
     .tint(recognition.backgroundStyle.accentColor(for: colorScheme))
     .navigationTitle(preview.merchantName ?? "Reading Receipt")
@@ -141,7 +144,6 @@ private struct ReceiptRecognitionStatusBar: View {
 private struct ReceiptRecognitionThumbnail: View {
   let image: CGImage?
   let isScanning: Bool
-  @State private var sweeps = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -157,27 +159,37 @@ private struct ReceiptRecognitionThumbnail: View {
       }
       .overlay {
         if isScanning && !reduceMotion {
-          GeometryReader { proxy in
-            LinearGradient(
-              colors: [.clear, .white.opacity(0.55), .clear],
-              startPoint: .top,
-              endPoint: .bottom
-            )
-            .frame(height: proxy.size.height * 0.35)
-            .offset(y: sweeps ? proxy.size.height : -proxy.size.height * 0.35)
-          }
-          .blendMode(.plusLighter)
-          .transition(.opacity)
+          ReceiptScanSweep()
+            .transition(.opacity)
         }
       }
       .clipShape(.rect(cornerRadius: 8, style: .continuous))
       .animation(.smooth(duration: 0.3), value: image != nil)
-      .onAppear {
-        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: false)) {
-          sweeps = true
-        }
-      }
       .accessibilityHidden(true)
+  }
+}
+
+/// A band of light sweeping down the page. It starts each time it appears, so it picks up again
+/// when a read resumes after waiting for a connection.
+private struct ReceiptScanSweep: View {
+  @State private var sweeps = false
+
+  var body: some View {
+    GeometryReader { proxy in
+      LinearGradient(
+        colors: [.clear, .white.opacity(0.55), .clear],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+      .frame(height: proxy.size.height * 0.35)
+      .offset(y: sweeps ? proxy.size.height : -proxy.size.height * 0.35)
+    }
+    .blendMode(.plusLighter)
+    .onAppear {
+      withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: false)) {
+        sweeps = true
+      }
+    }
   }
 }
 

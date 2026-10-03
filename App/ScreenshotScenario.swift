@@ -1,7 +1,7 @@
 #if DEBUG
   import SwiftUI
 
-  /// A fixed app state that `make screenshots` launches into. The capture tests pass
+  /// A fixed app state that `make previews` launches into. The capture tests pass
   /// `-ScreenshotScenario <kind>` and `-ScreenshotReceipt <path to scene JSON>`.
   struct ScreenshotScenario {
     enum Kind: String {
@@ -11,6 +11,8 @@
       case split
       /// A completed split, open to its payment requests.
       case requests
+      /// A completed split, sharing everyone's breakdowns with the group.
+      case share
       /// The receipt library with a few months of receipts.
       case library
     }
@@ -19,7 +21,6 @@
     let scene: ScreenshotScene
     /// How many rows the reading screen shows. The last one is still being written.
     let readingRowCount: Int
-    let colorScheme: ColorScheme
 
     static let launched: ScreenshotScenario? = {
       let defaults = UserDefaults.standard
@@ -33,8 +34,7 @@
         return ScreenshotScenario(
           kind: kind,
           scene: scene,
-          readingRowCount: rows > 0 ? rows : 8,
-          colorScheme: defaults.string(forKey: "ScreenshotAppearance") == "dark" ? .dark : .light)
+          readingRowCount: rows > 0 ? rows : 8)
       } catch {
         preconditionFailure("Couldn't load the screenshot scene at \(path): \(error)")
       }
@@ -66,7 +66,8 @@
           storage: storage,
           people: people,
           parsing: parsing,
-          recognitions: recognitions)
+          recognitions: recognitions,
+          contacts: kind == .share ? .cards(for: scene.people) : .unavailable)
       }
 
       switch kind {
@@ -78,9 +79,9 @@
         return stage(
           [.receipt(.recognition(recognition))], parsing: reading, recognitions: readingCenter)
 
-      case .split, .requests:
+      case .split, .requests, .share:
         let document = try await storeSplit(
-          scan, storage: storage, people: people, completes: kind == .requests)
+          scan, storage: storage, people: people, completes: kind != .split)
         return stage([
           .receipt(
             .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
@@ -150,8 +151,10 @@
     ) async throws -> ReceiptDocument {
       let document = try await Self.storeRead(
         scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-      guard let group = scene.groups[kind.rawValue] else {
-        throw ScreenshotSceneError.missingGroup(kind.rawValue)
+      // Sharing splits the same receipt as the requests screen.
+      let groupName = kind == .share ? Kind.requests.rawValue : kind.rawValue
+      guard let group = scene.groups[groupName] else {
+        throw ScreenshotSceneError.missingGroup(groupName)
       }
       let draft = try ReceiptDraft(document: document)
       if let owner = group.owner {
@@ -163,7 +166,9 @@
       }
       let names = Set(group.assignments.values.joined())
       for participant in scene.people where names.contains(participant.name) {
-        var person = try await people.include(nil, participant.name, nil, scan.capturedAt)
+        let contactIdentifier = kind == .share ? participant.contactIdentifier : nil
+        var person = try await people.include(
+          nil, participant.name, contactIdentifier, scan.capturedAt)
         person.paymentMethods = participant.paymentMethods
         participants[participant.name] = draft.addPerson(try await people.save(person)).id
       }
@@ -215,6 +220,7 @@
     let people: PeopleStorageClient
     let parsing: ReceiptParsingClient
     let recognitions: ReceiptRecognitionCenter
+    let contacts: ContactClient
   }
 
   /// A receipt photo and the values it reads as, who had what, and the rest of the library.
@@ -232,12 +238,19 @@
       let assignments: [String: [String]]
     }
 
-    /// Someone on the receipt, with the payment method they are requested through.
+    /// Someone on the receipt, with the payment method they are requested through and the phone
+    /// number on their contact card.
     struct Participant: Decodable {
       let name: String
       var venmo: String?
       var cashApp: String?
       var iMessage: String?
+      var phone: String?
+
+      /// The identifier of the contact card the share scenario picks them from, if they have one.
+      var contactIdentifier: String? {
+        phone == nil ? nil : "screenshot-\(name)"
+      }
 
       var paymentMethods: Person.PaymentMethods {
         let defaultMethod: PaymentMethod? =
@@ -322,6 +335,27 @@
       requestAccess: { .denied },
       fetchContacts: { _ in [] },
       fetchAvatar: { _ in nil })
+
+    /// A client whose only contacts are the scene's people with phone numbers, so screenshots can
+    /// message them without reading real contacts.
+    fileprivate static func cards(for people: [ScreenshotScene.Participant]) -> ContactClient {
+      let contacts = people.compactMap { person -> ContactSummary? in
+        guard let identifier = person.contactIdentifier, let phone = person.phone else {
+          return nil
+        }
+        return ContactSummary(
+          identifier: identifier,
+          displayName: person.name,
+          phoneNumbers: [ContactSummary.Value(label: "mobile", value: phone)])
+      }
+      return ContactClient(
+        authorizationStatus: { .authorized },
+        requestAccess: { .authorized },
+        fetchContacts: { identifiers in
+          identifiers.map { ids in contacts.filter { ids.contains($0.identifier) } } ?? contacts
+        },
+        fetchAvatar: { _ in nil })
+    }
   }
 
   enum ScreenshotSceneError: Error {
@@ -344,12 +378,11 @@
             .environment(\.receiptStorageClient, stage.storage)
             .environment(\.peopleStorageClient, stage.people)
             .environment(\.receiptParsingClient, stage.parsing)
-            .environment(\.contactClient, .unavailable)
+            .environment(\.contactClient, stage.contacts)
         } else {
           Color.clear
         }
       }
-      .preferredColorScheme(scenario.colorScheme)
       .task {
         do {
           stage = try await scenario.stage()

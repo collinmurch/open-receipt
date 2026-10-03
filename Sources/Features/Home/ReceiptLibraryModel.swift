@@ -59,11 +59,13 @@ final class ReceiptLibraryModel {
     await reloadDeletedReceipts()
   }
 
-  func restore(_ deletedReceipt: DeletedReceiptSummary) async {
+  /// Moves `deletedReceipt` back into the library, returning whether it is there.
+  @discardableResult
+  func restore(_ deletedReceipt: DeletedReceiptSummary) async -> Bool {
     guard let index = deletedReceipts.firstIndex(where: { $0.id == deletedReceipt.id }) else {
-      return
+      return receipts.contains { $0.id == deletedReceipt.id }
     }
-    await remove(at: index, from: \.deletedReceipts) {
+    return await remove(at: index, from: \.deletedReceipts) {
       try await storage.restore(deletedReceipt.id)
       receipts = try await storage.list()
     }
@@ -153,21 +155,23 @@ final class ReceiptLibraryModel {
   private static let trashPurgeCheckInterval: TimeInterval = 24 * 60 * 60
 }
 
-/// Reloads the receipt library, for screens that change receipts while it is out of view.
-struct ReceiptLibraryRefreshAction: Sendable {
-  private let action: @MainActor @Sendable () -> Void
+/// Reloads the receipt library, for screens that change receipts while it is out of view. Equal
+/// for the same library, so rebuilding it doesn't redraw the screens that read it.
+struct ReceiptLibraryRefreshAction: Equatable, Sendable {
+  private let library: ReceiptLibraryModel?
 
-  init(action: @escaping @MainActor @Sendable () -> Void = {}) {
-    self.action = action
+  init(library: ReceiptLibraryModel? = nil) {
+    self.library = library
   }
 
-  init(library: ReceiptLibraryModel) {
-    action = { Task { await library.load() } }
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.library === rhs.library
   }
 
   @MainActor
   func callAsFunction() {
-    action()
+    guard let library else { return }
+    Task { await library.load() }
   }
 }
 

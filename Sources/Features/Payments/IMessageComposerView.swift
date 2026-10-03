@@ -17,8 +17,8 @@ struct IMessageAttachment {
 
 extension IMessageAttachment {
   @MainActor
-  init?(breakdown: ReceiptBreakdown) {
-    guard let data = ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
+  init?(breakdown: ReceiptBreakdown) async {
+    guard let data = await ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
     self.init(data: data, filename: "\(breakdown.fileName).png")
   }
 }
@@ -48,6 +48,8 @@ struct IMessageComposerView: UIViewControllerRepresentable {
     context: Context
   ) {}
 
+  /// Reports the result and lets the sheet's binding dismiss the composer, so SwiftUI stays in
+  /// charge of the presentation.
   final class Coordinator: NSObject, @preconcurrency MFMessageComposeViewControllerDelegate {
     let onFinish: @MainActor (Bool) -> Void
 
@@ -60,9 +62,7 @@ struct IMessageComposerView: UIViewControllerRepresentable {
       _ controller: MFMessageComposeViewController,
       didFinishWith result: MessageComposeResult
     ) {
-      controller.dismiss(animated: true) {
-        self.onFinish(result == .sent)
-      }
+      onFinish(result == .sent)
     }
   }
 }

@@ -9,7 +9,7 @@ extension PaymentMethod {
     case .cashApp:
       Color(red: 0, green: 0.6, blue: 0.24)
     case .iMessage:
-      .green
+      Color(red: 0.1, green: 0.6, blue: 0.24)
     case .none:
       .orange
     }

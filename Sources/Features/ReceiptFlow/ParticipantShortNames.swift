@@ -16,6 +16,11 @@ enum ParticipantShortNames {
     }
     return result
   }
+
+  /// The first word of `displayName`, or the whole name when it has none.
+  static func firstName(of displayName: String) -> String {
+    displayName.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? displayName
+  }
 }
 
 private struct NameParts {

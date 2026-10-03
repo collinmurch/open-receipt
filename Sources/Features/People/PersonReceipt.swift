@@ -19,7 +19,14 @@ struct PersonReceipt: Identifiable {
     person: Person,
     people: [Person]
   ) -> PersonReceipt? {
-    guard let draft = try? ReceiptDraft(document: document) else { return nil }
+    // A participant saved with a person resolves only to that person, so the split is worked out
+    // only for receipts that have this person or a legacy participant to match by contact or name.
+    guard
+      document.split?.participants.contains(where: {
+        $0.personID == nil || $0.personID == person.id
+      }) == true,
+      let draft = try? ReceiptDraft(document: document)
+    else { return nil }
     let calculation = draft.splitCalculation
     guard
       let share = calculation.participantShares.first(where: {

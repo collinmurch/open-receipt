@@ -163,7 +163,7 @@ struct ReceiptParticipantBreakdownView: View {
         }
       }
 
-      if let paymentDestination, currency != "USD" {
+      if let paymentDestination, !paymentDestination.method.supports(currency: currency) {
         Section {
           Label(
             "\(paymentDestination.method.title) requests require a USD receipt.",

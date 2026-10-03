@@ -9,6 +9,7 @@ final class PaymentRequester {
   var composition: IMessageComposition?
   var errorDescription: String?
   @ObservationIgnored private var onComposedRequestSent: (() -> Void)?
+  @ObservationIgnored private var preparingComposition: Task<Void, Never>?
 
   func open(
     _ request: PreparedPaymentRequest,
@@ -33,31 +34,57 @@ final class PaymentRequester {
         errorDescription = "iMessage is not available on this device."
         return
       }
-      onComposedRequestSent = onSent
-      composition = IMessageComposition(
-        recipients: [recipient], body: body,
-        attachments: attachments(for: breakdown.map { [$0] } ?? []))
+      compose(
+        recipients: [recipient], body: body, breakdowns: breakdown.map { [$0] } ?? [],
+        onSent: onSent)
     }
   }
 
   /// Composes a message to `recipients`, which is a group chat when there are several, with
   /// `breakdowns` attached in order. The first breakdown's text introduces them.
-  func message(_ breakdowns: [ReceiptBreakdown], to recipients: [Person.IMessage.Recipient]) {
+  func message(
+    _ breakdowns: [ReceiptBreakdown],
+    to recipients: [Person.IMessage.Recipient],
+    onSent: (() -> Void)? = nil
+  ) {
     guard let first = breakdowns.first, !recipients.isEmpty else { return }
     guard MFMessageComposeViewController.canSendText() else {
       errorDescription = "iMessage is not available on this device."
       return
     }
-    onComposedRequestSent = nil
-    composition = IMessageComposition(
-      recipients: recipients.map(\.value),
-      body: first.messageBody,
-      attachments: attachments(for: breakdowns))
+    compose(
+      recipients: recipients.map(\.value), body: first.messageBody, breakdowns: breakdowns,
+      onSent: onSent)
   }
 
-  private func attachments(for breakdowns: [ReceiptBreakdown]) -> [IMessageAttachment] {
+  /// Ignores taps while a composer is already being prepared or shown.
+  private func compose(
+    recipients: [String],
+    body: String,
+    breakdowns: [ReceiptBreakdown],
+    onSent: (() -> Void)?
+  ) {
+    guard preparingComposition == nil, composition == nil else { return }
+    onComposedRequestSent = onSent
+    preparingComposition = Task {
+      let attachments = await attachments(for: breakdowns)
+      composition = IMessageComposition(
+        recipients: recipients, body: body, attachments: attachments)
+      preparingComposition = nil
+    }
+  }
+
+  private func attachments(for breakdowns: [ReceiptBreakdown]) async -> [IMessageAttachment] {
     guard MFMessageComposeViewController.canSendAttachments() else { return [] }
-    return breakdowns.compactMap(IMessageAttachment.init(breakdown:))
+    // Every card is drawn up front so their encodes run side by side.
+    for breakdown in breakdowns { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
+    var attachments: [IMessageAttachment] = []
+    for breakdown in breakdowns {
+      if let attachment = await IMessageAttachment(breakdown: breakdown) {
+        attachments.append(attachment)
+      }
+    }
+    return attachments
   }
 
   fileprivate func finishComposing(sent: Bool) {

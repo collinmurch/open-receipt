@@ -139,8 +139,10 @@ final class ReceiptRecognitionCenter {
     guard wake > now else { return }
     deferredReadWake = Task { [weak self] in
       try? await Task.sleep(for: .seconds(wake.timeIntervalSince(now)))
-      guard !Task.isCancelled else { return }
-      await self?.resumeDeferredReads()
+      guard !Task.isCancelled, let self else { return }
+      // Resuming cancels any scheduled wake, which must not be this running one.
+      deferredReadWake = nil
+      await resumeDeferredReads()
     }
   }
 
@@ -179,7 +181,10 @@ final class ReceiptRecognitionCenter {
   }
 
   private func run(_ recognition: ReceiptRecognition) async -> ReceiptRecognition.Outcome {
-    let activity = ReceiptReadActivity(continuesInBackground: recognition.isUserInitiated)
+    // A retry of a receipt that was already read only saves it, which needs no system progress.
+    let activity = ReceiptReadActivity(
+      continuesInBackground: recognition.isUserInitiated && recognition.parsedReceipt == nil,
+      onExpiration: { [weak recognition] in recognition?.task?.cancel() })
     let outcome = await read(recognition, activity: activity)
     if case .recognized = outcome {
       activity.end(succeeded: true)
@@ -203,7 +208,8 @@ final class ReceiptRecognitionCenter {
       if let document = try? await storedDocument.value {
         recognition.document = document
       }
-      if error is CancellationError { return .cancelled }
+      // The model can report a stopped read as its own error, so cancellation is checked too.
+      if error is CancellationError || Task.isCancelled { return .cancelled }
       return await recordFailure(error, of: recognition, attemptedAt: attemptedAt)
     }
     recognition.parsedReceipt = receipt
@@ -222,6 +228,8 @@ final class ReceiptRecognitionCenter {
       receipt: receipt,
       owner: await owner(),
       attemptedAt: attemptedAt)
+    // A read stopped after the model answered leaves the stored receipt as it was.
+    guard !Task.isCancelled else { return .cancelled }
     do {
       try await storage.save(completed)
     } catch {

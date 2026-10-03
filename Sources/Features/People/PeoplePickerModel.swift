@@ -6,6 +6,7 @@ import Observation
 final class PeoplePickerModel {
   private(set) var authorization: ContactAuthorization = .notDetermined
   private(set) var contacts: [ContactSummary] = []
+  /// True only during the first load, so returning to a screen keeps showing what it had.
   private(set) var isLoading = false
   var searchText = ""
   var errorDescription: String?
@@ -28,10 +29,15 @@ final class PeoplePickerModel {
     authorization.canReadContacts
   }
 
+  @ObservationIgnored private var hasLoaded = false
+
   func load() async {
-    isLoading = true
+    isLoading = !hasLoaded
     errorDescription = nil
-    defer { isLoading = false }
+    defer {
+      isLoading = false
+      hasLoaded = true
+    }
 
     do {
       authorization = client.authorizationStatus()

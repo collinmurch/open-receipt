@@ -6,8 +6,6 @@ import SwiftUI
 struct ReceiptShareFocusView: View {
   /// How far the card's background reaches past the share, matching a list row's margins.
   private static let cardPadding = CGSize(width: 20, height: 12)
-  private static let liftAnimation = Animation.spring(duration: 0.35, bounce: 0.2)
-  private static let returnAnimation = Animation.smooth(duration: 0.35)
 
   let content: ReceiptShareRowContent
   /// The list row being copied, in global coordinates.
@@ -35,7 +33,7 @@ struct ReceiptShareFocusView: View {
     GeometryReader { proxy in
       let origin = proxy.frame(in: .global).origin
       let row = rowFrame.offsetBy(dx: -origin.x, dy: -origin.y)
-      let layout = LiftedLayout(
+      let layout = LiftedRowLayout(
         size: proxy.size, rowHeight: row.height, cardPadding: Self.cardPadding.height)
       let isInPlace = isLifted || reduceMotion
 
@@ -64,7 +62,12 @@ struct ReceiptShareFocusView: View {
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape, dismiss)
     .onAppear {
-      withAnimation(Self.liftAnimation) { isLifted = true }
+      withAnimation(.lift) {
+        isLifted = true
+      } completion: {
+        // Drawn once the lift settles, so sharing or messaging finds it ready without a hitch.
+        if let breakdown { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
+      }
     }
   }
 
@@ -125,9 +128,12 @@ struct ReceiptShareFocusView: View {
               dismiss()
             } label: {
               GlassActionLabel(title: "Message \(firstName)", systemImage: "message.fill")
+                .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
+            .glassEffect(
+              .regular.tint(PaymentMethod.iMessage.prominentColor).interactive(), in: .capsule
+            )
             .glassEffectID(BreakdownGlass.message, in: breakdownGlass)
             .accessibilityHint("Send the breakdown to \(messageRecipient.displayValue)")
           }
@@ -161,8 +167,7 @@ struct ReceiptShareFocusView: View {
   }
 
   private var firstName: String {
-    let name = content.share.participant.displayName
-    return name.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? name
+    ParticipantShortNames.firstName(of: content.share.participant.displayName)
   }
 
   private var unavailableBreakdownReason: String? {
@@ -176,7 +181,7 @@ struct ReceiptShareFocusView: View {
   private func dismiss() {
     guard !isDismissing else { return }
     isDismissing = true
-    withAnimation(Self.returnAnimation) {
+    withAnimation(.settle) {
       isLifted = false
     } completion: {
       onDismiss()
@@ -208,9 +213,9 @@ struct GlassActionLabel: View {
   }
 }
 
-/// Where the lifted views settle: the share just above the middle of the screen, and its actions
+/// Where the lifted views settle: the row just above the middle of the screen, and its actions
 /// below the middle.
-private struct LiftedLayout {
+struct LiftedRowLayout {
   private static let spacing: CGFloat = 28
 
   let size: CGSize

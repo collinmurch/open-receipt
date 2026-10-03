@@ -1,6 +1,9 @@
 import SwiftUI
 
 extension SensoryFeedback {
+  /// Played as a long press lifts a row out of its list into focus.
+  static let lift = SensoryFeedback.impact(weight: .medium)
+
   /// Played after a person removes content, such as a receipt, item, page, or person.
   static let removal = SensoryFeedback.impact(weight: .medium)
 }

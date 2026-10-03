@@ -53,7 +53,13 @@ struct DeletedReceiptSummary: Equatable, Identifiable, Sendable {
   let receipt: ReceiptSummary
   let deletedAt: Date
 
+  /// How long a deleted receipt stays in Recently Deleted.
+  static let retentionInterval: TimeInterval = 30 * 24 * 60 * 60
+
   var id: ReceiptSummary.ID { receipt.id }
+
+  /// When the receipt is permanently deleted.
+  var expiresAt: Date { deletedAt.addingTimeInterval(Self.retentionInterval) }
 }
 
 extension EnvironmentValues {

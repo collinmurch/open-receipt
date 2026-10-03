@@ -3,9 +3,13 @@ import SwiftUI
 struct PersonAvatarView: View {
   let name: String
   let imageData: Data?
-  var size: CGFloat = 36
+  /// A fixed diameter, or `nil` for one that grows with Dynamic Type from a list row's size.
+  var size: CGFloat?
+  @ScaledMetric(relativeTo: .body) private var scaledSize = 36
 
   var body: some View {
+    let size = self.size ?? scaledSize
+
     Group {
       if let image = imageData.flatMap(PersonAvatarImageCache.image) {
         // Buttons in lists draw images as templates in their tint unless told otherwise.

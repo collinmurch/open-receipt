@@ -6,6 +6,7 @@ import SwiftUI
 final class SavedPeopleModel {
   private(set) var people: [Person] = []
   private(set) var owner: ReceiptOwner?
+  /// True only during the first load, so returning to a screen keeps showing what it had.
   private(set) var isLoading = false
   var errorDescription: String?
 
@@ -15,10 +16,15 @@ final class SavedPeopleModel {
     self.storage = storage
   }
 
+  @ObservationIgnored private var hasLoaded = false
+
   func load() async {
-    isLoading = true
+    isLoading = !hasLoaded
     errorDescription = nil
-    defer { isLoading = false }
+    defer {
+      isLoading = false
+      hasLoaded = true
+    }
 
     do {
       people = try await storage.list()

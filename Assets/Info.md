@@ -13,3 +13,7 @@ I tried a lot of receipt-splitting apps looking for the right one. I kept runnin
 Receipts are read with Apple's Private Cloud Compute, so your data stays private.
 
 And as the name suggests, Open Receipt is open source. Read the code, or build and install it yourself for free, at github.com/collinmurch/open-receipt.
+
+# Keywords
+
+bill,split,check,dinner,tip,tax,scanner,ocr,venmo,cashapp,friends,group,expense,itemize,share

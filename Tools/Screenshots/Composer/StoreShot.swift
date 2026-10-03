@@ -43,5 +43,10 @@ struct StoreShot {
       highlight: "request-Jillian",
       highlightOutset: CGSize(width: 16, height: 10),
       highlightCornerRadius: 26),
+    StoreShot(
+      name: "06-share",
+      headline: "Send everyone\na breakdown of their share.",
+      highlight: "group-message-button",
+      highlightCornerRadius: nil),
   ]
 }

@@ -101,7 +101,7 @@ extension ReceiptDraft {
 extension ReceiptBreakdown: Transferable {
   static var transferRepresentation: some TransferRepresentation {
     DataRepresentation(exportedContentType: .png) { breakdown in
-      try await MainActor.run { try ReceiptBreakdownRenderer.pngData(for: breakdown).orThrow() }
+      try await ReceiptBreakdownRenderer.pngData(for: breakdown).orThrow()
     }
     .suggestedFileName { $0.fileName }
     DataRepresentation(exportedContentType: .pdf) { breakdown in

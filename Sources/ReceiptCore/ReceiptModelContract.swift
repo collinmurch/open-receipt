@@ -37,7 +37,7 @@ public enum ReceiptModelContract {
       total: response.total,
       currency: response.currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
       payment: response.payment?.parsedPayment,
-      items: response.items.map(\.parsedItem))
+      items: response.items.filter { $0.lineTotal != 0 }.map(\.parsedItem))
     receipt.warnings.append(contentsOf: ReceiptValidator.warnings(for: receipt))
     return receipt
   }

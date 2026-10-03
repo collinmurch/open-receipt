@@ -8,6 +8,8 @@ struct PersonDetailView: View {
   let onSave: (Person) async -> Person?
   let onDelete: (Person) async -> Bool
   private let savedPerson: Person
+  /// What was last saved, so leaving for a receipt and then leaving the screen saves only once.
+  @State private var lastSavedPerson: Person
   @State private var person: Person
   @State private var selectedVenmoRecipient: Person.Venmo.Recipient?
   @State private var customVenmoUsername: String
@@ -21,7 +23,6 @@ struct PersonDetailView: View {
   @State private var isAppleContactPresented = false
   @State private var expandedMethod: PaymentMethod?
   @State private var receipts: [PersonReceipt] = []
-  @State private var haptic = HapticEvent()
   @AppStorage(PaymentSettings.defaultMethodKey) private var globalDefaultMethod =
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
@@ -41,6 +42,7 @@ struct PersonDetailView: View {
     self.onSave = onSave
     self.onDelete = onDelete
     savedPerson = person
+    _lastSavedPerson = State(initialValue: person)
     _person = State(initialValue: person)
     let venmo = person.paymentMethods.venmo
     _selectedVenmoRecipient = State(
@@ -125,7 +127,7 @@ struct PersonDetailView: View {
         Section("Receipts") {
           ForEach(receipts) { receipt in
             NavigationLink {
-              ReceiptFlowView(input: flowInput(for: receipt))
+              PersonReceiptDestination(input: flowInput(for: receipt))
             } label: {
               PersonReceiptRow(receipt: receipt)
             }
@@ -160,7 +162,6 @@ struct PersonDetailView: View {
     } message: {
       Text("Existing receipts will not change. Does not remove Apple Contact.")
     }
-    .haptics(haptic)
     .task(id: person.contactIdentifier) {
       await loadContact()
     }
@@ -275,7 +276,6 @@ struct PersonDetailView: View {
     withAnimation(.smooth(duration: 0.3)) { expandedMethod = method }
     guard person.paymentMethods.defaultMethod != method else { return }
     person.paymentMethods.defaultMethod = method
-    haptic.play(.selection)
   }
 
   private func selectionIndicator(isSelected: Bool) -> some View {
@@ -356,10 +356,22 @@ struct PersonDetailView: View {
         ? nil
         : .init(recipient: .init(kind: .custom, value: recipient))
     }
-    guard updatedPerson != savedPerson else { return }
+    guard updatedPerson != lastSavedPerson else { return }
+    lastSavedPerson = updatedPerson
     Task {
       _ = await onSave(updatedPerson)
     }
+  }
+}
+
+/// Opens a receipt from a person's page. A link creates its destination along with the link, on
+/// every update of the page, so the receipt's model, which reads the whole receipt, is only made
+/// here once the link is followed.
+private struct PersonReceiptDestination: View {
+  let input: ReceiptFlowInput
+
+  var body: some View {
+    ReceiptFlowView(input: input)
   }
 }
 

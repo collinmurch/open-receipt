@@ -49,7 +49,7 @@ struct ParticipantStrip: View {
       .glassEffect(in: .rect(cornerRadius: 22))
       .screenshotHighlight("receipt-participants")
       .frame(maxWidth: .infinity, alignment: .center)
-      .animation(.smooth(duration: 0.25), value: selectedParticipantIDs)
+      .animation(.selectionChange, value: selectedParticipantIDs)
     }
     .frame(height: height)
   }

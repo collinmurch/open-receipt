@@ -92,10 +92,11 @@ final class ReceiptBreakdownTests: XCTestCase {
     XCTAssertNil(draft.groupBreakdown(accentScheme: .light))
   }
 
-  func testRendersPNGAtCardWidth() throws {
+  func testRendersPNGAtCardWidth() async throws {
     let breakdown = try XCTUnwrap(makeSplitDraft().groupBreakdown(accentScheme: .light))
 
-    let data = try XCTUnwrap(ReceiptBreakdownRenderer.pngData(for: breakdown))
+    let png = await ReceiptBreakdownRenderer.pngData(for: breakdown)
+    let data = try XCTUnwrap(png)
     let image = try XCTUnwrap(UIImage(data: data)?.cgImage)
 
     XCTAssertEqual(

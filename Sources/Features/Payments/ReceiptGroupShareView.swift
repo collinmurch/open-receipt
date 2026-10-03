@@ -9,8 +9,8 @@ struct GroupMessageRecipient: Equatable {
 /// Lifts the receipt's breakdown over the payments page to message it to everyone or share it
 /// anywhere, as the overview alone or followed by each person's breakdown.
 struct ReceiptGroupShareView: View {
-  private static let presentAnimation = Animation.spring(duration: 0.4, bounce: 0.2)
-  private static let dismissAnimation = Animation.smooth(duration: 0.3)
+  private static let presentAnimation = Animation.spring(duration: 0.5, bounce: 0.18)
+  private static let dismissAnimation = Animation.smooth(duration: 0.32)
   private static let fanAnimation = Animation.spring(duration: 0.4, bounce: 0.15)
 
   /// The overview, then each person's breakdown.
@@ -47,6 +47,8 @@ struct ReceiptGroupShareView: View {
 
   var body: some View {
     GeometryReader { proxy in
+      let riseDistance = proxy.size.height + proxy.safeAreaInsets.bottom
+
       ZStack {
         Rectangle()
           .fill(.regularMaterial)
@@ -64,14 +66,20 @@ struct ReceiptGroupShareView: View {
               currentIndex: $currentPage
             )
             .frame(maxHeight: proxy.size.height * 0.48)
+            .rising(isPresented, from: riseDistance, order: 0, reduceMotion: reduceMotion)
 
-            Text(pageCaption)
-              .font(.footnote.weight(.medium).monospacedDigit())
-              .foregroundStyle(.secondary)
-              .contentTransition(.numericText())
-              .animation(.smooth(duration: 0.25), value: currentPage)
-              .opacity(includesEveryBreakdown ? 1 : 0)
-              .accessibilityHidden(true)
+            HStack(spacing: 0) {
+              Text(currentPageName)
+                .contentTransition(.opacity)
+              Text(" · \(currentPage + 1) of \(breakdowns.count)")
+                .contentTransition(.numericText(value: Double(currentPage)))
+            }
+            .font(.footnote.weight(.medium).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .animation(.smooth(duration: 0.25), value: currentPage)
+            .opacity(includesEveryBreakdown ? 1 : 0)
+            .accessibilityHidden(true)
+            .rising(isPresented, from: riseDistance, order: 1, reduceMotion: reduceMotion)
           }
 
           Picker("Pages", selection: pagesSelection) {
@@ -80,37 +88,59 @@ struct ReceiptGroupShareView: View {
           }
           .pickerStyle(.segmented)
           .frame(maxWidth: 280)
+          .rising(isPresented, from: riseDistance, order: 1, reduceMotion: reduceMotion)
 
           actions
+            .rising(isPresented, from: riseDistance, order: 2, reduceMotion: reduceMotion)
 
           if !unreachableNames.isEmpty {
             Text("Missing iMessage for \(unreachableNames.joined(separator: ", "))")
               .font(.footnote)
               .foregroundStyle(.orange)
               .multilineTextAlignment(.center)
+              .rising(isPresented, from: riseDistance, order: 3, reduceMotion: reduceMotion)
           }
         }
         .padding(.horizontal, 20)
         .frame(width: proxy.size.width, height: proxy.size.height)
-        .opacity(isPresented ? 1 : 0)
-        .offset(y: isPresented || reduceMotion ? 0 : 48)
       }
     }
     .accessibilityElement(children: .contain)
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape, dismiss)
     .sensoryFeedback(.selection, trigger: includesEveryBreakdown)
-    .onAppear {
-      withAnimation(Self.presentAnimation) { isPresented = true }
-    }
     .task {
-      // Draws one card per frame, overview first, so the overlay animates in without a stall.
-      for index in breakdowns.indices {
-        let image = ReceiptBreakdownRenderer.image(for: breakdowns[index], scale: 2)
-        withAnimation(.smooth(duration: 0.25)) { pageImages[index] = image }
-        await Task.yield()
+      // The cards on screen are drawn before the deck rises so they travel up with it. The rest
+      // are drawn once it settles, each after the previous one has faded in, so drawing never
+      // lands in the middle of a rise or a swipe.
+      let visibleCount = includesEveryBreakdown ? min(3, breakdowns.count) : 1
+      for index in 0..<visibleCount {
+        pageImages[index] = renderPage(index)
+      }
+      await animate(Self.presentAnimation) { isPresented = true }
+      for index in breakdowns.indices where pageImages[index] == nil {
+        guard !Task.isCancelled else { return }
+        let image = renderPage(index)
+        await animate(.smooth(duration: 0.25)) { pageImages[index] = image }
       }
     }
+    // Cards take their accent from the appearance, so a change while open redraws them.
+    .onChange(of: breakdowns) {
+      pageImages = breakdowns.indices.map(renderPage)
+    }
+  }
+
+  private func animate(_ animation: Animation, _ body: () -> Void) async {
+    await withCheckedContinuation { continuation in
+      withAnimation(animation, body, completion: { continuation.resume() })
+    }
+  }
+
+  /// Draws the page at full scale so the same drawing is encoded for sharing and messaging.
+  private func renderPage(_ index: Int) -> UIImage? {
+    let image = ReceiptBreakdownRenderer.image(for: breakdowns[index])
+    ReceiptBreakdownRenderer.preparePNG(for: breakdowns[index], from: image)
+    return image
   }
 
   /// Fans the deck out or gathers it back onto the overview in one animation, so the overview
@@ -135,9 +165,8 @@ struct ReceiptGroupShareView: View {
     }
   }
 
-  private var pageCaption: String {
-    let name = pageNames.indices.contains(currentPage) ? pageNames[currentPage] : ""
-    return "\(name) · \(currentPage + 1) of \(breakdowns.count)"
+  private var currentPageName: String {
+    pageNames.indices.contains(currentPage) ? pageNames[currentPage] : ""
   }
 
   private var actions: some View {
@@ -164,6 +193,7 @@ struct ReceiptGroupShareView: View {
           .glassEffect(
             .regular.tint(PaymentMethod.iMessage.prominentColor).interactive(), in: .capsule
           )
+          .screenshotHighlight("group-message-button")
           .accessibilityHint(
             "Message \(messageRecipients.map(\.name).formatted()) with the breakdown")
         }
@@ -179,8 +209,7 @@ struct ReceiptGroupShareView: View {
     guard messageRecipients.count == 1, let only = messageRecipients.first else {
       return "Message Group"
     }
-    let firstName = only.name.split(whereSeparator: \.isWhitespace).first.map(String.init)
-    return "Message \(firstName ?? only.name)"
+    return "Message \(ParticipantShortNames.firstName(of: only.name))"
   }
 
   private func dismiss() {
@@ -191,5 +220,21 @@ struct ReceiptGroupShareView: View {
     } completion: {
       onDismiss()
     }
+  }
+}
+
+extension View {
+  /// Slides the view up from below the screen as `isPresented` turns on, a beat behind the views
+  /// before it in `order`, and back down with the rest when it turns off. With Reduce Motion the
+  /// view fades in place instead.
+  fileprivate func rising(
+    _ isPresented: Bool, from distance: CGFloat, order: Int, reduceMotion: Bool
+  ) -> some View {
+    offset(y: isPresented || reduceMotion ? 0 : distance)
+      .opacity(isPresented || !reduceMotion ? 1 : 0)
+      .transaction(value: isPresented) { transaction in
+        guard isPresented else { return }
+        transaction.animation = transaction.animation?.delay(Double(order) * 0.045)
+      }
   }
 }

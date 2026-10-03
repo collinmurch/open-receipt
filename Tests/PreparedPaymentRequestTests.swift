@@ -32,8 +32,20 @@ final class PreparedPaymentRequestTests: XCTestCase {
     XCTAssertNil(prepare(isSplitComplete: false))
   }
 
-  func testRequiresUSD() {
+  func testVenmoRequiresUSD() {
     XCTAssertNil(prepare(currency: "EUR"))
+  }
+
+  func testCashAppRequiresUSD() {
+    XCTAssertNil(prepare(destination: .cashApp(.init(cashtag: "sam")), currency: "EUR"))
+  }
+
+  func testIMessageAllowsOtherCurrencies() throws {
+    let request = try XCTUnwrap(
+      prepare(
+        destination: .iMessage(.init(kind: .phoneNumber, value: "6468639557")), currency: "EUR"))
+
+    XCTAssertEqual(request.currency, "EUR")
   }
 
   func testRequiresDestination() {

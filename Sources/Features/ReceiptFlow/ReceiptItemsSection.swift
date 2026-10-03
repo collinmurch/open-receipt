@@ -55,7 +55,7 @@ struct ReceiptItemsSection: View {
       .clipped()
       .allowsHitTesting(isEditing)
       .padding(.top, isEditing ? 4 : 0)
-      .animation(.smooth(duration: 0.35), value: isEditing)
+      .animation(.settle, value: isEditing)
     }
   }
 
@@ -70,18 +70,18 @@ struct ReceiptItemsSection: View {
         onFocusItem(id, false)
         return
       }
-      withAnimation(.smooth(duration: 0.25)) {
+      withAnimation(.selectionChange) {
         selectedParticipantIDs = item.participantIDs
       }
       seededItemID = id
     } else if seededItemID == id {
       // Tapping the item again undoes copying its people rather than unassigning all of them.
-      withAnimation(.smooth(duration: 0.25)) {
+      withAnimation(.selectionChange) {
         selectedParticipantIDs = []
       }
       seededItemID = nil
     } else {
-      withAnimation(.smooth(duration: 0.25)) {
+      withAnimation(.selectionChange) {
         draft.toggleAssignment(of: selectedParticipantIDs, to: id)
       }
       seededItemID = nil
@@ -141,14 +141,7 @@ private struct ReceiptItemRow: View, Equatable {
     } action: { frame in
       if let frame { onFocusedFrameChange(frame) }
     }
-    // Grows across the long press, then springs back if the finger lifts early.
-    .scaleEffect(isPressed ? ReceiptItemRowContent.pressedScale : 1)
-    .animation(
-      isPressed
-        ? .easeOut(duration: ReceiptRowPressRecognizer.pressGrowth)
-        : .spring(duration: 0.3, bounce: 0.3),
-      value: isPressed
-    )
+    .pressScale(isPressed)
     // The focused copy stands in for the row, so the row hides and returns in one frame.
     .opacity(isLiftedOut ? 0 : 1)
     .transaction(value: isLiftedOut) { $0.animation = nil }

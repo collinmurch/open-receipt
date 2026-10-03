@@ -78,7 +78,7 @@ struct HomeView: View {
     case .settings:
       SettingsView()
     case .recentlyDeleted:
-      ReceiptTrashView()
+      ReceiptTrashView(onOpen: { path.append($0) })
     }
   }
 

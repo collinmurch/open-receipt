@@ -68,7 +68,7 @@ struct ReceiptTotalsSection: View {
           Menu {
             ForEach(draft.adjustments.missing) { adjustment in
               Button {
-                withAnimation(.smooth) { draft.adjustments.add(adjustment) }
+                withAnimation(.settle) { draft.adjustments.add(adjustment) }
                 haptic.play(.selection)
               } label: {
                 Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
@@ -117,7 +117,7 @@ struct ReceiptTotalsSection: View {
       HStack {
         Spacer()
         Button("Fix Total", systemImage: "wand.and.sparkles") {
-          withAnimation(.smooth) { draft.fixTotal() }
+          withAnimation(.settle) { draft.fixTotal() }
           haptic.play(.success)
         }
         .buttonStyle(.bordered)
@@ -216,7 +216,7 @@ struct ReceiptTotalsSection: View {
         systemImage: "minus.circle.fill",
         role: .destructive
       ) {
-        withAnimation(.smooth) { draft.adjustments.remove(adjustment) }
+        withAnimation(.settle) { draft.adjustments.remove(adjustment) }
         haptic.play(.removal)
       }
       .labelStyle(.iconOnly)

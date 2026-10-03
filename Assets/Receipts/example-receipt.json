@@ -10,10 +10,10 @@
   "addedTip": 42.80,
   "backgroundStyle": { "primary": "violet", "secondary": "amber" },
   "people": [
-    { "name": "Matt", "venmo": "matt-4127" },
-    { "name": "Jillian", "venmo": "jillian-3092" },
-    { "name": "Will", "cashApp": "will0417" },
-    { "name": "Lauren", "iMessage": "4155550142" }
+    { "name": "Matt", "venmo": "matt-4127", "phone": "(415) 555-0118" },
+    { "name": "Jillian", "venmo": "jillian-3092", "phone": "(415) 555-0126" },
+    { "name": "Will", "cashApp": "will0417", "phone": "(415) 555-0137" },
+    { "name": "Lauren", "iMessage": "4155550142", "phone": "(415) 555-0142" }
   ],
   "items": [
     { "description": "Ahi Tartare", "lineTotal": 16.00 },

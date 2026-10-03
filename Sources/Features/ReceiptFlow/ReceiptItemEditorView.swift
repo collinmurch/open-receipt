@@ -1,13 +1,36 @@
 import SwiftUI
 
 struct ReceiptItemEditorView: View {
+  private enum Field: Hashable {
+    case name
+    case quantity
+    case lineTotal
+  }
+
   @Binding var item: ReceiptDraftItem
   /// The display currency code the item's amounts are formatted with.
   let currency: String
   let onSplit: (Int) -> Void
   let onDelete: () -> Void
+  /// Whether the item was blank when opened, which keeps the title from changing while typing.
+  @State private var isNew: Bool
   @State private var isSplitPresented = false
+  @State private var isDeleteConfirmationPresented = false
+  @FocusState private var focusedField: Field?
   @Environment(\.dismiss) private var dismiss
+
+  init(
+    item: Binding<ReceiptDraftItem>,
+    currency: String,
+    onSplit: @escaping (Int) -> Void,
+    onDelete: @escaping () -> Void
+  ) {
+    _item = item
+    self.currency = currency
+    self.onSplit = onSplit
+    self.onDelete = onDelete
+    _isNew = State(initialValue: item.wrappedValue.description.isEmpty)
+  }
 
   var body: some View {
     let issues = item.validationIssues
@@ -16,6 +39,7 @@ struct ReceiptItemEditorView: View {
       Section("Item") {
         TextField("Name", text: $item.description, axis: .vertical)
           .lineLimit(1...3)
+          .focused($focusedField, equals: .name)
         LabeledContent("Quantity") {
           TextField(
             "Quantity",
@@ -24,11 +48,13 @@ struct ReceiptItemEditorView: View {
           )
           .keyboardType(.decimalPad)
           .multilineTextAlignment(.trailing)
+          .focused($focusedField, equals: .quantity)
           .accessibilityLabel("Quantity")
         }
         LabeledContent("Line Total") {
           CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currency)
             .multilineTextAlignment(.trailing)
+            .focused($focusedField, equals: .lineTotal)
             .accessibilityLabel("Line total")
         }
       }
@@ -50,14 +76,36 @@ struct ReceiptItemEditorView: View {
 
       Section {
         Button("Delete Item", role: .destructive) {
-          onDelete()
-          dismiss()
+          isDeleteConfirmationPresented = true
+        }
+        .confirmationDialog(
+          "Delete This Item?",
+          isPresented: $isDeleteConfirmationPresented,
+          titleVisibility: .visible
+        ) {
+          Button("Delete Item", role: .destructive) {
+            onDelete()
+            dismiss()
+          }
+        } message: {
+          Text("Its assignments are removed from the split.")
         }
       }
     }
-    .navigationTitle(item.description.isEmpty ? "New Item" : "Edit Item")
+    .navigationTitle(isNew ? "New Item" : "Edit Item")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
+    .toolbar {
+      // Number pads have no return key, so the keyboard gets its own way to close.
+      if focusedField == .quantity || focusedField == .lineTotal {
+        ToolbarItem(placement: .keyboard) {
+          Button("Done") { focusedField = nil }
+        }
+      }
+    }
+    .onAppear {
+      if isNew { focusedField = .name }
+    }
     .sheet(isPresented: $isSplitPresented) {
       ReceiptItemSplitSheet(
         item: item,
@@ -95,7 +143,12 @@ private struct ReceiptItemSplitSheet: View {
       Form {
         Section {
           Stepper(value: $count, in: 2...Self.maximumCount) {
-            LabeledContent("Items", value: "\(count)")
+            LabeledContent("Items") {
+              Text(count, format: .number)
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(count)))
+                .animation(.smooth, value: count)
+            }
           }
           LabeledContent("Each") {
             Text(amountEach, format: .currency(code: currency))

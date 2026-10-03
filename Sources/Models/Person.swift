@@ -33,6 +33,16 @@ enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Senda
       nil
     }
   }
+
+  /// Whether requests through this method can be in `currency`. Venmo and Cash App only move USD.
+  func supports(currency: String) -> Bool {
+    switch self {
+    case .venmo, .cashApp:
+      currency == "USD"
+    case .iMessage, .none:
+      true
+    }
+  }
 }
 
 struct Person: Codable, Equatable, Identifiable, Sendable {

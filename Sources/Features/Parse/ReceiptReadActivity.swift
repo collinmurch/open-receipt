@@ -9,8 +9,11 @@ final class ReceiptReadActivity {
   private var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
   private let continuedProcessing: ContinuedProcessing?
 
-  init(continuesInBackground: Bool) {
-    continuedProcessing = continuesInBackground ? ContinuedProcessing.submit() : nil
+  /// `onExpiration` runs when the person stops the read from its system progress or the system
+  /// ends it, and must stop the read.
+  init(continuesInBackground: Bool, onExpiration: @escaping @MainActor @Sendable () -> Void) {
+    continuedProcessing =
+      continuesInBackground ? ContinuedProcessing.submit(onExpiration: onExpiration) : nil
     backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Read receipt") {
       [weak self] in
       MainActor.assumeIsolated { self?.endBackgroundTask() }
@@ -42,13 +45,20 @@ private final class ContinuedProcessing: @unchecked Sendable {
   private var completedUnitCount: Int64 = 5
   private var itemCount = 0
   private var result: Bool?
+  private let onExpiration: @MainActor @Sendable () -> Void
+
+  private init(onExpiration: @escaping @MainActor @Sendable () -> Void) {
+    self.onExpiration = onExpiration
+  }
 
   /// Submits a task for the read, or returns `nil` when the task can't be registered. A request the
   /// system declines never starts, so the read simply runs without system progress UI.
-  static func submit() -> ContinuedProcessing? {
+  static func submit(
+    onExpiration: @escaping @MainActor @Sendable () -> Void
+  ) -> ContinuedProcessing? {
     let bundleID = Bundle.main.bundleIdentifier ?? "com.collinmurch.open-receipt"
     let identifier = "\(bundleID).read.\(UUID().uuidString)"
-    let processing = ContinuedProcessing()
+    let processing = ContinuedProcessing(onExpiration: onExpiration)
     let scheduler = BGTaskScheduler.shared
     let isRegistered = scheduler.register(forTaskWithIdentifier: identifier, using: nil) { task in
       guard let task = task as? BGContinuedProcessingTask else {
@@ -104,11 +114,16 @@ private final class ContinuedProcessing: @unchecked Sendable {
   }
 
   private func expire() {
-    lock.withLock {
+    let didExpire = lock.withLock {
+      guard result == nil else { return false }
       result = false
       task?.setTaskCompleted(success: false)
       task = nil
+      return true
     }
+    guard didExpire else { return }
+    let onExpiration = onExpiration
+    Task { @MainActor in onExpiration() }
   }
 
   private static func subtitle(itemCount: Int) -> String {

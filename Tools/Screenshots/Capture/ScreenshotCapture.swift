@@ -1,6 +1,6 @@
 import XCTest
 
-/// Captures App Store screens from scripted app states. Run through `make screenshots`, which
+/// Captures App Store screens from scripted app states. Run through `make previews`, which
 /// passes `SCREENSHOTS_OUTPUT` and `SCREENSHOTS_RECEIPT`. Each shot is written in light and dark
 /// appearance as a PNG beside JSON manifests that `ScreenshotComposer` reads.
 final class ScreenshotCapture: XCTestCase {
@@ -9,6 +9,10 @@ final class ScreenshotCapture: XCTestCase {
 
   override func setUp() {
     continueAfterFailure = false
+  }
+
+  override func tearDown() async throws {
+    await MainActor.run { XCUIDevice.shared.appearance = .light }
   }
 
   @MainActor
@@ -45,13 +49,26 @@ final class ScreenshotCapture: XCTestCase {
   }
 
   @MainActor
+  func testShare() throws {
+    try capture(
+      name: "06-share",
+      scenario: "share",
+      highlight: "group-message-button",
+      arguments: ["-groupShareIncludesEveryBreakdown", "YES"]
+    ) { app in
+      try self.waitForHighlight("request-Jillian")
+      app.buttons["Share Breakdown"].firstMatch.tap()
+    }
+  }
+
+  @MainActor
   func testLibrary() throws {
     try capture(
       name: "01-library", scenario: "library", highlight: "library-row-Cru Food and Wine Bar")
   }
 
   /// Launches `scenario`, runs `prepare`, waits for the app to draw `highlight`, and writes the
-  /// screen with its manifests.
+  /// screen with its manifests in light appearance, then again in dark from the same launch.
   @MainActor
   private func capture(
     name: String,
@@ -63,28 +80,37 @@ final class ScreenshotCapture: XCTestCase {
     let environment = ProcessInfo.processInfo.environment
     guard let output = environment["SCREENSHOTS_OUTPUT"],
       let receipt = environment["SCREENSHOTS_RECEIPT"]
-    else { throw XCTSkip("Run through make screenshots.") }
+    else { throw XCTSkip("Run through make previews.") }
 
-    for appearance in ["light", "dark"] {
-      let directory = URL(filePath: output, directoryHint: .isDirectory)
-        .appending(path: appearance, directoryHint: .isDirectory)
+    let root = URL(filePath: output, directoryHint: .isDirectory)
+    let directories = try Appearance.allCases.map { appearance in
+      let directory = root.appending(path: appearance.rawValue, directoryHint: .isDirectory)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let highlights = directory.appending(path: "\(name).highlights.json")
-      try? FileManager.default.removeItem(at: highlights)
-      self.highlights = highlights
+      try? FileManager.default.removeItem(at: directory.appending(path: "\(name).highlights.json"))
+      return directory
+    }
+    let highlights = root.appending(path: "\(name).highlights.json")
+    try? FileManager.default.removeItem(at: highlights)
+    self.highlights = highlights
 
-      let app = XCUIApplication()
-      app.launchArguments =
-        [
-          "-ScreenshotScenario", scenario,
-          "-ScreenshotReceipt", receipt,
-          "-ScreenshotAppearance", appearance,
-          "-ScreenshotHighlights", highlights.path,
-        ] + arguments
-      app.launch()
+    XCUIDevice.shared.appearance = .light
+    let app = XCUIApplication()
+    app.launchArguments =
+      [
+        "-ScreenshotScenario", scenario,
+        "-ScreenshotReceipt", receipt,
+        "-ScreenshotHighlights", highlights.path,
+      ] + arguments
+    app.launch()
+    defer { app.terminate() }
 
+    for (appearance, directory) in zip(Appearance.allCases, directories) {
       do {
-        try prepare(app)
+        if appearance == .light {
+          try prepare(app)
+        } else {
+          XCUIDevice.shared.appearance = .dark
+        }
         try waitForHighlight(highlight)
       } catch {
         try XCUIScreen.main.screenshot().pngRepresentation.write(
@@ -93,7 +119,7 @@ final class ScreenshotCapture: XCTestCase {
           to: directory.appending(path: "\(name)-failure.txt"))
         throw error
       }
-      settle(for: 2)
+      settle(for: 1)
 
       let screenshot = XCUIScreen.main.screenshot()
       let navigationBar = app.navigationBars.firstMatch
@@ -104,9 +130,10 @@ final class ScreenshotCapture: XCTestCase {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
       try encoder.encode(manifest).write(to: directory.appending(path: "\(name).json"))
-
-      app.terminate()
+      try FileManager.default.copyItem(
+        at: highlights, to: directory.appending(path: "\(name).highlights.json"))
     }
+    try FileManager.default.removeItem(at: highlights)
   }
 
   /// Waits until the running app has recorded where `name` is drawn.
@@ -129,6 +156,11 @@ final class ScreenshotCapture: XCTestCase {
     let settled = XCTestExpectation(description: "Animations settle")
     _ = XCTWaiter.wait(for: [settled], timeout: seconds)
   }
+}
+
+private enum Appearance: String, CaseIterable {
+  case light
+  case dark
 }
 
 private enum CaptureError: Error, CustomStringConvertible {

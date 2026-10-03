@@ -265,6 +265,15 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertGreaterThan(draft.persistenceRevision, revision)
   }
 
+  func testNormalizingCleanFieldsDoesNotAdvancePersistenceRevision() {
+    let draft = makeDraft()
+    let revision = draft.persistenceRevision
+
+    draft.normalizeEditableFields()
+
+    XCTAssertEqual(draft.persistenceRevision, revision)
+  }
+
   func testAvatarMutationDoesNotAdvancePersistenceRevision() {
     let draft = makeDraft()
     draft.addPerson(

@@ -5,7 +5,10 @@ struct ReceiptLibraryRow: View {
   /// The active read of this receipt, which the row follows as it streams.
   var recognition: ReceiptRecognition?
   /// Where the receipt zooms out of when it opens from this row.
-  var transition: (id: AnyHashable, namespace: Namespace.ID)?
+  var transition: (id: HomeZoomSource, namespace: Namespace.ID)?
+  /// When the receipt leaves Recently Deleted, for a row describing a deleted receipt. Such a row
+  /// counts down to it in place of the receipt's reading status.
+  var expiresAt: Date?
 
   var body: some View {
     HStack(spacing: 14) {
@@ -46,10 +49,11 @@ struct ReceiptLibraryRow: View {
       Text(total, format: .currency(code: ReceiptCurrency.displayCode(receipt.currency)))
         .font(.body.monospacedDigit())
         .foregroundStyle(.primary)
-        .contentTransition(.numericText())
-    } else {
+        .contentTransition(.numericText(value: total))
+    } else if expiresAt == nil {
       Image(systemName: statusSymbol)
         .foregroundStyle(.secondary)
+        .contentTransition(.symbolEffect(.replace))
     }
   }
 
@@ -87,6 +91,10 @@ struct ReceiptLibraryRow: View {
   }
 
   private var subtitle: String {
+    if let expiresAt {
+      let days = max(1, Int((expiresAt.timeIntervalSinceNow / 86_400).rounded(.up)))
+      return "\(dateDescription) · \(String(inflecting: "^[\(days) day](inflect: true)")) left"
+    }
     if let recognition {
       if recognition.status == .waitingForConnection { return "Waiting for connection" }
       let count = recognition.preview.items.count
@@ -100,7 +108,11 @@ struct ReceiptLibraryRow: View {
       }
       return receipt.recognitionStatus == .failed ? "Couldn’t Read" : "Not Read"
     }
-    if let localDate = receipt.localDate,
+    return dateDescription
+  }
+
+  private var dateDescription: String {
+    if receipt.recognitionStatus == .succeeded, let localDate = receipt.localDate,
       let formattedDate = ReceiptLibraryDateFormatter.dayTitle(localDate: localDate)
     {
       return formattedDate
@@ -114,10 +126,12 @@ struct ReceiptMonogramTile: View {
   let style: ReceiptBackgroundStyle
   let initials: String?
   let systemImage: String
+  @ScaledMetric(relativeTo: .subheadline) private var side = 42
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    RoundedRectangle(cornerRadius: 11, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: side * 11 / 42, style: .continuous)
+    shape
       .fill(
         LinearGradient(
           colors: style.colors(for: colorScheme),
@@ -125,7 +139,7 @@ struct ReceiptMonogramTile: View {
           endPoint: .bottomTrailing)
       )
       .overlay {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
+        shape
           .strokeBorder(.primary.opacity(colorScheme == .dark ? 0.12 : 0.06), lineWidth: 0.5)
       }
       .overlay {
@@ -143,7 +157,7 @@ struct ReceiptMonogramTile: View {
         }
         .foregroundStyle(style.accentColor(for: colorScheme))
       }
-      .frame(width: 42, height: 42)
+      .frame(width: side, height: side)
       .accessibilityHidden(true)
   }
 }

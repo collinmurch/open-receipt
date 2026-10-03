@@ -90,7 +90,7 @@ struct ReceiptRequestsView: View {
       await people.adoptContactPaymentDefaults(from: contactClient)
       hasLoadedPeople = people.errorDescription == nil
     }
-    .task(id: focus) {
+    .task(id: participantContactIdentifiers) {
       await loadMessageRecipients()
     }
     .haptics(haptic)
@@ -149,7 +149,7 @@ struct ReceiptRequestsView: View {
           guard let breakdown = draft.breakdown(for: share, accentScheme: colorScheme) else {
             return
           }
-          requester.message([breakdown], to: [recipient])
+          requester.message([breakdown], to: [recipient], onSent: { playSentHaptic() })
         },
         onDismiss: endFocus
       )
@@ -162,8 +162,8 @@ struct ReceiptRequestsView: View {
     HStack {
       Spacer()
       Button {
-        haptic.play(.impact(weight: .medium))
-        withAnimation(.smooth(duration: 0.35)) { focus = .group }
+        haptic.play(.lift)
+        withAnimation(.settle) { focus = .group }
       } label: {
         Label("Share Breakdown", systemImage: "square.and.arrow.up")
           .font(.body.weight(.semibold))
@@ -194,7 +194,7 @@ struct ReceiptRequestsView: View {
         includesEveryBreakdown: $includesEveryBreakdown,
         onMessage: { selected in
           let recipients = others.compactMap { messageRecipients[$0.id] }
-          requester.message(selected, to: recipients)
+          requester.message(selected, to: recipients, onSent: { playSentHaptic() })
         },
         onDismiss: endFocus
       )
@@ -261,7 +261,7 @@ struct ReceiptRequestsView: View {
     guard let destination = paymentDestination(for: share) else {
       return "Add a payment method to request from \(share.participant.displayName)."
     }
-    if draft.displayCurrency != "USD" {
+    if !destination.method.supports(currency: draft.displayCurrency) {
       return "\(destination.method.title) requests require a USD receipt."
     }
     return nil
@@ -284,43 +284,44 @@ struct ReceiptRequestsView: View {
     return nil
   }
 
-  /// Looks up the contact cards of the people in focus for a phone number, or an email address
-  /// when one has none, to message breakdowns to.
+  /// The contact card behind each participant picked from Contacts.
+  private var participantContactIdentifiers: [ReceiptParticipant.ID: String] {
+    draft.participants.reduce(into: [:]) { identifiers, participant in
+      if case .contact(let identifier) = participant.source {
+        identifiers[participant.id] = identifier
+      }
+    }
+  }
+
+  /// Looks up everyone's contact card for a phone number, or an email address when one has none,
+  /// to message breakdowns to. Loading with the page keeps the message actions ready before a
+  /// share or the group breakdown opens over it.
   private func loadMessageRecipients() async {
-    messageRecipients = [:]
-    let participants: [ReceiptParticipant]
-    switch focus {
-    case .share(let id): participants = draft.participants.filter { $0.id == id }
-    case .group: participants = draft.participants.filter { !$0.source.isCurrentUser }
-    case nil: return
-    }
-    let contactIdentifiers = participants.compactMap {
-      participant -> (ReceiptParticipant.ID, String)? in
-      if case .contact(let identifier) = participant.source { return (participant.id, identifier) }
-      return nil
-    }
+    let contactIdentifiers = participantContactIdentifiers
     guard !contactIdentifiers.isEmpty,
-      let contacts = try? await contactClient.fetchContacts(contactIdentifiers.map(\.1))
-    else { return }
+      let contacts = try? await contactClient.fetchContacts(Array(contactIdentifiers.values))
+    else {
+      messageRecipients = [:]
+      return
+    }
     let contactsByIdentifier = Dictionary(
       contacts.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
-    messageRecipients = contactIdentifiers.reduce(into: [:]) { recipients, entry in
-      recipients[entry.0] = contactsByIdentifier[entry.1]?.defaultRecipient(
-        Person.IMessage.Recipient.self)
+    messageRecipients = contactIdentifiers.compactMapValues {
+      contactsByIdentifier[$0]?.defaultRecipient(Person.IMessage.Recipient.self)
     }
   }
 
   private func focusShare(_ id: ReceiptParticipant.ID, isPressed: Bool) {
     guard focus == nil else { return }
-    haptic.play(.impact(weight: .medium))
+    haptic.play(.lift)
     isFocusedRowPressed = isPressed
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       focus = .share(id)
     }
   }
 
   private func endFocus() {
-    withAnimation(.smooth(duration: 0.35)) {
+    withAnimation(.settle) {
       focus = nil
       focusedRowFrame = nil
     }
@@ -328,8 +329,12 @@ struct ReceiptRequestsView: View {
 
   private func recordRequest(for participantID: ReceiptParticipant.ID) {
     draft.recordRequest(for: participantID, at: Date())
-    haptic.play(.success)
+    playSentHaptic()
     Task { await onFlush() }
+  }
+
+  private func playSentHaptic() {
+    haptic.play(.success)
   }
 }
 
@@ -359,13 +364,7 @@ private struct ReceiptShareRow: View {
     } action: { frame in
       if let frame { onFocusedFrameChange(frame) }
     }
-    .scaleEffect(isPressed ? ReceiptItemRowContent.pressedScale : 1)
-    .animation(
-      isPressed
-        ? .easeOut(duration: ReceiptRowPressRecognizer.pressGrowth)
-        : .spring(duration: 0.3, bounce: 0.3),
-      value: isPressed
-    )
+    .pressScale(isPressed)
     .opacity(isLiftedOut ? 0 : 1)
     .transaction(value: isLiftedOut) { $0.animation = nil }
     .contentShape(.rect)

@@ -72,6 +72,25 @@ final class ReceiptModelContractTests: XCTestCase {
         "Do not return zero-value rows or discount and savings rows as items."))
   }
 
+  func testDropsZeroValueItems() throws {
+    let receipt = try ReceiptModelContract.receipt(
+      from: responseData(items: [
+        ["description": "Ketel one", "quantity": 1, "lineTotal": 22],
+        ["description": "Espresso Martini", "quantity": 1, "lineTotal": 0],
+      ]))
+
+    XCTAssertEqual(receipt.items.map(\.description), ["Ketel one"])
+  }
+
+  func testKeepsNegativeItems() throws {
+    let receipt = try ReceiptModelContract.receipt(
+      from: responseData(items: [
+        ["description": "Bottle Return", "quantity": 1, "lineTotal": -0.10]
+      ]))
+
+    XCTAssertEqual(receipt.items.map(\.lineTotal), [-0.10])
+  }
+
   func testValidatorReportsInconsistentTotals() throws {
     let receipt = try ReceiptModelContract.receipt(from: responseData(total: 80))
 
@@ -120,7 +139,11 @@ final class ReceiptModelContractTests: XCTestCase {
   private func responseData(
     total: Double = 77.19,
     savings: Double = 0,
-    taxAmounts: [Double] = [3.26]
+    taxAmounts: [Double] = [3.26],
+    items: [[String: Any]] = [
+      ["description": "Diet Coke", "quantity": 1, "lineTotal": 8.89],
+      ["description": "GG Sauce", "quantity": 1, "lineTotal": 3.29],
+    ]
   ) throws -> Data {
     try JSONSerialization.data(withJSONObject: [
       "merchantName": " Target ",
@@ -132,10 +155,7 @@ final class ReceiptModelContractTests: XCTestCase {
       "total": total,
       "currency": "usd",
       "payment": ["method": "VISA", "last4": "1067", "authCode": "111121"],
-      "items": [
-        ["description": "Diet Coke", "quantity": 1, "lineTotal": 8.89],
-        ["description": "GG Sauce", "quantity": 1, "lineTotal": 3.29],
-      ],
+      "items": items,
     ])
   }
 }

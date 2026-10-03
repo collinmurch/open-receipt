@@ -11,8 +11,11 @@ struct ReceiptLibraryView: View {
   @State private var isPhotoPickerPresented = false
   @State private var isImporting = false
   @State private var importErrorDescription: String?
-  @State private var deletionCount = 0
   @State private var openingReceiptID: ReceiptSummary.ID?
+  @State private var focusedID: ReceiptSummary.ID?
+  @State private var focusedRowFrame: CGRect?
+  @State private var isFocusedRowPressed = false
+  @State private var haptic = HapticEvent()
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.receiptStorageClient) private var storage
@@ -67,7 +70,9 @@ struct ReceiptLibraryView: View {
         }
       }
     }
-    .animation(.smooth(duration: 0.3), value: sections)
+    // Search results update as they're typed, like the system's, rather than animating.
+    .animation(query.isEmpty ? .smooth(duration: 0.3) : nil, value: sections)
+    .overlay { libraryFocus(in: sections) }
     .navigationTitle("Receipts")
     .debugBuildSubtitle()
     .searchable(text: $searchText, prompt: "Search receipts")
@@ -82,7 +87,15 @@ struct ReceiptLibraryView: View {
     .onChange(of: importedItems) { _, items in
       Task { await importImages(items) }
     }
-    .sensoryFeedback(.removal, trigger: deletionCount)
+    .onChange(of: library.receipts) { _, receipts in
+      // A receipt still being read isn't stored yet, so only its read ending can remove it.
+      guard let focusedID, recognitions.recognition(for: focusedID) == nil else { return }
+      if !receipts.contains(where: { $0.id == focusedID }) { endFocus() }
+    }
+    .onChange(of: searchText) {
+      if focusedID != nil { endFocus() }
+    }
+    .haptics(haptic)
     .errorAlert("Couldn’t Update Receipts", message: $library.errorDescription) {
       Button("Retry") { Task { await library.load() } }
       Button("OK", role: .cancel) {}
@@ -92,9 +105,11 @@ struct ReceiptLibraryView: View {
 
   @ToolbarContentBuilder
   private var libraryToolbar: some ToolbarContent {
-    ToolbarItemGroup(placement: .topBarTrailing) {
-      Button("People", systemImage: "person.2") { onOpen(.people) }
-      Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
+    if !isFocusing {
+      ToolbarItemGroup(placement: .topBarTrailing) {
+        Button("People", systemImage: "person.2") { onOpen(.people) }
+        Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
+      }
     }
 
     DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -125,38 +140,71 @@ struct ReceiptLibraryView: View {
       }
     }
     .buttonStyle(.glassProminent)
-    .disabled(isImporting)
+    .disabled(isImporting || isFocusing)
     .animation(.smooth(duration: 0.2), value: isImporting)
   }
 
-  @ViewBuilder
   private func row(for receipt: ReceiptSummary) -> some View {
-    let recognition = recognitions.recognition(for: receipt.id)
-    if receipt.isUnavailable {
-      ReceiptLibraryRow(receipt: receipt)
-    } else {
-      Button {
-        open(receipt)
-      } label: {
-        ReceiptLibraryRow(
-          receipt: receipt,
-          recognition: recognition,
-          transition: (id: HomeZoomSource.row(receipt.id), namespace: transitionNamespace))
-      }
-      .tint(.primary)
-      .screenshotHighlight("library-row-\(receipt.merchantName ?? "")")
-      .contextMenu {
-        Button("Delete Receipt", systemImage: "trash", role: .destructive) {
-          delete(receipt)
-        }
-      }
+    let isFocused = receipt.id == focusedID
+    return ReceiptLibraryListRow(
+      receipt: receipt,
+      recognition: recognitions.recognition(for: receipt.id),
+      transition: receipt.isUnavailable
+        ? nil : (id: HomeZoomSource.row(receipt.id), namespace: transitionNamespace),
+      isFocused: isFocused,
+      isLiftedOut: isFocused && focusedRowFrame != nil,
+      onTap: { open(receipt) },
+      onFocus: { focus(receipt, isPressed: $0) },
+      onDelete: { delete(receipt) },
+      onFocusedFrameChange: { focusedRowFrame = $0 }
+    )
+    .screenshotHighlight("library-row-\(receipt.merchantName ?? "")")
+  }
+
+  @ViewBuilder
+  private func libraryFocus(in sections: [ReceiptLibrarySection]) -> some View {
+    if let focusedID, let focusedRowFrame,
+      let receipt = sections.lazy.flatMap(\.receipts).first(where: { $0.id == focusedID })
+    {
+      ReceiptRowFocusView(
+        row: ReceiptLibraryRow(
+          receipt: receipt, recognition: recognitions.recognition(for: receipt.id)),
+        rowFrame: focusedRowFrame,
+        startsPressed: isFocusedRowPressed,
+        primaryAction: receipt.isUnavailable
+          ? nil
+          : .init(title: "Open", systemImage: "arrow.up.forward") { open(receipt) },
+        primaryTint: receipt.backgroundStyle.prominentColor,
+        deleteAction: .init(title: "Delete", systemImage: "trash") { delete(receipt) },
+        onDismiss: endFocus
+      )
+      // The focus view animates its own arrival, starting over the row it copies.
+      .transition(.identity)
+    }
+  }
+
+  private var isFocusing: Bool { focusedID != nil }
+
+  private func focus(_ receipt: ReceiptSummary, isPressed: Bool) {
+    guard !isFocusing else { return }
+    haptic.play(.lift)
+    isFocusedRowPressed = isPressed
+    withAnimation(.settle) {
+      focusedID = receipt.id
+    }
+  }
+
+  private func endFocus() {
+    withAnimation(.settle) {
+      focusedID = nil
+      focusedRowFrame = nil
     }
   }
 
   /// Opens a receipt once its document has loaded, so the receipt is complete on the transition's
   /// first frame.
   private func open(_ receipt: ReceiptSummary) {
-    guard openingReceiptID == nil else { return }
+    guard !receipt.isUnavailable, openingReceiptID == nil else { return }
     if let recognition = recognitions.recognition(for: receipt.id) {
       onOpen(.receipt(.recognition(recognition), zoomingFrom: .row(receipt.id)))
       return
@@ -212,7 +260,7 @@ struct ReceiptLibraryView: View {
 
   /// Deletes `receipt`, first stopping a read of it that is in progress.
   private func delete(_ receipt: ReceiptSummary) {
-    deletionCount += 1
+    haptic.play(.removal)
     let recognition = recognitions.recognition(for: receipt.id)
     Task {
       if let recognition { await recognitions.cancel(recognition) }
@@ -237,15 +285,60 @@ struct ReceiptLibraryView: View {
   }
 }
 
+/// A receipt in the library. Taps and long presses are one gesture rather than a button or a
+/// context menu, as receipt items are, so a long press lifts the receipt into focus.
+private struct ReceiptLibraryListRow: View {
+  let receipt: ReceiptSummary
+  let recognition: ReceiptRecognition?
+  let transition: (id: HomeZoomSource, namespace: Namespace.ID)?
+  let isFocused: Bool
+  let isLiftedOut: Bool
+  let onTap: () -> Void
+  let onFocus: (_ isPressed: Bool) -> Void
+  let onDelete: () -> Void
+  let onFocusedFrameChange: (CGRect) -> Void
+
+  @State private var isPressed = false
+
+  var body: some View {
+    ReceiptLibraryRow(receipt: receipt, recognition: recognition, transition: transition)
+      .onGeometryChange(for: CGRect?.self) { proxy in
+        isFocused ? proxy.frame(in: .global) : nil
+      } action: { frame in
+        if let frame { onFocusedFrameChange(frame) }
+      }
+      .pressScale(isPressed)
+      // The focused copy stands in for the row, so the row hides and returns in one frame.
+      .opacity(isLiftedOut ? 0 : 1)
+      .transaction(value: isLiftedOut) { $0.animation = nil }
+      .contentShape(.rect)
+      .gesture(
+        ReceiptRowPressGesture(
+          onPressingChanged: { isPressed = $0 },
+          onTap: onTap,
+          onLongPress: { onFocus(true) }
+        )
+      )
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(receipt.isUnavailable ? [] : .isButton)
+      .accessibilityAction(.default, onTap)
+      .accessibilityHint(receipt.isUnavailable ? Text("") : Text("Opens the receipt"))
+      .accessibilityActions {
+        Button("Delete Receipt", role: .destructive, action: onDelete)
+      }
+  }
+}
+
 /// The first-run screen, shown until the library has a receipt.
 private struct ReceiptLibraryEmptyState: View {
   @State private var hasAppeared = false
+  @ScaledMetric(relativeTo: .largeTitle) private var iconSize = 58
 
   var body: some View {
     ContentUnavailableView {
       VStack(spacing: 16) {
         Image(systemName: "receipt")
-          .font(.system(size: 58))
+          .font(.system(size: iconSize))
           .foregroundStyle(.tint)
           .symbolEffect(.bounce, value: hasAppeared)
         VStack(spacing: 4) {

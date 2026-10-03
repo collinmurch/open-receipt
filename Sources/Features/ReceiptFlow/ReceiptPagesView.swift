@@ -46,7 +46,7 @@ struct ReceiptPagesView: View {
             }
             addTile
           }
-          .animation(.smooth(duration: 0.35), value: displayedPages.map(\.id))
+          .animation(.settle, value: displayedPages.map(\.id))
 
           if let footnote {
             Text(footnote)
@@ -77,7 +77,7 @@ struct ReceiptPagesView: View {
           }
         }
         .padding(.bottom, 8)
-        .animation(.bouncy(duration: 0.5, extraBounce: 0.1), value: editor.needsRescan)
+        .animation(.glassMorph, value: editor.needsRescan)
       }
     }
     .tint(style.accentColor(for: colorScheme))
@@ -86,6 +86,7 @@ struct ReceiptPagesView: View {
       orderedPageIDs = pageIDs
     }
     .task(id: orderedPageIDs) { await saveOrder() }
+    .onDisappear(perform: saveOrderBeforeClosing)
     .haptics(haptic)
     .quickLookPreview($previewURL, in: displayedPages.compactMap { pageURLs[$0.id] })
     .fullScreenCover(isPresented: $isScannerPresented) {
@@ -271,10 +272,21 @@ struct ReceiptPagesView: View {
     }
   }
 
+  private var hasUnsavedOrder: Bool {
+    orderedPageIDs != editor.pages.map(\.id)
+      && Set(orderedPageIDs) == Set(editor.pages.map(\.id))
+  }
+
+  /// Closing cancels the delayed save, so an order changed just before closing is saved here.
+  private func saveOrderBeforeClosing() {
+    guard hasUnsavedOrder else { return }
+    let order = orderedPageIDs
+    let reorder = editor.reorder
+    Task { try? await reorder(order) }
+  }
+
   private func saveOrder() async {
-    guard orderedPageIDs != editor.pages.map(\.id),
-      Set(orderedPageIDs) == Set(editor.pages.map(\.id))
-    else { return }
+    guard hasUnsavedOrder else { return }
     do {
       try await Task.sleep(for: .milliseconds(400))
       try await editor.reorder(orderedPageIDs)

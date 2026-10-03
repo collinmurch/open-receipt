@@ -3,14 +3,11 @@ import ContactsUI
 import SwiftUI
 
 struct ReceiptPeopleView: View {
-  private static let participantAnimation = Animation.smooth(duration: 0.25)
-
   let draft: ReceiptDraft
   private let contactClient: ContactClient
   @State private var contactModel: PeoplePickerModel
   @State private var peopleModel: SavedPeopleModel
   @State private var isNewPersonPresented = false
-  @State private var haptic = HapticEvent()
   @Environment(\.dismiss) private var dismiss
 
   init(
@@ -65,7 +62,6 @@ struct ReceiptPeopleView: View {
       }
       .navigationTitle("People")
       .navigationBarTitleDisplayMode(.inline)
-      .haptics(haptic)
       .searchable(text: $contactModel.searchText, prompt: "Search people")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
@@ -77,7 +73,6 @@ struct ReceiptPeopleView: View {
           Task {
             guard let person = await peopleModel.include(name: name) else { return }
             addToDraft(person)
-            haptic.play(.selection)
           }
         }
       }
@@ -112,9 +107,11 @@ struct ReceiptPeopleView: View {
           }
         } else {
           participantLabel(participant) {
+            // Borderless keeps the button's tap to its icon instead of the whole row.
             Button("Remove \(participant.displayName)", systemImage: "minus.circle") {
               removeParticipant(participant.id)
             }
+            .buttonStyle(.borderless)
             .labelStyle(.iconOnly)
             .foregroundStyle(.secondary)
           }
@@ -168,7 +165,6 @@ struct ReceiptPeopleView: View {
               guard let included = await peopleModel.include(person) else { return }
               let avatar = await avatar(for: included.contactIdentifier)
               addToDraft(included, avatarData: avatar)
-              haptic.play(.selection)
             }
           }
         } label: {
@@ -227,7 +223,6 @@ struct ReceiptPeopleView: View {
           guard let person = await peopleModel.include(contact) else { return }
           let avatar = await contactModel.avatar(for: contact.identifier)
           addToDraft(person, avatarData: avatar)
-          haptic.play(.selection)
         }
       }
     } label: {
@@ -238,31 +233,26 @@ struct ReceiptPeopleView: View {
     }
     .buttonStyle(.plain)
     .task(id: contact.identifier) {
-      let avatar = await contactModel.avatar(for: contact.identifier)
-      if draft.participant(forContactIdentifier: contact.identifier) != nil {
-        draft.updateAvatar(avatar, forContactIdentifier: contact.identifier)
-      }
+      _ = await contactModel.avatar(for: contact.identifier)
     }
   }
 
   private func addToDraft(_ person: Person, avatarData: Data? = nil) {
-    withAnimation(Self.participantAnimation) {
+    withAnimation(.selectionChange) {
       _ = draft.addPerson(person, avatarData: avatarData)
     }
   }
 
   private func removeParticipant(_ id: ReceiptParticipant.ID) {
-    withAnimation(Self.participantAnimation) {
+    withAnimation(.selectionChange) {
       draft.removeParticipant(id: id)
     }
-    haptic.play(.selection)
   }
 
   private func setDraftOwner(_ owner: ReceiptOwner?, avatarData: Data? = nil) {
-    withAnimation(Self.participantAnimation) {
+    withAnimation(.selectionChange) {
       draft.setOwner(owner, avatarData: avatarData)
     }
-    haptic.play(.selection)
   }
 
   private func load() async {
@@ -278,15 +268,10 @@ struct ReceiptPeopleView: View {
 
   private func addResolvedContacts(_ identifiers: [String]) async {
     let contacts = await contactModel.resolveContacts(identifiers: identifiers)
-    var didAdd = false
     for contact in contacts {
       guard let person = await peopleModel.include(contact) else { continue }
       let avatar = await contactModel.avatar(for: contact.identifier)
       addToDraft(person, avatarData: avatar)
-      didAdd = true
-    }
-    if didAdd {
-      haptic.play(.selection)
     }
   }
 }

@@ -65,6 +65,15 @@ struct ReceiptCurrencyPicker: View {
       }
       .contentShape(.rect)
     }
+    .accessibilityAddTraits(currency.code == selection.uppercased() ? .isSelected : [])
+  }
+}
+
+extension ReceiptCurrencyPicker {
+  /// Builds the list of currencies off the main thread ahead of time. Building it looks up every
+  /// locale, which would otherwise stall the first push of the picker.
+  static func prepareCatalog() async {
+    await Task.detached(priority: .utility) { _ = CurrencyCatalog.current }.value
   }
 }
 

@@ -12,8 +12,8 @@ struct PreparedPaymentRequest: Equatable {
   let currency: String
   let action: Action
 
-  /// Fails for the receipt's owner, an unfinished split, a receipt not in USD, or a person
-  /// without a payment method.
+  /// Fails for the receipt's owner, an unfinished split, a person without a payment method, or a
+  /// currency the method can't request.
   init?(
     share: ReceiptParticipantShare,
     destination: PaymentDestination?,
@@ -22,9 +22,9 @@ struct PreparedPaymentRequest: Equatable {
     isSplitComplete: Bool
   ) {
     guard isSplitComplete,
-      currency == "USD",
       !share.participant.source.isCurrentUser,
-      let destination
+      let destination,
+      destination.method.supports(currency: currency)
     else { return nil }
 
     let action: Action

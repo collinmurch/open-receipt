@@ -4,6 +4,8 @@ struct PeopleView: View {
   @State private var model: SavedPeopleModel
   @State private var avatars = ContactAvatars()
   @State private var haptic = HapticEvent()
+  @State private var pendingDeletion: Person?
+  @State private var hasAdoptedContactDefaults = false
   @AppStorage(PaymentSettings.defaultMethodKey) private var defaultPaymentMethod =
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
@@ -27,7 +29,25 @@ struct PeopleView: View {
     .haptics(haptic)
     .task {
       await model.load()
+      // Coming back from a person reloads them, but contacts only need checking once.
+      guard !hasAdoptedContactDefaults else { return }
+      hasAdoptedContactDefaults = true
       await model.adoptContactPaymentDefaults(from: contactClient)
+    }
+    .confirmationDialog(
+      "Delete \(pendingDeletion?.displayName ?? "Person")?",
+      isPresented: Binding(
+        get: { pendingDeletion != nil },
+        set: { if !$0 { pendingDeletion = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: pendingDeletion
+    ) { person in
+      Button("Delete", role: .destructive) {
+        Task { await deletePerson(person) }
+      }
+    } message: { _ in
+      Text("Existing receipts will not change. Does not remove Apple Contact.")
     }
     .errorAlert("Couldn’t Update People", message: $model.errorDescription) {
       Button("Retry") { Task { await model.load() } }
@@ -42,11 +62,7 @@ struct PeopleView: View {
           contactClient: contactClient,
           selectedIdentifier: model.owner?.contactIdentifier
         ) { contact in
-          Task {
-            if await model.setOwner(contact.map(ReceiptOwner.init)) {
-              haptic.play(.selection)
-            }
-          }
+          Task { _ = await model.setOwner(contact.map(ReceiptOwner.init)) }
         }
       } label: {
         HStack(spacing: 12) {
@@ -96,9 +112,11 @@ struct PeopleView: View {
           personRow(person)
         }
         .swipeActions {
-          Button("Delete", systemImage: "trash", role: .destructive) {
-            Task { await deletePerson(person) }
+          // Not destructive, which would remove the row before the deletion is confirmed.
+          Button("Delete", systemImage: "trash") {
+            pendingDeletion = person
           }
+          .tint(.red)
         }
       }
     }

@@ -6,13 +6,13 @@ import Observation
 final class ReceiptDraft {
   let id: UUID
   let backgroundStyle: ReceiptBackgroundStyle
-  var merchantName: String { didSet { markDurableChange() } }
-  var date: String { didSet { markDurableChange() } }
+  var merchantName: String { didSet { markPersistedChange() } }
+  var date: String { didSet { markPersistedChange() } }
   var subtotal: Double { didSet { markDurableChange() } }
   var adjustments: ReceiptTotalAdjustments { didSet { markDurableChange() } }
   var total: Double { didSet { markDurableChange() } }
-  var currency: String { didSet { markDurableChange() } }
-  var payment: ReceiptPayment? { didSet { markDurableChange() } }
+  var currency: String { didSet { markPersistedChange() } }
+  var payment: ReceiptPayment? { didSet { markPersistedChange() } }
   var items: [ReceiptDraftItem] { didSet { markDurableChange() } }
   var adjustmentSplitMethod: ReceiptAdjustmentSplitMethod {
     didSet { markDurableChange() }
@@ -169,9 +169,11 @@ final class ReceiptDraft {
       !participant.source.isCurrentUser
     else { return }
     participants.removeAll { $0.id == id }
+    var items = self.items
     for index in items.indices {
       items[index].participantIDs.remove(id)
     }
+    self.items = items
     markDurableChange()
   }
 
@@ -224,29 +226,41 @@ final class ReceiptDraft {
         $0.source.contactIdentifier == identifier
       })
     else { return }
+    guard participants[index].avatarData != avatarData else { return }
     participants[index].avatarData = avatarData
     invalidateSplitCalculation()
   }
 
+  /// Trims what was typed, assigning only fields that change so an untouched receipt isn't saved.
   func normalizeEditableFields() {
-    merchantName = merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
-    date = date.trimmingCharacters(in: .whitespacesAndNewlines)
-    currency = currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-    items = items.map { item in
+    let merchantName = self.merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
+    if merchantName != self.merchantName { self.merchantName = merchantName }
+    let date = self.date.trimmingCharacters(in: .whitespacesAndNewlines)
+    if date != self.date { self.date = date }
+    let currency = self.currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    if currency != self.currency { self.currency = currency }
+    let items = self.items.map { item in
       var item = item
       item.description = item.description.trimmingCharacters(in: .whitespacesAndNewlines)
       return item
     }
+    if items != self.items { self.items = items }
   }
 
   func complete() {
     guard !isCompleted else { return }
     isCompleted = true
-    markDurableChange()
+    markPersistedChange()
   }
 
+  /// A change to what the split is calculated from, which also needs saving.
   private func markDurableChange() {
     invalidateSplitCalculation()
+    markPersistedChange()
+  }
+
+  /// A change that needs saving but leaves the split as it was.
+  private func markPersistedChange() {
     persistenceRevision &+= 1
   }
 

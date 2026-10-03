@@ -16,7 +16,7 @@ extension View {
   }
 
   /// Marks a view that App Store screenshots lift above the screen. Debug builds launched by
-  /// `make screenshots` record where it is drawn; otherwise this does nothing.
+  /// `make previews` record where it is drawn; otherwise this does nothing.
   func screenshotHighlight(_ name: String) -> some View {
     modifier(ScreenshotHighlightModifier(name: name))
   }

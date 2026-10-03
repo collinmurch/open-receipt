@@ -254,7 +254,7 @@ actor ReceiptFileStorage {
   }
 
   func purgeExpiredTrash(now: Date) throws {
-    let expirationDate = now.addingTimeInterval(-Self.trashRetentionInterval)
+    let expirationDate = now.addingTimeInterval(-DeletedReceiptSummary.retentionInterval)
     for deletedReceipt in try listDeleted() where deletedReceipt.deletedAt < expirationDate {
       try permanentlyDelete(id: deletedReceipt.id)
     }
@@ -599,8 +599,6 @@ actor ReceiptFileStorage {
 
   private static let indexEncoder = JSONEncoder()
   private static let indexDecoder = JSONDecoder()
-
-  private static let trashRetentionInterval: TimeInterval = 30 * 24 * 60 * 60
 
   private struct CachedDocument {
     let modifiedAt: Date

@@ -25,6 +25,8 @@ struct ReceiptFlowView: View {
       .sensoryFeedback(trigger: model.phase.kind) { oldKind, newKind in
         switch (oldKind, newKind) {
         case (.recognizing, .reviewing): .success
+        // A read that stops at the reading limit waits rather than fails.
+        case (.recognizing, .failed): model.failure?.isError == true ? .error : .warning
         case (_, .failed): model.failure?.isError == true ? .error : nil
         default: nil
         }

@@ -12,10 +12,12 @@ public struct ReceiptPage: Sendable {
   }
 
   /// Reads the first image in the file at `url` with the orientation recorded in its metadata,
-  /// or returns `nil` when the file can't be decoded.
+  /// or returns `nil` when the file can't be decoded. The decoded pixels aren't kept, so a page
+  /// held while it is read costs its file size rather than a full bitmap.
   public init?(contentsOf url: URL) {
+    let options = [kCGImageSourceShouldCache: false] as CFDictionary
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+      let image = CGImageSourceCreateImageAtIndex(source, 0, options)
     else { return nil }
     let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
     let rawOrientation = properties?[kCGImagePropertyOrientation] as? UInt32

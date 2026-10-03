@@ -27,7 +27,8 @@ struct ReceiptBreakdownDeck: View {
       .contentShape(.rect)
       .gesture(swipe(width: width), isEnabled: canSwipe)
     }
-    .sensoryFeedback(.selection, trigger: currentIndex)
+    // Gathering the deck resets it to the first card, which the page picker already plays for.
+    .sensoryFeedback(.selection, trigger: currentIndex) { _, _ in isFanned }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(pageNames.indices.contains(currentIndex) ? pageNames[currentIndex] : "")
     .accessibilityValue(canSwipe ? "Page \(currentIndex + 1) of \(pages.count)" : "")

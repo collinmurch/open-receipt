@@ -9,6 +9,9 @@ The app runs on iPhone with iOS 27 or later. Receipt reading uses
 Max, or any iPhone 16 or later, with Apple Intelligence turned on. On other devices you can still
 create and split receipts manually.
 
+You can add people from Contacts or by name. The app asks for Contacts access the first time you
+open a screen that picks from Contacts, and iOS lets you share only selected contacts.
+
 Private Cloud Compute works only where Apple Intelligence is available. As of September 28, 2026,
 Apple Intelligence is available in most countries and regions, including the EU. The exception is
 China mainland: it does not work on devices bought there, or on other devices while they are in
@@ -21,6 +24,7 @@ To develop the app:
 
 - macOS 27+
 - Xcode 27+
+- Xcode's Metal Toolchain component (`xcodebuild -downloadComponent MetalToolchain`)
 - Nix with `nix-command` and `flakes` enabled
 
 ## Setup
@@ -44,9 +48,9 @@ Run these from inside `nix develop`.
 make help          # list available commands
 make run           # build and run on the simulator
 make run-device    # build and run on iOS hardware
-make test          # run unit tests
+make test          # run tests
 make receipts      # evaluate receipt fixtures
-make screenshots   # capture and compose App Store screenshots
+make previews      # capture and compose App Store screenshots
 make upload        # archive and upload to App Store Connect
 make format        # auto-format Swift sources
 make lint          # lint Swift sources (read-only)
@@ -99,9 +103,6 @@ make upload build_number=2 ASC_KEY_ID=... ASC_ISSUER_ID=... ASC_KEY_PATH=/absolu
 
 Keep the API key outside this repository. Each uploaded build must have a build
 number that App Store Connect has not received before.
-
-The receipt workspace can add people from Contacts or by name. The app requests Contacts
-access only when you open the People screen. iOS can limit access to selected contacts.
 
 ## Parser development
 

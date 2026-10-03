@@ -22,9 +22,11 @@ enum PaymentRequestDateFormatter {
       timeStyle.calendar = calendar
       timeStyle.timeZone = calendar.timeZone
       timeStyle.locale = locale
-      let time = date.formatted(timeStyle)
-        .filter { !$0.isWhitespace }
-        .lowercased(with: locale)
+      var time = date.formatted(timeStyle)
+      // "1pm" reads naturally in English; other languages keep their own time format.
+      if locale.language.languageCode == .english {
+        time = time.filter { !$0.isWhitespace }.lowercased(with: locale)
+      }
       return "\(weekday) \(time)"
     }
 
