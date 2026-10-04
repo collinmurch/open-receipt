@@ -77,6 +77,7 @@ struct ReceiptLibraryView: View {
     .debugBuildSubtitle()
     .searchable(text: $searchText, prompt: "Search receipts")
     .toolbar { libraryToolbar }
+    .toolbarVisibility(isFocusing ? .hidden : .automatic, for: .bottomBar)
     .photosPicker(
       isPresented: $isPhotoPickerPresented,
       selection: $importedItems,

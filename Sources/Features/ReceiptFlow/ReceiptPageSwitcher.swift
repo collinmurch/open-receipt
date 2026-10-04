@@ -117,12 +117,16 @@ private final class PageTabBarController: UIViewController {
       return
     }
     detachTabBar()
-    if !transitionCoordinator.isInteractive {
-      let entrance = DispatchWorkItem { [weak self] in self?.attachTabBar(animated: true) }
-      pendingEntrance = entrance
-      DispatchQueue.main.asyncAfter(
-        deadline: .now() + transitionCoordinator.transitionDuration * Self.entranceProgress,
-        execute: entrance)
+    if transitionCoordinator.isInteractive {
+      // A pop that starts interactively, by a swipe or a back tap the system can interrupt, still
+      // queues the entrance once it is let go, rather than waiting for it to finish.
+      transitionCoordinator.notifyWhenInteractionChanges { [weak self] context in
+        guard !context.isCancelled else { return }
+        let remaining = context.transitionDuration * (1 - context.percentComplete)
+        self?.scheduleEntrance(after: remaining * Self.entranceProgress)
+      }
+    } else {
+      scheduleEntrance(after: transitionCoordinator.transitionDuration * Self.entranceProgress)
     }
     transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
       if context.isCancelled {
@@ -140,6 +144,13 @@ private final class PageTabBarController: UIViewController {
     transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
       if context.isCancelled { self?.attachTabBar(animated: false) }
     }
+  }
+
+  private func scheduleEntrance(after delay: TimeInterval) {
+    pendingEntrance?.cancel()
+    let entrance = DispatchWorkItem { [weak self] in self?.attachTabBar(animated: true) }
+    pendingEntrance = entrance
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: entrance)
   }
 
   /// Animating matches the switcher's entrance when Done turns into it.
