@@ -1,6 +1,13 @@
 import SwiftUI
 
 struct PersonDetailView: View {
+  private enum Field: Hashable {
+    case name
+    case venmoUsername
+    case cashtag
+    case iMessageRecipient
+  }
+
   /// Whether the receipts this person is on are listed and can be opened. Left off where the
   /// person is shown from inside a receipt, so receipts and people can't open each other without
   /// end.
@@ -23,6 +30,7 @@ struct PersonDetailView: View {
   @State private var isAppleContactPresented = false
   @State private var expandedMethod: PaymentMethod?
   @State private var receipts: [PersonReceipt] = []
+  @FocusState private var focusedField: Field?
   @AppStorage(PaymentSettings.defaultMethodKey) private var globalDefaultMethod =
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
@@ -72,10 +80,11 @@ struct PersonDetailView: View {
 
       Section("Person") {
         LabeledContent("Name") {
-          TextField("Name", text: $person.displayName)
+          FormTextField("Name", text: $person.displayName)
             .textContentType(.name)
-            .multilineTextAlignment(.trailing)
+            .focused($focusedField, equals: .name)
         }
+        .focusesOnTap($focusedField, equals: .name)
         if person.contactIdentifier != nil {
           LabeledContent("Source") {
             Button("Apple Contacts") {
@@ -186,15 +195,16 @@ struct PersonDetailView: View {
       HStack(spacing: 2) {
         Text("@")
           .foregroundStyle(.secondary)
-        TextField("username", text: $customVenmoUsername)
+        FormTextField("username", text: $customVenmoUsername)
           .textContentType(.username)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
-          .multilineTextAlignment(.trailing)
+          .focused($focusedField, equals: .venmoUsername)
           .fixedSize(horizontal: true, vertical: false)
       }
       .fixedSize(horizontal: true, vertical: false)
     }
+    .focusesOnTap($focusedField, equals: .venmoUsername)
   }
 
   private var cashAppField: some View {
@@ -202,25 +212,27 @@ struct PersonDetailView: View {
       HStack(spacing: 2) {
         Text("$")
           .foregroundStyle(.secondary)
-        TextField("cashtag", text: $cashAppCashtag)
+        FormTextField("cashtag", text: $cashAppCashtag)
           .textContentType(.username)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
-          .multilineTextAlignment(.trailing)
+          .focused($focusedField, equals: .cashtag)
           .fixedSize(horizontal: true, vertical: false)
       }
       .fixedSize(horizontal: true, vertical: false)
     }
+    .focusesOnTap($focusedField, equals: .cashtag)
   }
 
   private var customIMessageField: some View {
     LabeledContent("Phone or Email") {
-      TextField("Phone or email", text: $customIMessageRecipient)
+      FormTextField("Phone or email", text: $customIMessageRecipient)
         .keyboardType(.emailAddress)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
-        .multilineTextAlignment(.trailing)
+        .focused($focusedField, equals: .iMessageRecipient)
     }
+    .focusesOnTap($focusedField, equals: .iMessageRecipient)
   }
 
   private var defaultPaymentMethodRow: some View {

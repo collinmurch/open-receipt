@@ -38,26 +38,27 @@ struct ReceiptParticipantBreakdownView: View {
         }
       }
       .scrollEdgeEffectHidden(true, for: .bottom)
-      .safeAreaBar(edge: .bottom) {
+      .receiptBottomBar {
         if let preparedRequest {
-          VStack(spacing: 6) {
-            ReceiptActionButton(
-              title: preparedRequest.title,
-              systemImage: preparedRequest.systemImage,
-              tint: preparedRequest.method.prominentColor
-            ) {
-              requester.open(
-                preparedRequest, breakdown: breakdown, openURL: openURL, onSent: recordRequest)
-            }
-            .screenshotHighlight("request-button")
-
+          ReceiptActionButton(
+            title: preparedRequest.title,
+            systemImage: preparedRequest.systemImage,
+            tint: preparedRequest.method.prominentColor
+          ) {
+            requester.open(
+              preparedRequest, breakdown: breakdown, openURL: openURL, onSent: recordRequest)
+          }
+          .screenshotHighlight("request-button")
+          // The caption hangs below the button so the button lines up with other bottom bars.
+          .overlay(alignment: .bottom) {
             Text(lastRequestedCaption ?? " ")
               .font(.caption)
               .foregroundStyle(.secondary)
               .opacity(lastRequestedCaption == nil ? 0 : 1)
               .accessibilityHidden(lastRequestedCaption == nil)
+              .fixedSize()
+              .alignmentGuide(.bottom) { $0[.top] - 6 }
           }
-          .padding(.bottom, 8)
           .animation(.smooth(duration: 0.3), value: lastRequestedCaption)
         }
       }

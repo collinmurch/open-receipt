@@ -51,7 +51,7 @@ struct ReceiptRecognitionView: View {
       ReceiptRecognitionStatusBar(recognition: recognition, height: headerHeight)
         .receiptTopBarPadding()
     }
-    .safeAreaBar(edge: .bottom) {
+    .receiptBottomBar {
       GlassEffectContainer {
         if recognition.status == .waitingForConnection {
           ReceiptActionButton(
@@ -61,7 +61,6 @@ struct ReceiptRecognitionView: View {
             action: onEnterManually)
         }
       }
-      .padding(.bottom, 8)
       .animation(.glassMorph, value: recognition.status)
     }
     .tint(recognition.backgroundStyle.accentColor(for: colorScheme))

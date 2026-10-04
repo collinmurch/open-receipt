@@ -2,24 +2,35 @@ import SwiftUI
 import Synchronization
 
 /// A currency text field that enters digits from the right, like a register: typing
-/// appends a digit to the smallest unit and deleting removes the last digit.
+/// appends a digit to the smallest unit and deleting removes the last digit. The whole amount
+/// is selected when the field gains focus, so typing replaces it.
 struct CurrencyAmountField: View {
   let title: String
   @Binding var value: Double
   let currencyCode: String
+  let isEmphasized: Bool
   @State private var text = ""
   @State private var selection: TextSelection?
+  @FocusState private var isFocused: Bool
 
-  init(_ title: String, value: Binding<Double>, currencyCode: String) {
+  init(
+    _ title: String,
+    value: Binding<Double>,
+    currencyCode: String,
+    isEmphasized: Bool = false
+  ) {
     self.title = title
     _value = value
     self.currencyCode = currencyCode
+    self.isEmphasized = isEmphasized
   }
 
   var body: some View {
     TextField(title, text: $text, selection: $selection)
       .keyboardType(.numberPad)
       .monospacedDigit()
+      .focused($isFocused)
+      .formValueStyle(isFocused: isFocused, isEmphasized: isEmphasized)
       .onAppear { text = CurrencyAmountInput.text(for: value, currencyCode: currencyCode) }
       .onChange(of: text) { oldText, newText in
         let amount = CurrencyAmountInput.amount(
@@ -42,7 +53,20 @@ struct CurrencyAmountField: View {
       .onChange(of: currencyCode) { _, newCode in
         text = CurrencyAmountInput.text(for: value, currencyCode: newCode)
       }
-      .onChange(of: selection) { moveInsertionPointToEnd() }
+      .onChange(of: isFocused) { _, focused in
+        guard focused else { return }
+        // UIKit places the insertion point from the tap after focus changes.
+        Task { selection = allSelected }
+      }
+      .onChange(of: selection) {
+        if selection != allSelected { moveInsertionPointToEnd() }
+      }
+  }
+
+  /// Selecting everything is the one selection besides the end that keeps register entry
+  /// coherent: typing or deleting replaces the whole amount.
+  private var allSelected: TextSelection {
+    TextSelection(range: text.startIndex..<text.endIndex)
   }
 
   private func moveInsertionPointToEnd() {

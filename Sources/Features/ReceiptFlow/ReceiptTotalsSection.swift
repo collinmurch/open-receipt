@@ -7,12 +7,19 @@ private enum AdjustmentInputMode: CaseIterable, Identifiable {
   var id: Self { self }
 }
 
+private enum TotalsField: Hashable {
+  case subtotal
+  case adjustment(ReceiptTotalAdjustment)
+  case total
+}
+
 struct ReceiptTotalsSection: View {
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
   @Binding var haptic: HapticEvent
   @State private var tipInputMode = AdjustmentInputMode.amount
   @State private var savingsInputMode = AdjustmentInputMode.amount
+  @FocusState private var focusedField: TotalsField?
 
   var body: some View {
     Section {
@@ -20,6 +27,7 @@ struct ReceiptTotalsSection: View {
         if !draft.adjustments.isEmpty || draft.subtotalNeedsCorrection {
           amountField(
             "Subtotal",
+            field: .subtotal,
             value: $draft.subtotal,
             expectedValue: draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil)
         }
@@ -42,6 +50,7 @@ struct ReceiptTotalsSection: View {
         }
         amountField(
           "Total",
+          field: .total,
           value: $draft.total,
           isEmphasized: true,
           expectedValue: draft.totalNeedsCorrection ? draft.expectedTotal : nil)
@@ -87,6 +96,14 @@ struct ReceiptTotalsSection: View {
     } footer: {
       fixTotalButton
     }
+    .toolbar {
+      // Number pads have no return key, so the keyboard gets its own way to close.
+      if focusedField != nil {
+        ToolbarItem(placement: .keyboard) {
+          Button("Done") { focusedField = nil }
+        }
+      }
+    }
   }
 
   private func totalRow(
@@ -130,23 +147,28 @@ struct ReceiptTotalsSection: View {
 
   private func amountField(
     _ title: String,
+    field: TotalsField,
     value: Binding<Double>,
     isEmphasized: Bool = false,
     expectedValue: Double? = nil
   ) -> some View {
     LabeledContent {
       VStack(alignment: .trailing, spacing: 2) {
-        CurrencyAmountField("Amount", value: value, currencyCode: displayCurrency)
-          .multilineTextAlignment(.trailing)
-          .fontWeight(isEmphasized ? .semibold : .regular)
-          .frame(minWidth: 100, idealWidth: 115, maxWidth: 130)
-          .accessibilityLabel(title)
+        CurrencyAmountField(
+          "Amount", value: value, currencyCode: displayCurrency, isEmphasized: isEmphasized
+        )
+        .multilineTextAlignment(.trailing)
+        .fontWeight(isEmphasized ? .semibold : .regular)
+        .frame(minWidth: 100, idealWidth: 115, maxWidth: 130)
+        .focused($focusedField, equals: field)
+        .accessibilityLabel(title)
         correctionLabel(expectedValue, actualValue: value.wrappedValue)
       }
     } label: {
       Text(title)
         .fontWeight(isEmphasized ? .semibold : .regular)
     }
+    .focusesOnTap($focusedField, equals: field)
   }
 
   @ViewBuilder
@@ -180,12 +202,16 @@ struct ReceiptTotalsSection: View {
 
         if mode.wrappedValue == .amount {
           CurrencyAmountField("Amount", value: amount, currencyCode: displayCurrency)
+            .focused($focusedField, equals: .adjustment(adjustment))
             .accessibilityLabel(adjustment.title)
         } else {
-          TextField("Percent", value: percentage, format: .number)
-            .keyboardType(.decimalPad)
-            .monospacedDigit()
-            .accessibilityLabel("\(adjustment.title) percent")
+          NumberField(
+            "Percent",
+            value: percentage,
+            format: .number.precision(.fractionLength(0...2))
+          )
+          .focused($focusedField, equals: .adjustment(adjustment))
+          .accessibilityLabel("\(adjustment.title) percent")
           Text("%")
             .foregroundStyle(.secondary)
         }
@@ -194,6 +220,7 @@ struct ReceiptTotalsSection: View {
     } label: {
       adjustmentLabel(adjustment)
     }
+    .focusesOnTap($focusedField, equals: .adjustment(adjustment))
   }
 
   private func adjustmentField(
@@ -203,10 +230,12 @@ struct ReceiptTotalsSection: View {
     LabeledContent {
       CurrencyAmountField("Amount", value: value, currencyCode: displayCurrency)
         .multilineTextAlignment(.trailing)
+        .focused($focusedField, equals: .adjustment(adjustment))
         .accessibilityLabel(adjustment.title)
     } label: {
       adjustmentLabel(adjustment)
     }
+    .focusesOnTap($focusedField, equals: .adjustment(adjustment))
   }
 
   private func adjustmentLabel(_ adjustment: ReceiptTotalAdjustment) -> some View {

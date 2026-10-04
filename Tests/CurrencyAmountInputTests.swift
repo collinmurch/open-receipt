@@ -77,6 +77,27 @@ final class CurrencyAmountInputTests: XCTestCase {
     XCTAssertEqual(amount, 19.99, accuracy: 0.000_1)
   }
 
+  func testTypingOverSelectedAmountStartsFresh() {
+    let amount = CurrencyAmountInput.amount(
+      replacing: "$12.34", with: "5", fractionDigits: 2)
+
+    XCTAssertEqual(amount, 0.05, accuracy: 0.000_1)
+  }
+
+  func testDeletingSelectedAmountReachesZero() {
+    let amount = CurrencyAmountInput.amount(
+      replacing: "$12.34", with: "", fractionDigits: 2)
+
+    XCTAssertEqual(amount, 0)
+  }
+
+  func testPastingOverSelectedAmountReplacesIt() {
+    let amount = CurrencyAmountInput.amount(
+      replacing: "$12.34", with: "$8.99", fractionDigits: 2)
+
+    XCTAssertEqual(amount, 8.99, accuracy: 0.000_1)
+  }
+
   func testOverlongInputKeepsPreviousAmount() {
     let amount = CurrencyAmountInput.amount(
       replacing: "$1,234,567,890.12", with: "$1,234,567,890.123", fractionDigits: 2)

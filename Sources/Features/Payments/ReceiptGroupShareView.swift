@@ -94,7 +94,7 @@ struct ReceiptGroupShareView: View {
             .rising(isPresented, from: riseDistance, order: 2, reduceMotion: reduceMotion)
 
           if !unreachableNames.isEmpty {
-            Text("Missing iMessage for \(unreachableNames.joined(separator: ", "))")
+            Text("Missing iMessage contact for \(unreachableNames.joined(separator: ", "))")
               .font(.footnote)
               .foregroundStyle(.orange)
               .multilineTextAlignment(.center)

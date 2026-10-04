@@ -4,10 +4,6 @@ private enum ReceiptReviewSheet: Hashable {
   case people
 }
 
-private enum ReceiptReviewGlass: Hashable {
-  case bottomBar
-}
-
 struct ReceiptReviewView: View {
   /// How far the bottom bar slides to leave the screen while editing. It only slides: fading glass
   /// renders it against the page background, which covers the rows behind it.
@@ -31,7 +27,6 @@ struct ReceiptReviewView: View {
   @State private var isPagesPresented = false
   @State private var haptic = HapticEvent()
   @Namespace private var sheetTransition
-  @Namespace private var glassTransition
   @Environment(\.receiptBackgroundMotion) private var motion
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
@@ -55,7 +50,7 @@ struct ReceiptReviewView: View {
   var body: some View {
     reviewContent
       .scrollEdgeEffectHidden(true, for: .bottom)
-      .safeAreaBar(edge: .bottom) { bottomBar }
+      .receiptBottomBar { bottomBar }
       .overlay { itemFocus }
       .navigationBarBackButtonHidden(isFocusing)
       .tint(draft.backgroundStyle.accentColor(for: colorScheme))
@@ -177,21 +172,27 @@ struct ReceiptReviewView: View {
     }
   }
 
-  /// Done while the receipt is being split, then the switch between its items and payments. Done
-  /// morphs into the switcher when the receipt is completed. Editing slides the bar off-screen
-  /// but keeps it in place: changing the bottom inset hides the rows under the bar until the
-  /// change settles.
+  /// Done while the receipt is being split, then the switch between its items and payments. The
+  /// switcher's glass is drawn by UIKit, so Done dematerializes and the switcher scales in rather
+  /// than morphing. Editing slides the bar off-screen but keeps it in place: changing the bottom
+  /// inset hides the rows under the bar until the change settles.
   private var bottomBar: some View {
-    GlassEffectContainer {
+    ZStack(alignment: .bottom) {
+      GlassEffectContainer {
+        if !draft.isCompleted {
+          completionButton
+        }
+      }
       if draft.isCompleted {
-        ReceiptPageSwitcher(selection: $selectedPage)
-          .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
-      } else {
-        completionButton
-          .glassEffectID(ReceiptReviewGlass.bottomBar, in: glassTransition)
+        ReceiptPageSwitcher(
+          selection: $selectedPage,
+          tint: draft.backgroundStyle.accentColor(for: colorScheme)
+        )
+        // The tab bar draws the bar's margin below its capsule itself.
+        .padding(.bottom, -ReceiptBottomBar.screenEdgeInset)
+        .transition(.scale(scale: ReceiptPageSwitcher.entranceScale).combined(with: .opacity))
       }
     }
-    .padding(.bottom, 8)
     .animation(.glassMorph, value: draft.isCompleted)
     .offset(y: isEditing || isFocusing ? Self.bottomBarExitDistance : 0)
     .allowsHitTesting(!isEditing && !isFocusing)

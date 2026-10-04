@@ -8,9 +8,14 @@ struct ReceiptRowPressGesture: UIGestureRecognizerRepresentable {
   let onPressingChanged: (Bool) -> Void
   let onTap: () -> Void
   let onLongPress: () -> Void
+  var isEnabled = true
 
   func makeUIGestureRecognizer(context: Context) -> ReceiptRowPressRecognizer {
     ReceiptRowPressRecognizer()
+  }
+
+  func updateUIGestureRecognizer(_ recognizer: ReceiptRowPressRecognizer, context: Context) {
+    recognizer.isEnabled = isEnabled
   }
 
   func handleUIGestureRecognizerAction(_ recognizer: ReceiptRowPressRecognizer, context: Context) {

@@ -70,13 +70,12 @@ struct ReceiptPagesView: View {
           Button(role: .close) { dismiss() }
         }
       }
-      .safeAreaBar(edge: .bottom) {
+      .receiptBottomBar {
         GlassEffectContainer {
           if editor.needsRescan {
             rescanButton
           }
         }
-        .padding(.bottom, 8)
         .animation(.glassMorph, value: editor.needsRescan)
       }
     }

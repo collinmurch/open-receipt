@@ -2,10 +2,11 @@ import SwiftUI
 
 /// Receipts deleted in the last 30 days. Tapping a receipt offers to restore and open it, and long
 /// pressing lifts it into focus with its actions. Selecting acts on the chosen receipts, or on all
-/// of them when none are chosen.
+/// of them when none are chosen. Selection is the list's own, so dragging along the checkmarks or
+/// panning with two fingers selects a run of receipts.
 struct ReceiptTrashView: View {
   let onOpen: (HomeRoute) -> Void
-  @State private var isSelecting = false
+  @State private var editMode: EditMode = .inactive
   @State private var selection: Set<DeletedReceiptSummary.ID> = []
   /// Receipts waiting on confirmation before they're deleted for good.
   @State private var pendingDeletion: [DeletedReceiptSummary]?
@@ -18,7 +19,7 @@ struct ReceiptTrashView: View {
   @Environment(\.receiptStorageClient) private var storage
 
   var body: some View {
-    List {
+    List(selection: $selection) {
       if !library.deletedReceipts.isEmpty {
         Section {
           ForEach(library.deletedReceipts) { deletedReceipt in
@@ -29,6 +30,7 @@ struct ReceiptTrashView: View {
         }
       }
     }
+    .environment(\.editMode, $editMode)
     .scrollContentBackground(.hidden)
     .background { ReceiptLibraryBackground() }
     .overlay {
@@ -114,7 +116,6 @@ struct ReceiptTrashView: View {
     return ReceiptTrashRow(
       deletedReceipt: deletedReceipt,
       isSelecting: isSelecting,
-      isSelected: selection.contains(deletedReceipt.id),
       isFocused: isFocused,
       isLiftedOut: isFocused && focusedRowFrame != nil,
       onTap: { tap(deletedReceipt) },
@@ -166,6 +167,8 @@ struct ReceiptTrashView: View {
 
   private var isFocusing: Bool { focusedID != nil }
 
+  private var isSelecting: Bool { editMode.isEditing }
+
   /// The selected receipts, or every deleted receipt when none are selected.
   private var targetedReceipts: [DeletedReceiptSummary] {
     guard !selection.isEmpty else { return library.deletedReceipts }
@@ -188,24 +191,19 @@ struct ReceiptTrashView: View {
   }
 
   private func setSelecting(_ isSelecting: Bool) {
-    selection = []
+    // Leaving clears the selection only once the list is out of edit mode; clearing both at once
+    // leaves the list showing its checkmarks.
+    if isSelecting { selection = [] }
     withAnimation(.smooth(duration: 0.3)) {
-      self.isSelecting = isSelecting
+      editMode = isSelecting ? .active : .inactive
+    } completion: {
+      if !editMode.isEditing { selection = [] }
     }
   }
 
   private func tap(_ deletedReceipt: DeletedReceiptSummary) {
-    guard isSelecting else {
-      if !deletedReceipt.receipt.isUnavailable { restorePrompt = deletedReceipt }
-      return
-    }
-    withAnimation(.selectionChange) {
-      if selection.contains(deletedReceipt.id) {
-        selection.remove(deletedReceipt.id)
-      } else {
-        selection.insert(deletedReceipt.id)
-      }
-    }
+    guard !isSelecting, !deletedReceipt.receipt.isUnavailable else { return }
+    restorePrompt = deletedReceipt
   }
 
   private func focus(_ deletedReceipt: DeletedReceiptSummary, isPressed: Bool) {
@@ -265,11 +263,11 @@ struct ReceiptTrashView: View {
 }
 
 /// A deleted receipt in the list. Taps and long presses are one gesture rather than a button or a
-/// context menu, as receipt items are, so a long press lifts the receipt into focus.
+/// context menu, as receipt items are, so a long press lifts the receipt into focus. While
+/// selecting, the gesture steps aside so the list handles taps and drags.
 private struct ReceiptTrashRow: View {
   let deletedReceipt: DeletedReceiptSummary
   let isSelecting: Bool
-  let isSelected: Bool
   let isFocused: Bool
   let isLiftedOut: Bool
   let onTap: () -> Void
@@ -279,41 +277,31 @@ private struct ReceiptTrashRow: View {
   @State private var isPressed = false
 
   var body: some View {
-    HStack(spacing: 12) {
-      if isSelecting {
-        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-          .font(.title2)
-          .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-          .contentTransition(.symbolEffect(.replace))
-          .transition(.move(edge: .leading).combined(with: .opacity))
+    ReceiptLibraryRow(receipt: deletedReceipt.receipt, expiresAt: deletedReceipt.expiresAt)
+      .onGeometryChange(for: CGRect?.self) { proxy in
+        isFocused ? proxy.frame(in: .global) : nil
+      } action: { frame in
+        if let frame { onFocusedFrameChange(frame) }
       }
-
-      ReceiptLibraryRow(receipt: deletedReceipt.receipt, expiresAt: deletedReceipt.expiresAt)
-        .onGeometryChange(for: CGRect?.self) { proxy in
-          isFocused ? proxy.frame(in: .global) : nil
-        } action: { frame in
-          if let frame { onFocusedFrameChange(frame) }
-        }
-    }
-    .pressScale(isPressed && !isSelecting)
-    .opacity(isLiftedOut ? 0 : 1)
-    .transaction(value: isLiftedOut) { $0.animation = nil }
-    .contentShape(.rect)
-    .gesture(
-      ReceiptRowPressGesture(
-        onPressingChanged: { isPressed = $0 },
-        onTap: onTap,
-        onLongPress: isSelecting ? onTap : { onFocus(true) }
+      .pressScale(isPressed)
+      .opacity(isLiftedOut ? 0 : 1)
+      .transaction(value: isLiftedOut) { $0.animation = nil }
+      .contentShape(.rect)
+      .gesture(
+        ReceiptRowPressGesture(
+          onPressingChanged: { isPressed = $0 },
+          onTap: onTap,
+          onLongPress: { onFocus(true) },
+          isEnabled: !isSelecting
+        )
       )
-    )
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isSelecting && isSelected ? [.isButton, .isSelected] : .isButton)
-    .accessibilityAction(.default, onTap)
-    .accessibilityHint(isSelecting ? Text("") : Text("Restore and open this receipt"))
-    .accessibilityActions {
-      if !isSelecting {
-        Button("Restore or Delete") { onFocus(false) }
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(isSelecting ? [] : .isButton)
+      .accessibilityActions {
+        if !isSelecting {
+          Button("Restore and Open", action: onTap)
+          Button("Restore or Delete") { onFocus(false) }
+        }
       }
-    }
   }
 }

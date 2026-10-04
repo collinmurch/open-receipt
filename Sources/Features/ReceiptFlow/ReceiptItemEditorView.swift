@@ -41,22 +41,23 @@ struct ReceiptItemEditorView: View {
           .lineLimit(1...3)
           .focused($focusedField, equals: .name)
         LabeledContent("Quantity") {
-          TextField(
+          NumberField(
             "Quantity",
             value: $item.quantity,
             format: .number.precision(.fractionLength(0...3))
           )
-          .keyboardType(.decimalPad)
           .multilineTextAlignment(.trailing)
           .focused($focusedField, equals: .quantity)
           .accessibilityLabel("Quantity")
         }
+        .focusesOnTap($focusedField, equals: .quantity)
         LabeledContent("Line Total") {
           CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currency)
             .multilineTextAlignment(.trailing)
             .focused($focusedField, equals: .lineTotal)
             .accessibilityLabel("Line total")
         }
+        .focusesOnTap($focusedField, equals: .lineTotal)
       }
 
       if !issues.isEmpty {

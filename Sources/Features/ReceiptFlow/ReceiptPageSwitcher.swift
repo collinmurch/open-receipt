@@ -1,67 +1,167 @@
 import SwiftUI
+import UIKit
 
 /// A page of a completed receipt.
-enum ReceiptReviewPage: Hashable {
+enum ReceiptReviewPage: Hashable, CaseIterable {
   case receipt
   case payments
+
+  fileprivate var title: String {
+    switch self {
+    case .receipt: "Receipt"
+    case .payments: "Payments"
+    }
+  }
+
+  fileprivate var systemImage: String {
+    switch self {
+    case .receipt: "doc.text"
+    case .payments: "dollarsign"
+    }
+  }
 }
 
 /// Switches a completed receipt between its items and its payment requests, by tapping a page or
 /// dragging across the switcher.
+///
+/// The switcher is a standalone `UITabBar`, so its selection is the system glass lens that follows
+/// a drag. It is deliberately not a `TabView`: a tab bar controller inside the navigation stack
+/// breaks pushing and popping the receipt.
 struct ReceiptPageSwitcher: View {
+  /// The scale the switcher grows from as it appears, with `Animation.glassMorph`.
+  static let entranceScale: CGFloat = 0.6
+  private static let width: CGFloat = 240
+
   @Binding var selection: ReceiptReviewPage
-  @State private var width: CGFloat = 0
-  @Namespace private var selectionIndicator
+  let tint: Color
 
   var body: some View {
-    HStack(spacing: 0) {
-      item(.receipt, title: "Receipt", systemImage: "doc.text")
-      item(.payments, title: "Payments", systemImage: "dollarsign")
-    }
-    .padding(4)
-    .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
-    .simultaneousGesture(
-      DragGesture(minimumDistance: 8).onChanged { value in
-        let page: ReceiptReviewPage = value.location.x < width / 2 ? .receipt : .payments
-        if selection != page { selection = page }
-      }
-    )
-    .glassEffect(.regular.interactive(), in: .capsule)
-    .animation(.smooth(duration: 0.3), value: selection)
-    .sensoryFeedback(.selection, trigger: selection)
+    PageTabBar(selection: $selection, tint: tint)
+      .frame(width: Self.width)
+      .sensoryFeedback(.selection, trigger: selection)
+  }
+}
+
+private struct PageTabBar: UIViewControllerRepresentable {
+  @Binding var selection: ReceiptReviewPage
+  let tint: Color
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(selection: $selection)
   }
 
-  private func item(
-    _ page: ReceiptReviewPage,
-    title: String,
-    systemImage: String
-  ) -> some View {
-    let isSelected = selection == page
-    return Button {
-      selection = page
-    } label: {
-      VStack(spacing: 2) {
-        Image(systemName: systemImage)
-          .font(.title3)
-          .frame(height: 24)
-        Text(title)
-          .font(.caption2.weight(.medium))
-      }
-      .frame(minWidth: 92, minHeight: 52)
-      .foregroundStyle(
-        isSelected
-          ? AnyShapeStyle(TintShapeStyle.tint) : AnyShapeStyle(HierarchicalShapeStyle.primary)
-      )
-      .background {
-        if isSelected {
-          Capsule()
-            .fill(.primary.opacity(0.1))
-            .matchedGeometryEffect(id: "selection", in: selectionIndicator)
-        }
-      }
-      .contentShape(.capsule)
+  func makeUIViewController(context: Context) -> PageTabBarController {
+    let controller = PageTabBarController()
+    controller.tabBar.items = ReceiptReviewPage.allCases.enumerated().map { index, page in
+      UITabBarItem(title: page.title, image: UIImage(systemName: page.systemImage), tag: index)
     }
-    .buttonStyle(.plain)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    controller.tabBar.delegate = context.coordinator
+    return controller
+  }
+
+  func updateUIViewController(_ controller: PageTabBarController, context: Context) {
+    context.coordinator.selection = $selection
+    let tabBar = controller.tabBar
+    tabBar.tintColor = UIColor(tint)
+    let index = ReceiptReviewPage.allCases.firstIndex(of: selection)
+    let item = index.flatMap { tabBar.items?[$0] }
+    if tabBar.selectedItem !== item {
+      tabBar.selectedItem = item
+    }
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize, uiViewController: PageTabBarController, context: Context
+  ) -> CGSize? {
+    let tabBar = uiViewController.tabBar
+    let width = proposal.width ?? tabBar.intrinsicContentSize.width
+    let fitted = tabBar.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+    return CGSize(width: width, height: fitted.height)
+  }
+
+  @MainActor
+  final class Coordinator: NSObject, UITabBarDelegate {
+    var selection: Binding<ReceiptReviewPage>
+
+    init(selection: Binding<ReceiptReviewPage>) {
+      self.selection = selection
+    }
+
+    func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+      let pages = ReceiptReviewPage.allCases
+      guard pages.indices.contains(item.tag) else { return }
+      selection.wrappedValue = pages[item.tag]
+    }
+  }
+}
+
+/// Keeps the tab bar out of navigation transitions. A `UITabBar` on screen when the library's
+/// zoom transition starts hides the whole receipt page until the transition ends.
+private final class PageTabBarController: UIViewController {
+  /// How far into an arriving transition the tab bar enters, so its entrance overlaps the page
+  /// settling instead of waiting for the transition's long tail.
+  private static let entranceProgress: TimeInterval = 0.6
+
+  let tabBar = UITabBar()
+  private var pendingEntrance: DispatchWorkItem?
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = .clear
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    guard let transitionCoordinator else {
+      attachTabBar(animated: false)
+      return
+    }
+    detachTabBar()
+    if !transitionCoordinator.isInteractive {
+      let entrance = DispatchWorkItem { [weak self] in self?.attachTabBar(animated: true) }
+      pendingEntrance = entrance
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + transitionCoordinator.transitionDuration * Self.entranceProgress,
+        execute: entrance)
+    }
+    transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+      if context.isCancelled {
+        self?.detachTabBar()
+      } else {
+        self?.attachTabBar(animated: true)
+      }
+    }
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    guard let transitionCoordinator else { return }
+    detachTabBar()
+    transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+      if context.isCancelled { self?.attachTabBar(animated: false) }
+    }
+  }
+
+  /// Animating matches the switcher's entrance when Done turns into it.
+  private func attachTabBar(animated: Bool) {
+    pendingEntrance = nil
+    guard tabBar.superview == nil else { return }
+    tabBar.frame = view.bounds
+    tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(tabBar)
+    guard animated else { return }
+    tabBar.alpha = 0
+    tabBar.transform = CGAffineTransform(
+      scaleX: ReceiptPageSwitcher.entranceScale, y: ReceiptPageSwitcher.entranceScale)
+    UIView.animate(.glassMorph) {
+      tabBar.alpha = 1
+      tabBar.transform = .identity
+    }
+  }
+
+  private func detachTabBar() {
+    pendingEntrance?.cancel()
+    pendingEntrance = nil
+    tabBar.removeFromSuperview()
   }
 }
