@@ -33,15 +33,25 @@ enum ReceiptCurrency {
   }
 
   private static let nativeLocalesByCode: [String: Locale] = {
+    let regional = Locale.availableIdentifiers.sorted().map(Locale.init(identifier:))
+      .filter { $0.region != nil }
+    // Prefer each region's primary language, so PLN reads from pl_PL rather than en_PL.
+    let primary = regional.filter(isPrimaryLanguageLocale)
     var locales: [String: Locale] = [:]
-    for identifier in Locale.availableIdentifiers.sorted() {
-      let locale = Locale(identifier: identifier)
-      guard locale.region != nil, let code = locale.currency?.identifier, locales[code] == nil
-      else { continue }
+    for locale in primary + regional {
+      guard let code = locale.currency?.identifier, locales[code] == nil else { continue }
       locales[code] = locale
     }
     return locales
   }()
+
+  private static func isPrimaryLanguageLocale(_ locale: Locale) -> Bool {
+    guard let region = locale.region, let language = locale.language.languageCode else {
+      return false
+    }
+    let likely = Locale.Language(identifier: "und-\(region.identifier)").maximalIdentifier
+    return Locale.Language(identifier: likely).languageCode == language
+  }
 
   /// The SF Symbol for `code`'s currency sign, or a banknote when there is none.
   static func symbolName(_ code: String) -> String {

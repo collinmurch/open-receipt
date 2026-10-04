@@ -269,8 +269,8 @@ run-device: build-device ## Build and run on iOS hardware. Set release=1 to use 
 	@UDID=$$(xcrun devicectl list devices 2>/dev/null \
 		| grep -oEi '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{16}' \
 		| head -1); \
-	APP=$$(find $(BUILD_DIR)/derived -name "$(SCHEME).app" -not -path "*iphonesimulator*" -type d 2>/dev/null | head -1); \
-	xcrun devicectl device install app --device $$UDID $$APP && \
+	xcrun devicectl device install app --device $$UDID \
+		$(BUILD_DIR)/derived/Build/Products/$(CONFIGURATION)-iphoneos/$(SCHEME).app && \
 	xcrun devicectl device process launch --device $$UDID $(BUNDLE_ID)
 
 # ─── Format / Lint / Clean ────────────────────────────────────────────────────
