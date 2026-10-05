@@ -1,28 +1,33 @@
 import Foundation
 
+/// Formats receipt days for the library. A printed day is a `yyyy-MM-dd` in UTC, so it is shown
+/// in UTC to keep the device's time zone from moving it, and in the locale's own calendar.
 enum ReceiptLibraryDateFormatter {
-  /// The printed date with its year, such as "August 10, 2026", for searching.
+  /// A receipt's printed day with its year, such as "August 10, 2026".
   static func formatted(localDate: String, locale: Locale = .current) -> String? {
     guard let date = ReceiptLocalDate.date(from: localDate) else { return nil }
-    return date.formatted(style(locale).year().month(.wide).day())
+    return date.formatted(style(locale, calendar: locale.calendar).year().month(.wide).day())
   }
 
   /// The day without its year, for rows already grouped under a month.
   static func dayTitle(localDate: String, locale: Locale = .current) -> String? {
     guard let date = ReceiptLocalDate.date(from: localDate) else { return nil }
-    return date.formatted(style(locale).month(.abbreviated).day())
+    return date.formatted(style(locale, calendar: locale.calendar).month(.abbreviated).day())
   }
 
-  /// A `yyyy-MM` month as a section title, leaving out the year when it is the current one.
-  static func monthTitle(month: String, currentYear: Int, locale: Locale = .current) -> String? {
-    guard let date = ReceiptLocalDate.date(from: "\(month)-01") else { return nil }
-    let year = ReceiptLocalDate.calendar.component(.year, from: date)
-    let monthStyle = style(locale).month(.wide)
-    return date.formatted(year == currentYear ? monthStyle : monthStyle.year())
+  /// The month `day` falls in under `calendar`, as a section title. The year is left out when
+  /// `includesYear` is false.
+  static func monthTitle(
+    of day: Date,
+    in calendar: Calendar,
+    includesYear: Bool,
+    locale: Locale = .current
+  ) -> String {
+    let monthStyle = style(locale, calendar: calendar).month(.wide)
+    return day.formatted(includesYear ? monthStyle.year() : monthStyle)
   }
 
-  private static func style(_ locale: Locale) -> Date.FormatStyle {
-    let calendar = ReceiptLocalDate.calendar
-    return Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
+  private static func style(_ locale: Locale, calendar: Calendar) -> Date.FormatStyle {
+    Date.FormatStyle(locale: locale, calendar: calendar, timeZone: .gmt)
   }
 }

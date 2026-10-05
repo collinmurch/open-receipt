@@ -10,6 +10,12 @@ final class PaymentRecipientDisplayTests: XCTestCase {
     XCTAssertEqual(recipient.normalizedUSPhoneNumber, "6468639557")
   }
 
+  func testVenmoPhoneNumberDropsPlusCountryCode() {
+    let recipient = Person.Venmo.Recipient(kind: .phoneNumber, value: "+1 646-863-9557")
+
+    XCTAssertEqual(recipient.displayValue, "(646) 863-9557")
+  }
+
   func testVenmoNonUSPhoneNumberIsUnchanged() {
     let recipient = Person.Venmo.Recipient(kind: .phoneNumber, value: "+44 20 7946 0958")
 

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 enum ReceiptCurrency {
   /// `code` when it is a currency code, or `fallback` otherwise.
@@ -18,11 +19,10 @@ enum ReceiptCurrency {
   /// The signs written for `code`, both in the current locale and where the currency is used,
   /// such as "$" and "US$" for USD or "PLN" and "zł" for PLN.
   static func symbols(_ code: String) -> [String] {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .currency
-    formatter.currencyCode = code
-    var symbols = [formatter.currencySymbol ?? code]
+    var symbols = [symbol(code)]
     if let locale = nativeLocalesByCode[code] {
+      let formatter = NumberFormatter()
+      formatter.numberStyle = .currency
       formatter.locale = locale
       formatter.currencyCode = code
       if let native = formatter.currencySymbol, !symbols.contains(native) {
@@ -30,6 +30,35 @@ enum ReceiptCurrency {
       }
     }
     return symbols
+  }
+
+  /// The sign written for `code` in the current locale, such as "$" for USD.
+  static func symbol(_ code: String) -> String {
+    formatDetails(code).symbol
+  }
+
+  /// How many digits `code` shows after the decimal point, such as 2 for USD or 0 for JPY.
+  static func fractionDigits(_ code: String) -> Int {
+    formatDetails(code).fractionDigits
+  }
+
+  private struct FormatDetails {
+    let fractionDigits: Int
+    let symbol: String
+  }
+
+  private static let formatDetailsByCode = Mutex<[String: FormatDetails]>([:])
+
+  /// Number formatters are expensive to create, so each currency's details are read once.
+  private static func formatDetails(_ code: String) -> FormatDetails {
+    if let cached = formatDetailsByCode.withLock({ $0[code] }) { return cached }
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .currency
+    formatter.currencyCode = code
+    let details = FormatDetails(
+      fractionDigits: formatter.maximumFractionDigits, symbol: formatter.currencySymbol)
+    formatDetailsByCode.withLock { $0[code] = details }
+    return details
   }
 
   private static let nativeLocalesByCode: [String: Locale] = {
@@ -74,4 +103,11 @@ enum ReceiptCurrency {
     "TWD": "dollarsign", "UAH": "hryvniasign", "USD": "dollarsign", "UYU": "dollarsign",
     "VND": "dongsign",
   ]
+}
+
+extension Double {
+  /// Whether the amount is still at least a cent, either way, once rounded to cents.
+  var isNonzeroInCents: Bool {
+    abs(self) >= 0.005
+  }
 }

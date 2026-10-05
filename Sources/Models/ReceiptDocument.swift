@@ -161,6 +161,12 @@ struct DecimalString: Codable, Equatable, Sendable {
     Double(value).flatMap { $0.isFinite ? $0 : nil }
   }
 
+  /// `doubleValue`, throwing when the string isn't a finite decimal.
+  func requiredDouble() throws -> Double {
+    guard let doubleValue else { throw ReceiptDocumentError.invalidDecimal(value) }
+    return doubleValue
+  }
+
   init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
     let value = try container.decode(String.self)
@@ -182,58 +188,6 @@ struct DecimalString: Codable, Equatable, Sendable {
     }
     var container = encoder.singleValueContainer()
     try container.encode(value)
-  }
-}
-
-struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
-  let id: UUID
-  let updatedAt: Date
-  let capturedAt: Date
-  let backgroundStyle: ReceiptBackgroundStyle
-  let recognitionStatus: ReceiptDocument.Recognition.Status
-  let merchantName: String?
-  let localDate: String?
-  let total: Double?
-  let currency: String?
-  let isUnavailable: Bool
-  let unavailableDescription: String?
-  /// When an unread receipt is read again on its own after the reading limit resets.
-  var deferredUntil: Date?
-
-  /// A receipt whose stored file couldn't be read, dated by `date`.
-  static func unavailable(id: UUID, date: Date, error: any Error) -> ReceiptSummary {
-    ReceiptSummary(
-      id: id,
-      updatedAt: date,
-      capturedAt: date,
-      backgroundStyle: .blue,
-      recognitionStatus: .failed,
-      merchantName: nil,
-      localDate: nil,
-      total: nil,
-      currency: nil,
-      isUnavailable: true,
-      unavailableDescription: error.localizedDescription)
-  }
-
-  /// A new receipt that is being read before storage lists it.
-  static func reading(
-    id: UUID,
-    capturedAt: Date,
-    backgroundStyle: ReceiptBackgroundStyle
-  ) -> ReceiptSummary {
-    ReceiptSummary(
-      id: id,
-      updatedAt: capturedAt,
-      capturedAt: capturedAt,
-      backgroundStyle: backgroundStyle,
-      recognitionStatus: .pending,
-      merchantName: nil,
-      localDate: nil,
-      total: nil,
-      currency: nil,
-      isUnavailable: false,
-      unavailableDescription: nil)
   }
 }
 

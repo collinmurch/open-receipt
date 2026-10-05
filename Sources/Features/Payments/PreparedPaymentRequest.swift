@@ -1,8 +1,8 @@
 import Foundation
 
 /// A payment request ready to open, for a final share that has somewhere to send it.
-struct PreparedPaymentRequest: Equatable {
-  enum Action: Equatable {
+struct PreparedPaymentRequest {
+  enum Action {
     case openURL(URL)
     case compose(recipient: String, body: String)
   }

@@ -1,5 +1,5 @@
-import Foundation
 import StoreKit
+import SwiftUI
 
 enum PurchaseOutcome: Equatable, Sendable {
   case purchased
@@ -31,7 +31,9 @@ struct PurchaseClient: Sendable {
   let updates: @Sendable () -> AsyncStream<Void>
   /// The purchase's localized price, such as "$2.99".
   let displayPrice: @Sendable () async throws -> String
-  let purchase: @MainActor @Sendable () async throws -> PurchaseOutcome
+  /// Buys unlimited reading. Pass the `purchase` action from the view that offers it, so the App
+  /// Store's confirmation is presented over that view.
+  let purchase: @MainActor @Sendable (PurchaseAction?) async throws -> PurchaseOutcome
   /// Asks the App Store for this account's purchases again. Only call it when someone asks to.
   let restore: @Sendable () async throws -> Void
 
@@ -39,49 +41,49 @@ struct PurchaseClient: Sendable {
 }
 
 extension PurchaseClient {
-  static func live(productID: String = unlimitedReadingID) -> PurchaseClient {
-    PurchaseClient(
-      isEntitled: {
-        for await result in Transaction.currentEntitlements(for: productID) {
-          if case .verified(let transaction) = result, transaction.revocationDate == nil {
-            return true
+  static let live = PurchaseClient(
+    isEntitled: {
+      for await result in Transaction.currentEntitlements(for: unlimitedReadingID) {
+        if case .verified(let transaction) = result, transaction.revocationDate == nil {
+          return true
+        }
+      }
+      return false
+    },
+    updates: {
+      .producing { continuation in
+        for await result in Transaction.updates {
+          if case .verified(let transaction) = result {
+            await transaction.finish()
           }
+          continuation.yield()
         }
-        return false
-      },
-      updates: {
-        AsyncStream { continuation in
-          let task = Task {
-            for await result in Transaction.updates {
-              if case .verified(let transaction) = result {
-                await transaction.finish()
-              }
-              continuation.yield()
-            }
-            continuation.finish()
-          }
-          continuation.onTermination = { _ in task.cancel() }
-        }
-      },
-      displayPrice: { try await product(productID).displayPrice },
-      purchase: {
-        let product = try await product(productID)
-        switch try await product.purchase() {
-        case .success(.verified(let transaction)):
-          await transaction.finish()
-          return .purchased
-        case .success(.unverified(_, let error)):
-          throw error
-        case .pending:
-          return .pending
-        case .userCancelled:
-          return .cancelled
-        @unknown default:
-          return .cancelled
-        }
-      },
-      restore: { try await AppStore.sync() })
-  }
+      }
+    },
+    displayPrice: { try await product(unlimitedReadingID).displayPrice },
+    purchase: { action in
+      let product = try await product(unlimitedReadingID)
+      let result: Product.PurchaseResult
+      if let action {
+        result = try await action(product)
+      } else {
+        result = try await product.purchase()
+      }
+      switch result {
+      case .success(.verified(let transaction)):
+        await transaction.finish()
+        return .purchased
+      case .success(.unverified(_, let error)):
+        throw error
+      case .pending:
+        return .pending
+      case .userCancelled:
+        return .cancelled
+      @unknown default:
+        return .cancelled
+      }
+    },
+    restore: { try await AppStore.sync() })
 
   private static func product(_ id: String) async throws -> Product {
     guard let product = try await Product.products(for: [id]).first else {
@@ -101,7 +103,7 @@ extension PurchaseClient {
       isEntitled: { entitlement.value },
       updates: { .finished },
       displayPrice: { "$2.99" },
-      purchase: {
+      purchase: { _ in
         if outcome == .purchased { entitlement.value = true }
         return outcome
       },
@@ -115,7 +117,7 @@ extension PurchaseClient {
       isEntitled: { UserDefaults.standard.bool(forKey: PurchaseClient.debugUnlockedKey) },
       updates: { .finished },
       displayPrice: { "$2.99" },
-      purchase: {
+      purchase: { _ in
         UserDefaults.standard.set(true, forKey: PurchaseClient.debugUnlockedKey)
         return .purchased
       },
@@ -129,7 +131,7 @@ extension PurchaseClient {
     #if DEBUG
       return .debug
     #else
-      return .live()
+      return .live
     #endif
   }
 }

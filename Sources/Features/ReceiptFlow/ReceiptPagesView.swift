@@ -35,18 +35,21 @@ struct ReceiptPagesView: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
+    let pages = displayedPages
+    let pageIDs = editor.pages.map(\.id)
+
     NavigationStack {
       ScrollView {
         VStack(spacing: 20) {
           LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
-            ForEach(Array(displayedPages.enumerated()), id: \.element.id) { index, page in
+            ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
               pageTile(page, number: index + 1)
                 .opacity(draggedPageID == page.id ? 0.5 : 1)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
             addTile
           }
-          .animation(.settle, value: displayedPages.map(\.id))
+          .animation(.settle, value: pages.map(\.id))
 
           if let footnote {
             Text(footnote)
@@ -80,14 +83,14 @@ struct ReceiptPagesView: View {
       }
     }
     .tint(style.accentColor(for: colorScheme))
-    .task(id: Set(editor.pages.map(\.id))) { await loadPageURLs() }
-    .onChange(of: editor.pages.map(\.id), initial: true) { _, pageIDs in
+    .task(id: Set(pageIDs)) { await loadPageURLs() }
+    .onChange(of: pageIDs, initial: true) { _, pageIDs in
       orderedPageIDs = pageIDs
     }
     .task(id: orderedPageIDs) { await saveOrder() }
     .onDisappear(perform: saveOrderBeforeClosing)
     .haptics(haptic)
-    .quickLookPreview($previewURL, in: displayedPages.compactMap { pageURLs[$0.id] })
+    .quickLookPreview($previewURL, in: pages.compactMap { pageURLs[$0.id] })
     .fullScreenCover(isPresented: $isScannerPresented) {
       ReceiptScannerView(
         onCapture: { scan in
@@ -119,7 +122,7 @@ struct ReceiptPagesView: View {
 
   private var footnote: String? {
     if editor.needsRescan {
-      return rescanUnavailableReason ?? "Rescan to read the receipt from the updated pages."
+      return rescanUnavailableReason ?? "Read the receipt again to update it from these pages."
     }
     if editor.pages.count > 1 { return "Touch and hold a page to reorder or delete it." }
     return nil
@@ -131,7 +134,7 @@ struct ReceiptPagesView: View {
     case .limitReached(let resetDate, _):
       let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
       return
-        "Today’s reading limit is reached. Rescan \(resumption), or edit the items to match the updated pages."
+        "Today’s reading limit is reached. Read it again \(resumption), or edit the items to match the updated pages."
     case .unavailable(let reason):
       return "\(reason) Edit the items to match the updated pages."
     case .available, .approachingLimit:
@@ -194,7 +197,7 @@ struct ReceiptPagesView: View {
           ProgressView()
         } else {
           VStack(spacing: 0) {
-            addButton("Scan", systemImage: "document.viewfinder") {
+            addButton("Camera", systemImage: "document.viewfinder") {
               isScannerPresented = true
             }
             Rectangle()
@@ -231,18 +234,18 @@ struct ReceiptPagesView: View {
 
   private var rescanButton: some View {
     ReceiptActionButton(
-      title: "Rescan", systemImage: "arrow.clockwise", tint: style.prominentColor
+      title: "Read Again", systemImage: "arrow.clockwise", tint: style.prominentColor
     ) {
       isRescanConfirmationPresented = true
     }
     .disabled(rescanUnavailableReason != nil)
     .accessibilityHint("Reads the receipt again from the current pages")
     .confirmationDialog(
-      "Rescan Receipt?",
+      "Read Receipt Again?",
       isPresented: $isRescanConfirmationPresented,
       titleVisibility: .visible
     ) {
-      Button("Rescan") {
+      Button("Read Again") {
         dismiss()
         editor.rescan()
       }
@@ -259,7 +262,7 @@ struct ReceiptPagesView: View {
       defer { isAddingPages = false }
       let pages = await pages()
       guard !pages.isEmpty else {
-        errorDescription = "The selected images could not be read. Select different images."
+        errorDescription = "The selected images couldn’t be opened. Select different images."
         return
       }
       do {
@@ -272,8 +275,8 @@ struct ReceiptPagesView: View {
   }
 
   private var hasUnsavedOrder: Bool {
-    orderedPageIDs != editor.pages.map(\.id)
-      && Set(orderedPageIDs) == Set(editor.pages.map(\.id))
+    let pageIDs = editor.pages.map(\.id)
+    return orderedPageIDs != pageIDs && Set(orderedPageIDs) == Set(pageIDs)
   }
 
   /// Closing cancels the delayed save, so an order changed just before closing is saved here.

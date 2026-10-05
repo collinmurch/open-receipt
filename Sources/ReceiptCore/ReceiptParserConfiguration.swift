@@ -33,11 +33,3 @@ public struct ReceiptParserConfiguration: Sendable, Equatable {
     return parts.isEmpty ? nil : parts.joined(separator: " ")
   }
 }
-
-/// Whether receipt reading can run right now, for showing persistent status before a scan.
-public enum ReceiptModelStatus: Sendable, Equatable {
-  case available
-  case approachingLimit(canIncreaseLimit: Bool)
-  case limitReached(resetDate: Date?, canIncreaseLimit: Bool)
-  case unavailable(String)
-}

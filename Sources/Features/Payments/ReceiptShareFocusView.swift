@@ -1,12 +1,8 @@
 import SwiftUI
 
 /// Lifts one person's share out of the list with its two actions: requesting the share, and
-/// sending its breakdown. The share starts exactly over the row it copies, which stays hidden
-/// underneath until the copy settles back over it.
+/// sending its breakdown.
 struct ReceiptShareFocusView: View {
-  /// How far the card's background reaches past the share, matching a list row's margins.
-  private static let cardPadding = CGSize(width: 20, height: 12)
-
   let content: ReceiptShareRowContent
   /// The list row being copied, in global coordinates.
   let rowFrame: CGRect
@@ -23,72 +19,30 @@ struct ReceiptShareFocusView: View {
   let onMessageBreakdown: (Person.IMessage.Recipient) -> Void
   let onDismiss: () -> Void
 
-  @State private var isLifted = false
-  @State private var isDismissing = false
   @State private var isChoosingBreakdownDestination = false
   @Namespace private var breakdownGlass
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    GeometryReader { proxy in
-      let origin = proxy.frame(in: .global).origin
-      let row = rowFrame.offsetBy(dx: -origin.x, dy: -origin.y)
-      let layout = LiftedRowLayout(
-        size: proxy.size, rowHeight: row.height, cardPadding: Self.cardPadding.height)
-      let isInPlace = isLifted || reduceMotion
+    LiftedFocus(onDismiss: onDismiss, onLifted: prepareBreakdown) { state, proxy in
+      let source = proxy.localFrame(of: rowFrame)
+      let layout = LiftedRowLayout(size: proxy.size, rowHeight: source.height)
 
-      ZStack {
-        Rectangle()
-          .fill(.regularMaterial)
-          .ignoresSafeArea()
-          .opacity(isLifted ? 1 : 0)
-          .onTapGesture(perform: dismiss)
-          .accessibilityHidden(true)
+      content
+        .liftedCard(width: source.width, startsPressed: startsPressed, state: state)
+        .position(state.isInPlace ? layout.cardCenter : CGPoint(x: source.midX, y: source.midY))
 
-        card(width: row.width)
-          .position(isInPlace ? layout.cardCenter : CGPoint(x: row.midX, y: row.midY))
-
-        actions
-          .frame(width: proxy.size.width - Self.cardPadding.width * 2)
-          .fixedSize(horizontal: false, vertical: true)
-          .frame(width: proxy.size.width, height: 0, alignment: .top)
-          .position(layout.actionsTop)
-          .opacity(isLifted ? 1 : 0)
-          .offset(y: isLifted || reduceMotion ? 0 : -12)
-      }
-      .opacity(reduceMotion && !isLifted ? 0 : 1)
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityAddTraits(.isModal)
-    .accessibilityAction(.escape, dismiss)
-    .onAppear {
-      withAnimation(.lift) {
-        isLifted = true
-      } completion: {
-        // Drawn once the lift settles, so sharing or messaging finds it ready without a hitch.
-        if let breakdown { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
-      }
+      actions(state)
+        .liftedActions(in: proxy.size, top: layout.actionsTop, state: state)
     }
   }
 
-  private func card(width: CGFloat) -> some View {
-    content
-      .frame(width: width)
-      .background {
-        // The list row's own background stays behind the copy, so the card's fades in as it lifts.
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
-          .fill(Color(uiColor: .secondarySystemGroupedBackground))
-          .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
-          .padding(.horizontal, -Self.cardPadding.width)
-          .padding(.vertical, -Self.cardPadding.height)
-          .opacity(isLifted ? 1 : 0)
-      }
-      .scaleEffect(cardScale)
-      .contentShape(.rect)
-      .onTapGesture(perform: dismiss)
+  /// Draws the breakdown once the lift settles, so sharing or messaging finds it ready without a
+  /// hitch.
+  private func prepareBreakdown() {
+    if let breakdown { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
   }
 
-  private var actions: some View {
+  private func actions(_ state: LiftedFocusState) -> some View {
     VStack(spacing: 12) {
       if let request {
         ReceiptActionButton(
@@ -97,11 +51,11 @@ struct ReceiptShareFocusView: View {
           tint: request.method.prominentColor
         ) {
           onRequest(request)
-          dismiss()
+          state.dismiss()
         }
       }
 
-      sendBreakdownButton
+      sendBreakdownButton(state)
 
       if let caption = unavailableRequestReason ?? unavailableBreakdownReason {
         Text(caption)
@@ -116,7 +70,7 @@ struct ReceiptShareFocusView: View {
   /// Sends the breakdown through the share sheet, or, for a person with a contact card, opens
   /// into a choice between messaging them and the share sheet.
   @ViewBuilder
-  private var sendBreakdownButton: some View {
+  private func sendBreakdownButton(_ state: LiftedFocusState) -> some View {
     if let breakdown {
       GlassEffectContainer(spacing: 12) {
         if let messageRecipient, isChoosingBreakdownDestination {
@@ -125,7 +79,7 @@ struct ReceiptShareFocusView: View {
 
             Button {
               onMessageBreakdown(messageRecipient)
-              dismiss()
+              state.dismiss()
             } label: {
               GlassActionLabel(title: "Message \(firstName)", systemImage: "message.fill")
                 .foregroundStyle(.white)
@@ -173,60 +127,9 @@ struct ReceiptShareFocusView: View {
   private var unavailableBreakdownReason: String? {
     breakdown == nil ? "Assign every item before you share the breakdown." : nil
   }
-
-  private var cardScale: CGFloat {
-    isLifted || (startsPressed && !isDismissing) ? ReceiptItemRowContent.pressedScale : 1
-  }
-
-  private func dismiss() {
-    guard !isDismissing else { return }
-    isDismissing = true
-    withAnimation(.settle) {
-      isLifted = false
-    } completion: {
-      onDismiss()
-    }
-  }
 }
 
 private enum BreakdownGlass: Hashable {
   case share
   case message
-}
-
-/// A glass capsule button's title and symbol, sized like `ReceiptActionButton`.
-struct GlassActionLabel: View {
-  let title: String
-  let systemImage: String
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 50
-
-  var body: some View {
-    HStack(spacing: 10) {
-      Text(title)
-        .lineLimit(1)
-      Image(systemName: systemImage)
-    }
-    .font(.body.weight(.semibold))
-    .padding(.horizontal, 22)
-    .frame(minHeight: height)
-    .contentShape(.capsule)
-  }
-}
-
-/// Where the lifted views settle: the row just above the middle of the screen, and its actions
-/// below the middle.
-struct LiftedRowLayout {
-  private static let spacing: CGFloat = 28
-
-  let size: CGSize
-  let rowHeight: CGFloat
-  let cardPadding: CGFloat
-
-  var cardCenter: CGPoint {
-    CGPoint(x: size.width / 2, y: size.height / 2 - rowHeight / 2 - cardPadding)
-  }
-
-  var actionsTop: CGPoint {
-    CGPoint(x: size.width / 2, y: cardCenter.y + rowHeight / 2 + cardPadding + Self.spacing)
-  }
 }

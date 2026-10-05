@@ -59,7 +59,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Info.plist
-        INFOPLIST_KEY_NSCameraUsageDescription: "Open Receipt needs camera access to scan receipts."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Open Receipt uses the camera to read receipts."
         INFOPLIST_KEY_NSContactsUsageDescription: "Open Receipt uses selected contacts to add people to receipt splits."
         INFOPLIST_KEY_CFBundleDisplayName: "Open Receipt"
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES

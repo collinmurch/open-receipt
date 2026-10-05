@@ -22,18 +22,14 @@ extension FreeReadStore {
         for store in stores { store.save(reads) }
       },
       changes: {
-        AsyncStream { continuation in
-          let task = Task {
-            await withTaskGroup(of: Void.self) { group in
-              for store in stores {
-                group.addTask {
-                  for await _ in store.changes() { continuation.yield() }
-                }
+        .producing { continuation in
+          await withTaskGroup(of: Void.self) { group in
+            for store in stores {
+              group.addTask {
+                for await _ in store.changes() { continuation.yield() }
               }
             }
-            continuation.finish()
           }
-          continuation.onTermination = { _ in task.cancel() }
         }
       })
   }
@@ -91,17 +87,13 @@ extension FreeReadStore {
       NSUbiquitousKeyValueStore.default.set(reads.sorted(), forKey: FreeReadStore.iCloudKey)
     },
     changes: {
-      AsyncStream { continuation in
-        let task = Task {
-          NSUbiquitousKeyValueStore.default.synchronize()
-          let notifications = NotificationCenter.default.notifications(
-            named: NSUbiquitousKeyValueStore.didChangeExternallyNotification)
-          for await _ in notifications {
-            continuation.yield()
-          }
-          continuation.finish()
+      .producing { continuation in
+        NSUbiquitousKeyValueStore.default.synchronize()
+        let notifications = NotificationCenter.default.notifications(
+          named: NSUbiquitousKeyValueStore.didChangeExternallyNotification)
+        for await _ in notifications {
+          continuation.yield()
         }
-        continuation.onTermination = { _ in task.cancel() }
       }
     })
 

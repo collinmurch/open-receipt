@@ -1,9 +1,9 @@
 import CoreGraphics
 import ImageIO
 
-public enum ReceiptImageNormalizer {
+enum ReceiptImageNormalizer {
   /// Returns an image whose pixels include the supplied display orientation.
-  public static func normalized(
+  static func normalized(
     _ image: CGImage,
     orientation: CGImagePropertyOrientation
   ) -> CGImage? {
@@ -57,7 +57,7 @@ public enum ReceiptImageNormalizer {
 
   /// Returns an image whose longest side is at most `maxPixelDimension`, or `image` itself when
   /// it already fits.
-  public static func downscaled(_ image: CGImage, maxPixelDimension: Int) -> CGImage? {
+  static func downscaled(_ image: CGImage, maxPixelDimension: Int) -> CGImage? {
     let longestSide = max(image.width, image.height)
     guard maxPixelDimension > 0, longestSide > maxPixelDimension else { return image }
 

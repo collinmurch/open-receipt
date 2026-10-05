@@ -10,6 +10,8 @@ struct ReceiptItemsSection: View {
   /// The item lifted into focus, and whether its focused copy is on screen yet.
   let focusedItemID: ReceiptDraftItem.ID?
   let isFocusPresented: Bool
+  /// Where the rows are, for a two-finger sweep to find the item under the fingers.
+  let rowFrames: ReceiptItemRowFrames
   let onSelectItem: (ReceiptDraftItem.ID) -> Void
   /// Focuses an item, noting whether it was pressed into focus and so is already bulging.
   let onFocusItem: (_ id: ReceiptDraftItem.ID, _ isPressed: Bool) -> Void
@@ -30,7 +32,8 @@ struct ReceiptItemsSection: View {
           displayCurrency: displayCurrency,
           onTap: { tap(item.id) },
           onFocus: { focus(item.id, isPressed: $0) },
-          onFocusedFrameChange: onFocusedRowFrameChange
+          onFocusedFrameChange: onFocusedRowFrameChange,
+          onSweepableFrameChange: { [rowFrames] in rowFrames.update($0, for: item.id) }
         )
         .equatable()
       }
@@ -99,6 +102,30 @@ struct ReceiptItemsSection: View {
   }
 }
 
+/// Where each item row sits on screen while a sweep could cross it. It isn't observed, so rows
+/// moving as the list scrolls never redraw anything.
+@MainActor
+final class ReceiptItemRowFrames {
+  /// How far past its content a row reaches, covering half the gap to its neighbors.
+  private static let rowOverhang: CGFloat = 12
+
+  private var frames: [ReceiptDraftItem.ID: CGRect] = [:]
+
+  func update(_ frame: CGRect?, for id: ReceiptDraftItem.ID) {
+    frames[id] = frame
+  }
+
+  /// The item whose row is level with `location`, in global coordinates.
+  func item(at location: CGPoint) -> ReceiptDraftItem.ID? {
+    frames
+      .filter { _, frame in
+        (frame.minY - Self.rowOverhang...frame.maxY + Self.rowOverhang).contains(location.y)
+      }
+      .min { abs($0.value.midY - location.y) < abs($1.value.midY - location.y) }?
+      .key
+  }
+}
+
 /// One receipt item. Its inputs are plain values, so a change to one item redraws only that row.
 private struct ReceiptItemRow: View, Equatable {
   let item: ReceiptDraftItem
@@ -112,8 +139,8 @@ private struct ReceiptItemRow: View, Equatable {
   let onTap: () -> Void
   let onFocus: (_ isPressed: Bool) -> Void
   let onFocusedFrameChange: (CGRect) -> Void
-
-  @State private var isPressed = false
+  /// Reports the row's global frame while a sweep could cross it, and `nil` otherwise.
+  let onSweepableFrameChange: (CGRect?) -> Void
 
   nonisolated static func == (lhs: ReceiptItemRow, rhs: ReceiptItemRow) -> Bool {
     lhs.item == rhs.item
@@ -126,8 +153,6 @@ private struct ReceiptItemRow: View, Equatable {
       && lhs.displayCurrency == rhs.displayCurrency
   }
 
-  /// Taps and long presses are one gesture rather than a `Button`: a list row's button takes its
-  /// taps from the row's selection, which cancels any long press attached to it.
   var body: some View {
     ReceiptItemRowContent(
       item: item,
@@ -136,23 +161,19 @@ private struct ReceiptItemRow: View, Equatable {
       isEditing: isEditing,
       displayCurrency: displayCurrency
     )
-    .onGeometryChange(for: CGRect?.self) { proxy in
-      isFocused ? proxy.frame(in: .global) : nil
-    } action: { frame in
-      if let frame { onFocusedFrameChange(frame) }
-    }
-    .pressScale(isPressed)
-    // The focused copy stands in for the row, so the row hides and returns in one frame.
-    .opacity(isLiftedOut ? 0 : 1)
-    .transaction(value: isLiftedOut) { $0.animation = nil }
-    .contentShape(.rect)
-    .gesture(
-      ReceiptRowPressGesture(
-        onPressingChanged: { isPressed = $0 },
-        onTap: onTap,
-        onLongPress: { onFocus(true) }
-      )
+    .liftableRow(
+      isFocused: isFocused,
+      isLiftedOut: isLiftedOut,
+      onTap: onTap,
+      onLongPress: { onFocus(true) },
+      onFocusedFrameChange: onFocusedFrameChange
     )
+    .onGeometryChange(for: CGRect?.self) { proxy in
+      hasSelection && !isEditing ? proxy.frame(in: .global) : nil
+    } action: { frame in
+      onSweepableFrameChange(frame)
+    }
+    .onDisappear { onSweepableFrameChange(nil) }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isButton)
     .accessibilityAction(.default, onTap)
@@ -179,9 +200,6 @@ private struct ReceiptItemRow: View, Equatable {
 
 /// What a receipt item row draws, shared by the list and the item lifted into focus.
 struct ReceiptItemRowContent: View {
-  /// How much a row grows while pressed, and stays grown while lifted into focus.
-  static let pressedScale: CGFloat = 1.03
-
   let item: ReceiptDraftItem
   let assignedParticipants: [ReceiptParticipant]
   let isAssignedToSelection: Bool

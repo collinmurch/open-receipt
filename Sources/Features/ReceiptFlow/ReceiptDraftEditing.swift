@@ -15,20 +15,6 @@ extension ReceiptDraft {
     set { date = ReceiptLocalDate.string(from: newValue) }
   }
 
-  var validationIssues: [ReceiptEditorValidationIssue] {
-    var issues: [ReceiptEditorValidationIssue] = []
-    if !ReceiptValidator.isCurrencyCode(normalizedCurrency) {
-      issues.append(.invalidCurrency)
-    }
-    issues += items.flatMap(\.validationIssues)
-    if !adjustments.isEmpty, !subtotal.isFinite { issues.append(.invalidSubtotal) }
-    if adjustments.contains(.tax), !tax.isFinite { issues.append(.invalidTax) }
-    if adjustments.contains(.tip), !tip.isFinite { issues.append(.invalidTip) }
-    if adjustments.contains(.savings), !savings.isFinite { issues.append(.invalidSavings) }
-    if !total.isFinite { issues.append(.invalidTotal) }
-    return issues
-  }
-
   var expectedSubtotal: Double {
     items.reduce(0) { $0 + $1.lineTotal }
   }
@@ -38,11 +24,11 @@ extension ReceiptDraft {
   }
 
   var subtotalNeedsCorrection: Bool {
-    abs(subtotal - expectedSubtotal) >= 0.005
+    (subtotal - expectedSubtotal).isNonzeroInCents
   }
 
   var totalNeedsCorrection: Bool {
-    abs(total - expectedTotal) >= 0.005
+    (total - expectedTotal).isNonzeroInCents
   }
 
   var savingsPercentage: Double {
@@ -65,7 +51,6 @@ extension ReceiptDraft {
     }
   }
 
-  @discardableResult
   func addItem() -> ReceiptDraftItem.ID {
     let item = ReceiptDraftItem(
       item: ReceiptItem(description: "", quantity: 1, lineTotal: 0))
@@ -108,70 +93,5 @@ extension ReceiptDraft {
   func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
     let amount = adjustments[adjustment] ?? 0
     return amount == 0 ? 0 : amount * adjustment.sign
-  }
-}
-
-extension ReceiptDraftItem {
-  var validationIssues: [ReceiptEditorValidationIssue] {
-    var issues: [ReceiptEditorValidationIssue] = []
-    if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      issues.append(.missingItemDescription(id))
-    }
-    if !quantity.isFinite || quantity <= 0 {
-      issues.append(.invalidItemQuantity(id))
-    }
-    if !lineTotal.isFinite {
-      issues.append(.invalidItemTotal(id))
-    }
-    return issues
-  }
-}
-
-enum ReceiptEditorValidationIssue: Identifiable, Equatable {
-  case invalidCurrency
-  case missingItemDescription(ReceiptDraftItem.ID)
-  case invalidItemQuantity(ReceiptDraftItem.ID)
-  case invalidItemTotal(ReceiptDraftItem.ID)
-  case invalidSubtotal
-  case invalidTax
-  case invalidTip
-  case invalidSavings
-  case invalidTotal
-
-  var id: String {
-    switch self {
-    case .invalidCurrency: "currency"
-    case .missingItemDescription(let id): "item-\(id)-description"
-    case .invalidItemQuantity(let id): "item-\(id)-quantity"
-    case .invalidItemTotal(let id): "item-\(id)-total"
-    case .invalidSubtotal: "subtotal"
-    case .invalidTax: "tax"
-    case .invalidTip: "tip"
-    case .invalidSavings: "savings"
-    case .invalidTotal: "total"
-    }
-  }
-
-  var message: String {
-    switch self {
-    case .invalidCurrency:
-      "Enter a three-letter currency code."
-    case .missingItemDescription:
-      "Enter a name for each item."
-    case .invalidItemQuantity:
-      "Each item quantity must be greater than zero."
-    case .invalidItemTotal:
-      "Enter a valid total for each item."
-    case .invalidSubtotal:
-      "Enter a valid subtotal."
-    case .invalidTax:
-      "Enter a valid tax amount."
-    case .invalidTip:
-      "Enter a valid tip amount."
-    case .invalidSavings:
-      "Enter a valid savings amount."
-    case .invalidTotal:
-      "Enter a valid receipt total."
-    }
   }
 }

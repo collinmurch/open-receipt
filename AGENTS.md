@@ -10,9 +10,11 @@ An iOS app that reads receipts and splits bills.
 
 ## Layout
 
-- `App/` — app entry point, entitlements, and screenshot staging.
+- `App/` — app entry point, asset catalog, entitlements, and screenshot staging.
 - `Sources/ReceiptCore` — model contract, response decoding, and receipt models.
-- `Sources/{Features,Models,Services,Utilities}` — app code.
+- `Sources/Features` — one folder per screen or flow.
+- `Sources/Components` — SwiftUI views and modifiers shared across features, such as the lift-into-focus rows.
+- `Sources/Models`, `Sources/Services`, `Sources/Utilities` — app data types, injectable clients and storage, and small helpers.
 - `Tools/ReceiptLab` — parser evaluation harness (see [Receipt harness](#receipt-harness)).
 - `Tools/Screenshots/Capture` — UI tests that capture App Store screens.
 - `Tools/Screenshots/Composer` — macOS renderer that turns captures into marketing frames.
@@ -97,6 +99,7 @@ How it works:
 ## Conventions
 
 - No emojis in code, comments, logs, or commit messages unless asked.
+- In user-facing text, "scan" is only the document camera (and "Scan. Split. Settle."). "Read" is the model reading a scanned or imported receipt; that's what free reads and Unlimited Reading count.
 - Comment only public APIs or genuinely non-obvious logic.
 - Prefer many small, focused tests over large table-driven ones.
 - Tests must never call PCC, since it uses quota. Inject `ReceiptParsingClient` in app tests (never `.standard` or `.live`) and a fake `ReceiptModelClient.Respond` in harness tests. Only `make receipts` makes live calls.

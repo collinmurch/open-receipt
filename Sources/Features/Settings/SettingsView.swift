@@ -7,6 +7,9 @@ struct SettingsView: View {
     CurrencySettings.initialDefaultCode
   @AppStorage(AdjustmentSplitSettings.defaultMethodKey) private var defaultAdjustmentSplitMethod =
     AdjustmentSplitSettings.initialDefaultMethod
+  @State private var isUnlockPresented = false
+  @State private var restoreMessage: String?
+  @State private var isRemoveConfirmationPresented = false
   @Environment(ReadingAccess.self) private var access
 
   var body: some View {
@@ -25,15 +28,7 @@ struct SettingsView: View {
         .labelsHidden()
         .pickerStyle(.inline)
       } header: {
-        VStack(alignment: .leading, spacing: 12) {
-          if access.channel.isTesting {
-            Text(access.channel.title)
-              .font(.subheadline.weight(.semibold))
-              .foregroundStyle(.orange)
-              .textCase(nil)
-          }
-          Text("Default Payment Method")
-        }
+        Text("Default Payment Method")
       }
 
       Section {
@@ -63,7 +58,12 @@ struct SettingsView: View {
         Text("New receipts split tax and tip this way.")
       }
 
-      UnlimitedReadingSection()
+      UnlimitedReadingSection(
+        isUnlockPresented: $isUnlockPresented, restoreMessage: $restoreMessage)
+
+      if access.channel.isTesting {
+        PurchaseTestingSection(isRemoveConfirmationPresented: $isRemoveConfirmationPresented)
+      }
 
       Section {
         Link(destination: AppLinks.privacyPolicy) {
@@ -82,6 +82,26 @@ struct SettingsView: View {
     }
     .scrollContentBackground(.hidden)
     .background { ReceiptLibraryBackground() }
+    // Presented from the form rather than its sections, which the list can rebuild while
+    // something they present is showing.
+    .unlimitedReadingSheet(isPresented: $isUnlockPresented)
+    .alert(
+      "Restore Purchase",
+      isPresented: $restoreMessage.isPresent,
+      presenting: restoreMessage,
+      actions: { _ in Button("OK", role: .cancel) {} },
+      message: { Text($0) }
+    )
+    .alert("Remove Purchase?", isPresented: $isRemoveConfirmationPresented) {
+      Button("Remove", role: .destructive) {
+        Task { await access.removePurchaseForTesting() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "This build reads receipts as if unlimited reading was never bought. Buy or restore it to get it back."
+      )
+    }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
   }
@@ -89,9 +109,9 @@ struct SettingsView: View {
 
 /// The purchase of unlimited reading, and tools for testing it in TestFlight and Debug builds.
 private struct UnlimitedReadingSection: View {
-  @State private var isUnlockPresented = false
+  @Binding var isUnlockPresented: Bool
+  @Binding var restoreMessage: String?
   @State private var isRestoring = false
-  @State private var restoreMessage: String?
   @Environment(ReadingAccess.self) private var access
 
   var body: some View {
@@ -118,19 +138,6 @@ private struct UnlimitedReadingSection: View {
     } footer: {
       Text(footer)
     }
-    .unlimitedReadingSheet(isPresented: $isUnlockPresented)
-    .alert(
-      "Restore Purchase",
-      isPresented: Binding(
-        get: { restoreMessage != nil },
-        set: { if !$0 { restoreMessage = nil } }),
-      presenting: restoreMessage,
-      actions: { _ in Button("OK", role: .cancel) {} },
-      message: { Text($0) })
-
-    if access.isTesting {
-      PurchaseTestingSection()
-    }
   }
 
   private var footer: String {
@@ -156,7 +163,7 @@ private struct UnlimitedReadingSection: View {
 
 /// Tools for testing the purchase, shown outside the production App Store.
 private struct PurchaseTestingSection: View {
-  @State private var isRemoveConfirmationPresented = false
+  @Binding var isRemoveConfirmationPresented: Bool
   @AppStorage(SampleReceipts.key) private var storedSampleReceipts: Bool?
   @Environment(ReadingAccess.self) private var access
 
@@ -175,16 +182,6 @@ private struct PurchaseTestingSection: View {
       Text("Testing")
     } footer: {
       Text("Sample receipts read without Private Cloud Compute.")
-    }
-    .alert("Remove Purchase?", isPresented: $isRemoveConfirmationPresented) {
-      Button("Remove", role: .destructive) {
-        Task { await access.removePurchaseForTesting() }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(
-        "This build reads receipts as if unlimited reading was never bought. Buy or restore it to get it back."
-      )
     }
   }
 

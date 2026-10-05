@@ -9,7 +9,7 @@ final class PaymentRequester {
   var composition: IMessageComposition?
   var errorDescription: String?
   @ObservationIgnored private var onComposedRequestSent: (() -> Void)?
-  @ObservationIgnored private var preparingComposition: Task<Void, Never>?
+  @ObservationIgnored private var isPreparingComposition = false
 
   func open(
     _ request: PreparedPaymentRequest,
@@ -45,7 +45,7 @@ final class PaymentRequester {
   func message(
     _ breakdowns: [ReceiptBreakdown],
     to recipients: [Person.IMessage.Recipient],
-    onSent: (() -> Void)? = nil
+    onSent: @escaping () -> Void
   ) {
     guard let first = breakdowns.first, !recipients.isEmpty else { return }
     guard MFMessageComposeViewController.canSendText() else {
@@ -62,15 +62,16 @@ final class PaymentRequester {
     recipients: [String],
     body: String,
     breakdowns: [ReceiptBreakdown],
-    onSent: (() -> Void)?
+    onSent: @escaping () -> Void
   ) {
-    guard preparingComposition == nil, composition == nil else { return }
+    guard !isPreparingComposition, composition == nil else { return }
     onComposedRequestSent = onSent
-    preparingComposition = Task {
+    isPreparingComposition = true
+    Task {
       let attachments = await attachments(for: breakdowns)
       composition = IMessageComposition(
         recipients: recipients, body: body, attachments: attachments)
-      preparingComposition = nil
+      isPreparingComposition = false
     }
   }
 
@@ -91,6 +92,14 @@ final class PaymentRequester {
     composition = nil
     if sent { onComposedRequestSent?() }
     onComposedRequestSent = nil
+  }
+}
+
+extension IMessageAttachment {
+  @MainActor
+  fileprivate init?(breakdown: ReceiptBreakdown) async {
+    guard let data = await ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
+    self.init(data: data, filename: "\(breakdown.fileName).png")
   }
 }
 

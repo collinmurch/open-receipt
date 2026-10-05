@@ -6,21 +6,13 @@ struct IMessageComposition: Identifiable {
   let id = UUID()
   let recipients: [String]
   let body: String
-  var attachments: [IMessageAttachment] = []
+  let attachments: [IMessageAttachment]
 }
 
 /// An image sent along with a message.
 struct IMessageAttachment {
   let data: Data
   let filename: String
-}
-
-extension IMessageAttachment {
-  @MainActor
-  init?(breakdown: ReceiptBreakdown) async {
-    guard let data = await ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
-    self.init(data: data, filename: "\(breakdown.fileName).png")
-  }
 }
 
 struct IMessageComposerView: UIViewControllerRepresentable {

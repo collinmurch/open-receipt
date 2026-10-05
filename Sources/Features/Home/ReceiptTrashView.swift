@@ -49,10 +49,7 @@ struct ReceiptTrashView: View {
     .toolbar { trashToolbar }
     .confirmationDialog(
       deleteConfirmationTitle,
-      isPresented: Binding(
-        get: { pendingDeletion != nil },
-        set: { if !$0 { pendingDeletion = nil } }
-      ),
+      isPresented: $pendingDeletion.isPresent,
       titleVisibility: .visible,
       presenting: pendingDeletion
     ) { deletedReceipts in
@@ -67,10 +64,7 @@ struct ReceiptTrashView: View {
     }
     .alert(
       "Restore Receipt?",
-      isPresented: Binding(
-        get: { restorePrompt != nil },
-        set: { if !$0 { restorePrompt = nil } }
-      ),
+      isPresented: $restorePrompt.isPresent,
       presenting: restorePrompt
     ) { deletedReceipt in
       Button("Restore") { restoreAndOpen(deletedReceipt) }
@@ -262,9 +256,8 @@ struct ReceiptTrashView: View {
   }
 }
 
-/// A deleted receipt in the list. Taps and long presses are one gesture rather than a button or a
-/// context menu, as receipt items are, so a long press lifts the receipt into focus. While
-/// selecting, the gesture steps aside so the list handles taps and drags.
+/// A deleted receipt in the list. A long press lifts it into focus. While selecting, the gesture
+/// steps aside so the list handles taps and drags.
 private struct ReceiptTrashRow: View {
   let deletedReceipt: DeletedReceiptSummary
   let isSelecting: Bool
@@ -274,26 +267,15 @@ private struct ReceiptTrashRow: View {
   let onFocus: (_ isPressed: Bool) -> Void
   let onFocusedFrameChange: (CGRect) -> Void
 
-  @State private var isPressed = false
-
   var body: some View {
     ReceiptLibraryRow(receipt: deletedReceipt.receipt, expiresAt: deletedReceipt.expiresAt)
-      .onGeometryChange(for: CGRect?.self) { proxy in
-        isFocused ? proxy.frame(in: .global) : nil
-      } action: { frame in
-        if let frame { onFocusedFrameChange(frame) }
-      }
-      .pressScale(isPressed)
-      .opacity(isLiftedOut ? 0 : 1)
-      .transaction(value: isLiftedOut) { $0.animation = nil }
-      .contentShape(.rect)
-      .gesture(
-        ReceiptRowPressGesture(
-          onPressingChanged: { isPressed = $0 },
-          onTap: onTap,
-          onLongPress: { onFocus(true) },
-          isEnabled: !isSelecting
-        )
+      .liftableRow(
+        isFocused: isFocused,
+        isLiftedOut: isLiftedOut,
+        isEnabled: !isSelecting,
+        onTap: onTap,
+        onLongPress: { onFocus(true) },
+        onFocusedFrameChange: onFocusedFrameChange
       )
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(isSelecting ? [] : .isButton)

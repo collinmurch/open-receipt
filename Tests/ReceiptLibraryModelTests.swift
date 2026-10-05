@@ -53,7 +53,7 @@ final class ReceiptLibraryModelTests: XCTestCase {
 
     await model.load()
 
-    XCTAssertEqual(model.sections.map(\.id), ["2026-08"])
+    XCTAssertEqual(model.sections.map(\.id), ["2026-08-01"])
     XCTAssertEqual(model.sections.first?.receipts, [receipt])
   }
 
@@ -170,38 +170,16 @@ final class ReceiptLibraryModelTests: XCTestCase {
     restoreError: TestError? = nil,
     purgeExpiredTrash: @escaping @Sendable (Date) async throws -> Void = { _ in }
   ) -> ReceiptStorageClient {
-    ReceiptStorageClient(
-      create: { _, _ in throw TestError.unused },
-      createBlank: { _, _ in throw TestError.unused },
-      list: { receipts },
-      load: { _ in throw TestError.unused },
-      loadPages: { _ in throw TestError.unused },
-      pageURLs: { _ in throw TestError.unused },
-      addPages: { _, _ in throw TestError.unused },
-      deletePage: { _, _ in throw TestError.unused },
-      reorderPages: { _, _ in throw TestError.unused },
-      save: { _ in throw TestError.unused },
-      delete: { _ in
-        if let deleteError { throw deleteError }
-      },
-      listDeleted: { deletedReceipts },
-      restore: { _ in
-        if let restoreError { throw restoreError }
-      },
-      purgeExpiredTrash: purgeExpiredTrash)
-  }
-
-  private enum TestError: Error {
-    case deleteFailed
-    case restoreFailed
-    case unused
-  }
-
-  private actor CallCounter {
-    private(set) var value = 0
-
-    func increment() {
-      value += 1
+    var storage = ReceiptStorageClient.unimplemented
+    storage.list = { receipts }
+    storage.delete = { _ in
+      if let deleteError { throw deleteError }
     }
+    storage.listDeleted = { deletedReceipts }
+    storage.restore = { _ in
+      if let restoreError { throw restoreError }
+    }
+    storage.purgeExpiredTrash = purgeExpiredTrash
+    return storage
   }
 }

@@ -2,9 +2,9 @@ import SwiftUI
 @preconcurrency import VisionKit
 
 struct ReceiptScannerView: UIViewControllerRepresentable {
-  var onCapture: (ReceiptScan) -> Void
-  var onCancel: () -> Void
-  var onFailure: (Error) -> Void
+  let onCapture: (ReceiptScan) -> Void
+  let onCancel: () -> Void
+  let onFailure: (any Error) -> Void
 
   func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
     let controller = VNDocumentCameraViewController()
@@ -29,12 +29,12 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
   final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
     var onCapture: (ReceiptScan) -> Void
     var onCancel: () -> Void
-    var onFailure: (Error) -> Void
+    var onFailure: (any Error) -> Void
 
     init(
       onCapture: @escaping (ReceiptScan) -> Void,
       onCancel: @escaping () -> Void,
-      onFailure: @escaping (Error) -> Void
+      onFailure: @escaping (any Error) -> Void
     ) {
       self.onCapture = onCapture
       self.onCancel = onCancel
@@ -68,7 +68,7 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
 }
 
 extension CGImagePropertyOrientation {
-  init(_ orientation: UIImage.Orientation) {
+  fileprivate init(_ orientation: UIImage.Orientation) {
     switch orientation {
     case .up: self = .up
     case .upMirrored: self = .upMirrored

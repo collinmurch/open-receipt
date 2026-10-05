@@ -12,6 +12,12 @@ enum ReceiptBottomBar {
 }
 
 extension View {
+  /// Spacing for a bar pinned above a receipt's list, shared so the reading and review screens
+  /// line up their rows.
+  func receiptTopBarPadding() -> some View {
+    padding(.horizontal).padding(.vertical, 8)
+  }
+
   /// Floats `bar` over the bottom of the view with its bottom `ReceiptBottomBar.screenEdgeInset`
   /// from the screen's edge, whatever the device's bottom safe area.
   func receiptBottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {

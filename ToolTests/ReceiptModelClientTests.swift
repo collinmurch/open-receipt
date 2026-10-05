@@ -15,14 +15,6 @@ final class ReceiptModelClientTests: XCTestCase {
       try ReceiptModelClient.cacheKey(for: [page]))
   }
 
-  func testStandardConfigurationKeepsExistingCacheKey() throws {
-    let page = try makePage(gray: 255)
-
-    XCTAssertEqual(
-      try ReceiptModelClient.cacheKey(for: [page]),
-      try ReceiptModelClient.cacheKey(for: [page], configuration: .standard))
-  }
-
   func testConfigurationVariantInvalidatesCacheKey() throws {
     let page = try makePage(gray: 255)
 

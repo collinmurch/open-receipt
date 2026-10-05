@@ -2,6 +2,21 @@ import Darwin
 import Foundation
 import ReceiptKit
 
+enum ReportFormat {
+  case text
+  case json
+  case summary
+
+  init?(_ raw: String) {
+    switch raw.lowercased() {
+    case "text", "txt": self = .text
+    case "json": self = .json
+    case "summary", "short": self = .summary
+    default: return nil
+    }
+  }
+}
+
 enum ReceiptLabReporter {
   static func render(_ report: ReceiptLabReport, format: ReportFormat) -> String {
     switch format {
@@ -16,7 +31,7 @@ enum ReceiptLabReporter {
     var out = report.fixtures.map { summaryLine($0, color: color, showsCache: false) }.joined()
     let passed = report.fixtures.filter { $0.evaluation?.passed == true }.count
     let failed = report.fixtures.filter { $0.evaluation?.passed == false }.count
-    let errored = report.fixtures.filter { $0.evaluation == nil && $0.parseError != nil }.count
+    let errored = report.fixtures.filter { $0.parseError != nil }.count
     out += color.dim(String(repeating: "─", count: 40)) + "\n"
     out += "\(report.fixtures.count) fixtures  "
     out += "\(color.green("\(passed) pass"))  "
@@ -66,9 +81,7 @@ enum ReceiptLabReporter {
   }
 
   private static func renderText(_ report: ReceiptLabReport, color: Color) -> String {
-    var out = ""
-    out += color.dim("ReceiptLab — \(report.inputPath)") + "\n"
-    out += color.dim(String(repeating: "─", count: 60)) + "\n"
+    var out = streamHeader(inputPath: report.inputPath)
     for fixture in report.fixtures {
       out += renderFixtureText(fixture, color: color)
       out += "\n"

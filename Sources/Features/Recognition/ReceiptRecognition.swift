@@ -21,6 +21,10 @@ final class ReceiptRecognition: Identifiable {
     case cancelled
     /// The free reads are used, so the receipt was stored without being read.
     case needsUnlock
+
+    var isRecognized: Bool {
+      if case .recognized = self { true } else { false }
+    }
   }
 
   /// The receipt identifier, which is also the scan identifier.
@@ -37,7 +41,7 @@ final class ReceiptRecognition: Identifiable {
   /// Whether the model has shown any of the receipt's items.
   @ObservationIgnored private(set) var hasShownItems = false
 
-  @ObservationIgnored let scan: ReceiptScan
+  let scan: ReceiptScan
   /// The stored receipt, once it exists. A rescan starts with it.
   @ObservationIgnored var document: ReceiptDocument?
   /// The parsed receipt, kept so a retry after a failed save never reads the receipt again.

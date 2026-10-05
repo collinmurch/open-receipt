@@ -13,14 +13,20 @@ final class PeoplePickerModel {
   var isContactAccessPickerPresented = false
   let avatars = ContactAvatars()
 
-  @ObservationIgnored private let client: ContactClient
+  private let client: ContactClient
+  @ObservationIgnored private var hasLoaded = false
 
   init(client: ContactClient) {
     self.client = client
   }
 
+  /// `searchText` without surrounding whitespace.
+  var searchQuery: String {
+    searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   var filteredContacts: [ContactSummary] {
-    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let query = searchQuery
     guard !query.isEmpty else { return contacts }
     return contacts.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
   }
@@ -28,8 +34,6 @@ final class PeoplePickerModel {
   var canReadContacts: Bool {
     authorization.canReadContacts
   }
-
-  @ObservationIgnored private var hasLoaded = false
 
   func load() async {
     isLoading = !hasLoaded

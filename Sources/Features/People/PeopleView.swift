@@ -36,10 +36,7 @@ struct PeopleView: View {
     }
     .confirmationDialog(
       "Delete \(pendingDeletion?.displayName ?? "Person")?",
-      isPresented: Binding(
-        get: { pendingDeletion != nil },
-        set: { if !$0 { pendingDeletion = nil } }
-      ),
+      isPresented: $pendingDeletion.isPresent,
       titleVisibility: .visible,
       presenting: pendingDeletion
     ) { person in
@@ -62,15 +59,16 @@ struct PeopleView: View {
           contactClient: contactClient,
           selectedIdentifier: model.owner?.contactIdentifier
         ) { contact in
-          Task { _ = await model.setOwner(contact.map(ReceiptOwner.init)) }
+          Task { await model.setOwner(contact.map(ReceiptOwner.init)) }
         }
       } label: {
+        let ownerName = model.owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName
         HStack(spacing: 12) {
           PersonAvatarView(
-            name: model.owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName,
+            name: ownerName,
             imageData: model.owner.flatMap { avatars[$0.contactIdentifier] })
           VStack(alignment: .leading, spacing: 3) {
-            Text(model.owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName)
+            Text(ownerName)
             Text(model.owner == nil ? "Choose your contact" : "You")
               .font(.caption)
               .foregroundStyle(.secondary)
@@ -93,7 +91,8 @@ struct PeopleView: View {
 
   @ViewBuilder
   private var peopleContent: some View {
-    if savedPeople.isEmpty {
+    let people = savedPeople
+    if people.isEmpty {
       ContentUnavailableView(
         "No Saved People",
         systemImage: "person.2",
@@ -101,7 +100,7 @@ struct PeopleView: View {
       )
       .listRowBackground(Color.clear)
     } else {
-      ForEach(savedPeople) { person in
+      ForEach(people) { person in
         NavigationLink {
           PersonDetailView(
             person: person,

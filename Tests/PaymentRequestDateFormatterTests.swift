@@ -62,7 +62,7 @@ final class PaymentRequestDateFormatterTests: XCTestCase {
   private var testCalendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.locale = testLocale
-    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+    calendar.timeZone = .gmt
     calendar.firstWeekday = 1
     return calendar
   }

@@ -8,6 +8,7 @@ final class ScreenshotCapture: XCTestCase {
   private var highlights: URL?
 
   override func setUp() {
+    super.setUp()
     continueAfterFailure = false
   }
 

@@ -22,87 +22,103 @@ struct ReceiptTotalsSection: View {
   @FocusState private var focusedField: TotalsField?
 
   var body: some View {
+    // Each correction sums every item, so it is worked out once per update.
+    let expectedSubtotal = draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil
+    let expectedTotal = draft.totalNeedsCorrection ? draft.expectedTotal : nil
+    let showsSubtotal = !draft.adjustments.isEmpty || expectedSubtotal != nil
+
     Section {
       if isEditing {
-        if !draft.adjustments.isEmpty || draft.subtotalNeedsCorrection {
-          amountField(
-            "Subtotal",
-            field: .subtotal,
-            value: $draft.subtotal,
-            expectedValue: draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil)
-        }
-        if draft.adjustments.contains(.tax) {
-          adjustmentField(.tax, value: $draft.tax)
-        }
-        if draft.adjustments.contains(.tip) {
-          percentageAdjustmentField(
-            .tip,
-            amount: $draft.tip,
-            percentage: $draft.tipPercentage,
-            mode: $tipInputMode)
-        }
-        if draft.adjustments.contains(.savings) {
-          percentageAdjustmentField(
-            .savings,
-            amount: $draft.savings,
-            percentage: $draft.savingsPercentage,
-            mode: $savingsInputMode)
-        }
-        amountField(
-          "Total",
-          field: .total,
-          value: $draft.total,
-          isEmphasized: true,
-          expectedValue: draft.totalNeedsCorrection ? draft.expectedTotal : nil)
+        editingRows(
+          showsSubtotal: showsSubtotal, expectedSubtotal: expectedSubtotal,
+          expectedTotal: expectedTotal)
       } else {
-        if !draft.adjustments.isEmpty || draft.subtotalNeedsCorrection {
-          totalRow(
-            "Subtotal",
-            value: draft.subtotal,
-            expectedValue: draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil)
-        }
-        ForEach(ReceiptTotalAdjustment.allCases.filter(draft.adjustments.contains)) { kind in
-          totalRow(kind.title, value: draft.signedAmount(of: kind))
-        }
-        totalRow(
-          "Total",
-          value: draft.total,
-          isEmphasized: true,
-          expectedValue: draft.totalNeedsCorrection ? draft.expectedTotal : nil)
+        summaryRows(
+          showsSubtotal: showsSubtotal, expectedSubtotal: expectedSubtotal,
+          expectedTotal: expectedTotal)
       }
     } header: {
-      HStack {
-        Text("Totals")
-        if isEditing, !draft.adjustments.missing.isEmpty {
-          Menu {
-            ForEach(draft.adjustments.missing) { adjustment in
-              Button {
-                withAnimation(.settle) { draft.adjustments.add(adjustment) }
-                haptic.play(.selection)
-              } label: {
-                Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
-              }
-            }
-          } label: {
-            Label("Add Adjustment", systemImage: "plus")
-              .labelStyle(.iconOnly)
-          }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.circle)
-          .accessibilityLabel("Add Adjustment")
-        }
-        Spacer()
-      }
+      header
     } footer: {
       fixTotalButton
     }
-    .toolbar {
-      // Number pads have no return key, so the keyboard gets its own way to close.
-      if focusedField != nil {
-        ToolbarItem(placement: .keyboard) {
-          Button("Done") { focusedField = nil }
+    .keyboardDoneButton(isVisible: focusedField != nil) {
+      focusedField = nil
+    }
+  }
+
+  @ViewBuilder
+  private func editingRows(
+    showsSubtotal: Bool,
+    expectedSubtotal: Double?,
+    expectedTotal: Double?
+  ) -> some View {
+    if showsSubtotal {
+      amountField(
+        "Subtotal", field: .subtotal, value: $draft.subtotal, expectedValue: expectedSubtotal)
+    }
+    if draft.adjustments.contains(.tax) {
+      adjustmentField(.tax, value: $draft.tax)
+    }
+    if draft.adjustments.contains(.tip) {
+      percentageAdjustmentField(
+        .tip,
+        amount: $draft.tip,
+        percentage: $draft.tipPercentage,
+        mode: $tipInputMode)
+    }
+    if draft.adjustments.contains(.savings) {
+      percentageAdjustmentField(
+        .savings,
+        amount: $draft.savings,
+        percentage: $draft.savingsPercentage,
+        mode: $savingsInputMode)
+    }
+    amountField(
+      "Total",
+      field: .total,
+      value: $draft.total,
+      isEmphasized: true,
+      expectedValue: expectedTotal)
+  }
+
+  @ViewBuilder
+  private func summaryRows(
+    showsSubtotal: Bool,
+    expectedSubtotal: Double?,
+    expectedTotal: Double?
+  ) -> some View {
+    if showsSubtotal {
+      totalRow("Subtotal", value: draft.subtotal, expectedValue: expectedSubtotal)
+    }
+    ForEach(ReceiptTotalAdjustment.allCases.filter(draft.adjustments.contains)) { kind in
+      totalRow(kind.title, value: draft.signedAmount(of: kind))
+    }
+    totalRow("Total", value: draft.total, isEmphasized: true, expectedValue: expectedTotal)
+  }
+
+  private var header: some View {
+    HStack {
+      Text("Totals")
+      if isEditing, !draft.adjustments.missing.isEmpty {
+        Menu {
+          ForEach(draft.adjustments.missing) { adjustment in
+            Button {
+              withAnimation(.settle) { draft.adjustments.add(adjustment) }
+              haptic.play(.selection)
+            } label: {
+              Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
+            }
+          }
+        } label: {
+          Label("Add Adjustment", systemImage: "plus")
+            .labelStyle(.iconOnly)
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .accessibilityLabel("Add Adjustment")
       }
+      Spacer()
     }
   }
 
@@ -155,7 +171,7 @@ struct ReceiptTotalsSection: View {
     LabeledContent {
       VStack(alignment: .trailing, spacing: 2) {
         CurrencyAmountField(
-          "Amount", value: value, currencyCode: displayCurrency, isEmphasized: isEmphasized
+          value: value, currencyCode: displayCurrency, isEmphasized: isEmphasized
         )
         .multilineTextAlignment(.trailing)
         .fontWeight(isEmphasized ? .semibold : .regular)
@@ -174,9 +190,10 @@ struct ReceiptTotalsSection: View {
   @ViewBuilder
   private func correctionLabel(_ expectedValue: Double?, actualValue: Double) -> some View {
     if let expectedValue {
+      let expected = expectedValue.formatted(.currency(code: displayCurrency))
       let difference = (actualValue - expectedValue).formatted(
         .currency(code: displayCurrency).sign(strategy: .always()))
-      Text("Expected \(expectedValue.formatted(.currency(code: displayCurrency))) (\(difference))")
+      Text("Expected \(expected) (\(difference))")
         .font(.caption)
         .foregroundStyle(.orange)
         .lineLimit(1)
@@ -201,7 +218,7 @@ struct ReceiptTotalsSection: View {
         .fixedSize()
 
         if mode.wrappedValue == .amount {
-          CurrencyAmountField("Amount", value: amount, currencyCode: displayCurrency)
+          CurrencyAmountField(value: amount, currencyCode: displayCurrency)
             .focused($focusedField, equals: .adjustment(adjustment))
             .accessibilityLabel(adjustment.title)
         } else {
@@ -228,7 +245,7 @@ struct ReceiptTotalsSection: View {
     value: Binding<Double>
   ) -> some View {
     LabeledContent {
-      CurrencyAmountField("Amount", value: value, currencyCode: displayCurrency)
+      CurrencyAmountField(value: value, currencyCode: displayCurrency)
         .multilineTextAlignment(.trailing)
         .focused($focusedField, equals: .adjustment(adjustment))
         .accessibilityLabel(adjustment.title)
@@ -257,7 +274,7 @@ struct ReceiptTotalsSection: View {
 
   private func label(for mode: AdjustmentInputMode) -> String {
     switch mode {
-    case .amount: CurrencyAmountInput.symbol(currencyCode: displayCurrency)
+    case .amount: ReceiptCurrency.symbol(displayCurrency)
     case .percentage: "%"
     }
   }

@@ -5,7 +5,7 @@ import Foundation
 enum ReceiptLocalDate {
   static let calendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+    calendar.timeZone = .gmt
     return calendar
   }()
 
@@ -27,11 +27,18 @@ enum ReceiptLocalDate {
     return date
   }
 
-  /// `date`'s day in `calendar` as a zero-padded `yyyy-MM-dd`, which sorts chronologically as a
-  /// string.
-  static func string(from date: Date, in calendar: Calendar = ReceiptLocalDate.calendar) -> String {
-    let components = calendar.dateComponents([.year, .month, .day], from: date)
+  /// The day `date` falls on in `timeZone`, as a zero-padded `yyyy-MM-dd`, which sorts
+  /// chronologically as a string. The day is always written in the Gregorian calendar.
+  static func string(from date: Date, in timeZone: TimeZone = .gmt) -> String {
+    var local = calendar
+    local.timeZone = timeZone
+    let components = local.dateComponents([.year, .month, .day], from: date)
     return String(
       format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+  }
+
+  /// The day `date` falls on in `timeZone`, as the start of that day in UTC, like `date(from:)`.
+  static func day(of date: Date, in timeZone: TimeZone) -> Date {
+    Self.date(from: string(from: date, in: timeZone)) ?? date
   }
 }

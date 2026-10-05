@@ -2,7 +2,7 @@ import XCTest
 
 @testable import open_receipt
 
-final class PeopleStorageTests: XCTestCase {
+final class PeopleFileStorageTests: XCTestCase {
   private var rootURL: URL!
   private var storage: PeopleFileStorage!
 

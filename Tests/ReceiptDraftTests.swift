@@ -118,14 +118,7 @@ final class ReceiptDraftTests: XCTestCase {
 
   func testPersonIsDeduplicatedByIdentifier() {
     let draft = makeDraft()
-    let person = Person(
-      id: UUID(),
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      lastIncludedAt: Date(timeIntervalSince1970: 1),
-      displayName: "Sam Lee",
-      contactIdentifier: "contact-1",
-      paymentMethods: .init())
+    let person = Person.fixture(name: "Sam Lee", contactIdentifier: "contact-1")
 
     draft.addPerson(person)
     draft.addPerson(person)
@@ -135,14 +128,7 @@ final class ReceiptDraftTests: XCTestCase {
 
   func testPersonSnapshotUpdatesWhenAddedAgain() {
     let draft = makeDraft()
-    var person = Person(
-      id: UUID(),
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      lastIncludedAt: Date(timeIntervalSince1970: 1),
-      displayName: "Sam Lee",
-      contactIdentifier: "contact-1",
-      paymentMethods: .init())
+    var person = Person.fixture(name: "Sam Lee", contactIdentifier: "contact-1")
     draft.addPerson(person)
 
     person.displayName = "Samantha Lee"

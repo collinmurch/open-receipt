@@ -15,7 +15,7 @@ final class ReceiptFlowModelTests: XCTestCase {
     XCTAssertEqual(creatingID, id)
   }
 
-  func testCreateInputCreatesBlankReviewDraft() async {
+  func testCreateInputCreatesBlankReviewDraft() async throws {
     let id = UUID()
     let document = blankDocument(id: id)
     let storage = storage(document: document)
@@ -23,11 +23,11 @@ final class ReceiptFlowModelTests: XCTestCase {
 
     await model.performWork(using: center(storage: storage), storage: storage)
 
-    let draft = try? XCTUnwrap(model.reviewingDraft)
+    let draft = try XCTUnwrap(model.reviewingDraft)
     XCTAssertEqual(model.document?.id, id)
     XCTAssertEqual(model.document?.scan.source, .manual)
-    XCTAssertEqual(draft?.merchantName, "")
-    XCTAssertEqual(draft?.items.isEmpty, true)
+    XCTAssertEqual(draft.merchantName, "")
+    XCTAssertTrue(draft.items.isEmpty)
   }
 
   func testCreateInputAppliesOwner() async {
@@ -88,7 +88,7 @@ final class ReceiptFlowModelTests: XCTestCase {
     let scan = ReceiptScan(pages: [])
     let storage = storage(for: scan)
     let client = ReceiptParsingClient(usesSampleData: false) { _ in
-      throw FlowTestError.failed
+      throw TestError.failed
     }
     let center = center(parsingClient: client, storage: storage)
     let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
@@ -126,7 +126,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testReadWithoutFreeReadsOffersUnlock() async {
     let scan = ReceiptScan(pages: [])
     let storage = storage(for: scan)
-    let center = center(storage: storage, access: usedUpAccess())
+    let center = center(storage: storage, access: .locked(used: ReadingAccess.freeReadLimit))
     let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
 
     await model.performWork(using: center, storage: storage)
@@ -134,7 +134,7 @@ final class ReceiptFlowModelTests: XCTestCase {
     guard case .failed(let failure) = model.phase else {
       return XCTFail("Expected failed phase")
     }
-    XCTAssertTrue(failure.needsUnlock)
+    XCTAssertTrue(failure.usesFreeRead)
     XCTAssertFalse(failure.isError)
     XCTAssertTrue(failure.allowsManualEntry)
   }
@@ -142,14 +142,14 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testReadWithoutFreeReadsCanRetryAfterUnlocking() async {
     let scan = ReceiptScan(pages: [])
     let storage = storage(for: scan)
-    let access = usedUpAccess()
+    let access = ReadingAccess.locked(used: ReadingAccess.freeReadLimit)
     let center = center(storage: storage, access: access)
     let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
     await model.performWork(using: center, storage: storage)
 
     _ = try? await access.purchase()
     model.retry(using: center)
-    await model.performWork(using: center, storage: storage)
+    await performRemainingWork(of: model, using: center, storage: storage)
 
     XCTAssertNotNil(model.reviewingDraft)
   }
@@ -188,19 +188,9 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testLoadFailureDoesNotAllowManualEntry() async {
     let id = UUID()
     let model = ReceiptFlowModel(input: .storedReceipt(id))
-    let storage = storage(document: pendingDocument(for: ReceiptScan(pages: [])))
-    let failingStorage = ReceiptStorageClient(
-      create: storage.create,
-      createBlank: storage.createBlank,
-      list: storage.list,
-      load: { _ in throw FlowTestError.failed },
-      loadPages: storage.loadPages,
-      pageURLs: storage.pageURLs,
-      addPages: storage.addPages,
-      deletePage: storage.deletePage,
-      reorderPages: storage.reorderPages,
-      save: storage.save,
-      delete: storage.delete)
+    let storage = storage(document: .pending(for: ReceiptScan(pages: [])))
+    var failingStorage = storage
+    failingStorage.load = { _ in throw TestError.failed }
 
     await model.performWork(using: center(storage: failingStorage), storage: failingStorage)
 
@@ -225,8 +215,8 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   func testEnterManuallySavesSucceededReceipt() async {
     let scan = ReceiptScan(pages: [])
-    let recorder = FlowSaveRecorder()
-    let storage = storage(document: pendingDocument(for: scan), recorder: recorder)
+    let recorder = SaveRecorder()
+    let storage = storage(document: .pending(for: scan), recorder: recorder)
     let center = center(parsingClient: failingClient(), storage: storage)
     let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
     await model.performWork(using: center, storage: storage)
@@ -254,7 +244,7 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   func testEnterManuallyKeepsScanPagesForRescan() async {
     let scan = ReceiptScan(pages: [])
-    var pending = pendingDocument(for: scan)
+    var pending = ReceiptDocument.pending(for: scan)
     pending.scan.pages = [
       ReceiptDocument.Page(id: UUID(), file: "pages/page.heic", mediaType: "image/heic")
     ]
@@ -271,7 +261,7 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   func testEnterManuallyAfterFailedRescanKeepsStoredValues() async {
     let document = recognizedDocument(pageCount: 2, recognizedCount: 1)
-    let recorder = FlowSaveRecorder()
+    let recorder = SaveRecorder()
     let storage = storage(document: document, recorder: recorder)
     let center = center(parsingClient: failingClient(), storage: storage)
     let model = ReceiptFlowModel(input: .storedReceipt(document.id))
@@ -294,18 +284,8 @@ final class ReceiptFlowModelTests: XCTestCase {
     let center = center(parsingClient: failingClient(), storage: storage)
     let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
     await model.performWork(using: center, storage: storage)
-    let failingStorage = ReceiptStorageClient(
-      create: storage.create,
-      createBlank: storage.createBlank,
-      list: storage.list,
-      load: { _ in throw FlowTestError.failed },
-      loadPages: storage.loadPages,
-      pageURLs: storage.pageURLs,
-      addPages: storage.addPages,
-      deletePage: storage.deletePage,
-      reorderPages: storage.reorderPages,
-      save: storage.save,
-      delete: storage.delete)
+    var failingStorage = storage
+    failingStorage.load = { _ in throw TestError.failed }
 
     await model.enterManually(storage: failingStorage)
 
@@ -318,18 +298,11 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testLoadFailureCanRetrySameReceipt() async {
     let id = UUID()
     let model = ReceiptFlowModel(input: .storedReceipt(id))
-    let storage = ReceiptStorageClient(
-      create: { _, _ in throw FlowTestError.failed },
-      createBlank: { _, _ in throw FlowTestError.failed },
-      list: { [] },
-      load: { _ in throw FlowTestError.failed },
-      loadPages: { _ in throw FlowTestError.failed },
-      pageURLs: { _ in [] },
-      addPages: { _, _ in throw FlowTestError.failed },
-      deletePage: { _, _ in throw FlowTestError.failed },
-      reorderPages: { _, _ in throw FlowTestError.failed },
-      save: { _ in },
-      delete: { _ in })
+    var storage = ReceiptStorageClient.unimplemented
+    storage.list = { [] }
+    storage.pageURLs = { _ in [] }
+    storage.save = { _ in }
+    storage.delete = { _ in }
     let center = center(storage: storage)
 
     await model.performWork(using: center, storage: storage)
@@ -343,25 +316,15 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   func testCompletedSaveFailureRetriesWithoutParsingAgain() async {
     let scan = ReceiptScan(pages: [])
-    let pending = pendingDocument(for: scan)
+    let pending = ReceiptDocument.pending(for: scan)
     let parser = FlowParseRecorder()
     let saves = FlowFailingSaveSequence(failures: 1)
-    let storage = ReceiptStorageClient(
-      create: { _, _ in pending },
-      createBlank: { _, _ in pending },
-      list: { [] },
-      load: { _ in pending },
-      loadPages: { _ in [] },
-      pageURLs: { _ in [] },
-      addPages: { _, _ in throw FlowTestError.failed },
-      deletePage: { _, _ in throw FlowTestError.failed },
-      reorderPages: { _, _ in throw FlowTestError.failed },
-      save: { document in
-        if document.recognition.status == .succeeded {
-          try await saves.save(document)
-        }
-      },
-      delete: { _ in })
+    var storage = storage(document: pending)
+    storage.save = { document in
+      if document.recognition.status == .succeeded {
+        try await saves.save(document)
+      }
+    }
     let parsingClient = ReceiptParsingClient(usesSampleData: false) { _ in
       await parser.parse()
     }
@@ -383,7 +346,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testStoredSuccessfulReceiptLoadsReview() async {
     let scan = ReceiptScan(pages: [])
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Saved"), id: scan.id)
-    let completed = pendingDocument(for: scan).updating(from: draft)
+    let completed = ReceiptDocument.pending(for: scan).updating(from: draft)
     let storage = storage(document: completed)
     let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
 
@@ -396,7 +359,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testPreloadedReceiptOpensInReview() {
     let scan = ReceiptScan(pages: [])
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Saved"), id: scan.id)
-    let completed = pendingDocument(for: scan).updating(from: draft)
+    let completed = ReceiptDocument.pending(for: scan).updating(from: draft)
 
     let model = ReceiptFlowModel(input: .storedReceipt(scan.id, document: completed))
 
@@ -408,14 +371,14 @@ final class ReceiptFlowModelTests: XCTestCase {
     let scan = ReceiptScan(pages: [])
 
     let model = ReceiptFlowModel(
-      input: .storedReceipt(scan.id, document: pendingDocument(for: scan)))
+      input: .storedReceipt(scan.id, document: .pending(for: scan)))
 
     XCTAssertEqual(model.failure?.title, "Receipt Not Read")
   }
 
   func testPreloadedDocumentForAnotherReceiptIsIgnored() {
     let scan = ReceiptScan(pages: [])
-    let other = pendingDocument(for: ReceiptScan(pages: []))
+    let other = ReceiptDocument.pending(for: ReceiptScan(pages: []))
 
     let model = ReceiptFlowModel(input: .storedReceipt(scan.id, document: other))
 
@@ -459,19 +422,19 @@ final class ReceiptFlowModelTests: XCTestCase {
     XCTAssertEqual(parseCount, 0)
   }
 
-  func testStoredPendingReceiptIsUnread() async {
+  func testStoredPendingReceiptUsesFreeRead() async {
     let scan = ReceiptScan(pages: [])
     let storage = storage(for: scan)
     let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
 
     await model.performWork(using: center(storage: storage), storage: storage)
 
-    XCTAssertEqual(model.failure?.isUnread, true)
+    XCTAssertEqual(model.failure?.usesFreeRead, true)
   }
 
-  func testStoredDeferredReceiptIsNotUnread() async {
+  func testStoredDeferredReceiptUsesNoNewFreeRead() async {
     let scan = ReceiptScan(pages: [])
-    var document = pendingDocument(for: scan)
+    var document = ReceiptDocument.pending(for: scan)
     document.recognition.status = .failed
     document.recognition.deferredUntil = Date().addingTimeInterval(3600)
     let storage = storage(document: document)
@@ -479,12 +442,12 @@ final class ReceiptFlowModelTests: XCTestCase {
 
     await model.performWork(using: center(storage: storage), storage: storage)
 
-    XCTAssertEqual(model.failure?.isUnread, false)
+    XCTAssertEqual(model.failure?.usesFreeRead, false)
   }
 
   func testStoredDeferredReceiptWaitsForReadingLimit() async {
     let scan = ReceiptScan(pages: [])
-    var document = pendingDocument(for: scan)
+    var document = ReceiptDocument.pending(for: scan)
     document.recognition.status = .failed
     document.recognition.deferredUntil = Date().addingTimeInterval(3600)
     let storage = storage(document: document)
@@ -548,7 +511,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   }
 
   func testAutosaveWritesChangedDraft() async throws {
-    let recorder = FlowSaveRecorder()
+    let recorder = SaveRecorder()
     let (model, storage) = await reviewingModel(merchantName: "Saved", recorder: recorder)
     let draft = try XCTUnwrap(model.reviewingDraft)
 
@@ -560,7 +523,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   }
 
   func testFlushWritesWithoutDebounce() async throws {
-    let recorder = FlowSaveRecorder()
+    let recorder = SaveRecorder()
     let (model, storage) = await reviewingModel(merchantName: "Saved", recorder: recorder)
     let draft = try XCTUnwrap(model.reviewingDraft)
     draft.total = 12
@@ -584,7 +547,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   }
 
   func testFlushWithoutChangesDoesNotSave() async {
-    let recorder = FlowSaveRecorder()
+    let recorder = SaveRecorder()
     let (model, storage) = await reviewingModel(merchantName: "Saved", recorder: recorder)
 
     _ = await model.flush(storage: storage)
@@ -649,10 +612,10 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   func testFailedRescanDoesNotMarkReceiptFailed() async {
     let document = recognizedDocument(pageCount: 2, recognizedCount: 1)
-    let recorder = FlowSaveRecorder()
+    let recorder = SaveRecorder()
     let storage = storage(document: document, recorder: recorder)
     let failingClient = ReceiptParsingClient(usesSampleData: false) { _ in
-      throw FlowTestError.failed
+      throw TestError.failed
     }
     let center = center(parsingClient: failingClient, storage: storage)
     let model = ReceiptFlowModel(input: .storedReceipt(document.id))
@@ -683,7 +646,7 @@ final class ReceiptFlowModelTests: XCTestCase {
     guard case .failed(let failure) = model.phase else {
       return XCTFail("Expected failed phase")
     }
-    XCTAssertEqual(failure.title, "Couldn’t Rescan Receipt")
+    XCTAssertEqual(failure.title, "Couldn’t Read Receipt Again")
     XCTAssertEqual(failure.manualEntryTitle, "Back to Receipt")
   }
 
@@ -767,7 +730,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   func testStoringFailureCanRetry() async {
     let scan = ReceiptScan(pages: [])
     var storage = storage(for: scan)
-    storage.create = { _, _ in throw FlowTestError.failed }
+    storage.create = { _, _ in throw TestError.failed }
     let center = center(parsingClient: unavailableClient(), storage: storage)
     let model = ReceiptFlowModel(input: .scan(scan, recognitions: center))
     await model.performWork(using: center, storage: storage)
@@ -904,15 +867,27 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   private func reviewingModel(
     merchantName: String,
-    recorder: FlowSaveRecorder? = nil
+    recorder: SaveRecorder? = nil
   ) async -> (ReceiptFlowModel, ReceiptStorageClient) {
     let scan = ReceiptScan(pages: [])
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: merchantName), id: scan.id)
-    let completed = pendingDocument(for: scan).updating(from: draft)
+    let completed = ReceiptDocument.pending(for: scan).updating(from: draft)
     let storage = storage(document: completed, recorder: recorder)
     let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
     await model.performWork(using: center(storage: storage), storage: storage)
     return (model, storage)
+  }
+
+  /// Performs the model's work until it has none left, the way its view does by running it
+  /// again whenever the phase changes.
+  private func performRemainingWork(
+    of model: ReceiptFlowModel,
+    using center: ReceiptRecognitionCenter,
+    storage: ReceiptStorageClient
+  ) async {
+    for _ in 0..<10 where model.workID != nil {
+      await model.performWork(using: center, storage: storage)
+    }
   }
 
   private func center(
@@ -929,20 +904,15 @@ final class ReceiptFlowModelTests: XCTestCase {
       connectionRetryDelay: .zero)
   }
 
-  private func usedUpAccess() -> ReadingAccess {
-    let used = (1...ReadingAccess.freeReadLimit).map { "used-\($0)" }
-    return ReadingAccess(client: .fixed(isEntitled: false), store: .memory(Set(used)))
-  }
-
   private func storage(for scan: ReceiptScan) -> ReceiptStorageClient {
-    storage(document: pendingDocument(for: scan))
+    storage(document: .pending(for: scan))
   }
 
   private func storage(
     document: ReceiptDocument,
-    recorder: FlowSaveRecorder? = nil,
+    recorder: SaveRecorder? = nil,
     addPages: @escaping @Sendable (UUID, [ReceiptPage]) async throws -> ReceiptDocument = {
-      _, _ in throw FlowTestError.failed
+      _, _ in throw TestError.failed
     }
   ) -> ReceiptStorageClient {
     ReceiptStorageClient(
@@ -953,8 +923,8 @@ final class ReceiptFlowModelTests: XCTestCase {
       loadPages: { _ in [] },
       pageURLs: { _ in [] },
       addPages: addPages,
-      deletePage: { _, _ in throw FlowTestError.failed },
-      reorderPages: { _, _ in throw FlowTestError.failed },
+      deletePage: { _, _ in throw TestError.failed },
+      reorderPages: { _, _ in throw TestError.failed },
       save: { document in await recorder?.append(document) },
       delete: { _ in })
   }
@@ -962,7 +932,7 @@ final class ReceiptFlowModelTests: XCTestCase {
   private func recognizedDocument(pageCount: Int, recognizedCount: Int) -> ReceiptDocument {
     let scan = ReceiptScan(pages: [])
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Saved"), id: scan.id)
-    var document = pendingDocument(for: scan).updating(from: draft)
+    var document = ReceiptDocument.pending(for: scan).updating(from: draft)
     document.scan.pages = (0..<pageCount).map { _ in
       ReceiptDocument.Page(id: UUID(), file: "pages/page.heic", mediaType: "image/heic")
     }
@@ -972,7 +942,7 @@ final class ReceiptFlowModelTests: XCTestCase {
 
   private func failingClient() -> ReceiptParsingClient {
     ReceiptParsingClient(usesSampleData: false) { _ in
-      throw FlowTestError.failed
+      throw TestError.failed
     }
   }
 
@@ -992,46 +962,16 @@ final class ReceiptFlowModelTests: XCTestCase {
       status: { .unavailable("Unavailable.") })
   }
 
-  private func rescanningClient(merchantName: String = "Rescanned") -> ReceiptParsingClient {
+  private func rescanningClient() -> ReceiptParsingClient {
     ReceiptParsingClient(usesSampleData: false) { _ in
-      ParsedReceipt(merchantName: merchantName)
+      ParsedReceipt(merchantName: "Rescanned")
     }
-  }
-
-  private func pendingDocument(for scan: ReceiptScan) -> ReceiptDocument {
-    ReceiptDocument(
-      schemaVersion: 1,
-      id: scan.id,
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      presentation: .init(backgroundStyle: .blue),
-      scan: .init(capturedAt: scan.capturedAt, source: scan.source, pages: []),
-      recognition: .init(
-        status: .pending,
-        contractVersion: 1,
-        lastAttemptedAt: nil,
-        completedAt: nil,
-        failureMessage: nil),
-      receipt: nil,
-      split: nil)
   }
 
   private func blankDocument(id: UUID) -> ReceiptDocument {
     let scan = ReceiptScan(id: id, pages: [], source: .manual)
     let draft = ReceiptDraft(receipt: ParsedReceipt(), id: id, backgroundStyle: .blue)
-    return pendingDocument(for: scan).updating(from: draft)
-  }
-}
-
-private enum FlowTestError: Error {
-  case failed
-}
-
-private actor FlowSaveRecorder {
-  private(set) var documents: [ReceiptDocument] = []
-
-  func append(_ document: ReceiptDocument) {
-    documents.append(document)
+    return ReceiptDocument.pending(for: scan).updating(from: draft)
   }
 }
 
@@ -1064,7 +1004,7 @@ private actor FlowFailingSaveSequence {
   func save(_ document: ReceiptDocument) throws {
     if failures > 0 {
       failures -= 1
-      throw FlowTestError.failed
+      throw TestError.failed
     }
   }
 }

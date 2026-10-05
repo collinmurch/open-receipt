@@ -30,10 +30,24 @@ struct ReceiptParticipantShare: Identifiable, Equatable {
   var total: Double {
     itemSubtotal + adjustments.reduce(0) { $0 + $1.amount }
   }
+
+  /// How many items the share includes, such as "3 items".
+  var itemCountText: String {
+    String(inflecting: "^[\(items.count) item](inflect: true)")
+  }
+}
+
+extension Double {
+  /// A fraction of a receipt as a percentage, with at most one decimal place.
+  var sharePercentText: String {
+    formatted(.percent.precision(.fractionLength(0...1)))
+  }
 }
 
 struct ReceiptSplitCalculation {
   let participantShares: [ReceiptParticipantShare]
+  /// Each participant's share total, by participant.
+  let amountsOwed: [ReceiptParticipant.ID: Double]
   let unassignedItemCount: Int
   let unassignedItemTotal: Double
 }
@@ -102,6 +116,7 @@ enum ReceiptSplitCalculator {
     }
     return ReceiptSplitCalculation(
       participantShares: shares,
+      amountsOwed: Dictionary(uniqueKeysWithValues: shares.map { ($0.id, $0.total) }),
       unassignedItemCount: unassignedItemCount,
       unassignedItemTotal: unassignedItemTotal)
   }
@@ -128,7 +143,7 @@ enum ReceiptSplitCalculator {
   private static func adjustmentComponents(draft: ReceiptDraft) -> [AdjustmentComponent] {
     var components: [AdjustmentComponent] = []
     let subtotalDifference = draft.subtotal - draft.expectedSubtotal
-    if abs(subtotalDifference) >= 0.005 {
+    if subtotalDifference.isNonzeroInCents {
       components.append(
         AdjustmentComponent(
           id: "subtotal-adjustment",
@@ -137,14 +152,14 @@ enum ReceiptSplitCalculator {
     }
     for adjustment in ReceiptTotalAdjustment.allCases {
       let amount = draft.signedAmount(of: adjustment)
-      guard abs(amount) >= 0.005 else { continue }
+      guard amount.isNonzeroInCents else { continue }
       components.append(
         AdjustmentComponent(id: adjustment.rawValue, title: adjustment.title, amount: amount))
     }
 
     let knownTotal = draft.subtotal + draft.tax + draft.tip - draft.savings
     let otherDifference = draft.total - knownTotal
-    if abs(otherDifference) >= 0.005 {
+    if otherDifference.isNonzeroInCents {
       components.append(
         AdjustmentComponent(id: "other", title: "Other", amount: otherDifference))
     }

@@ -81,3 +81,17 @@ extension View {
     contentShape(.rect).onTapGesture { focus.wrappedValue = value }
   }
 }
+
+extension View {
+  /// Offers a Done button above the keyboard while `isVisible`. Number pads have no return key,
+  /// so they need their own way to close.
+  func keyboardDoneButton(isVisible: Bool, action: @escaping () -> Void) -> some View {
+    toolbar {
+      if isVisible {
+        ToolbarItem(placement: .keyboard) {
+          Button("Done", action: action)
+        }
+      }
+    }
+  }
+}

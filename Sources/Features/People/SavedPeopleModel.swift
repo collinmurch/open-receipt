@@ -1,4 +1,3 @@
-import Observation
 import SwiftUI
 
 @MainActor
@@ -10,13 +9,12 @@ final class SavedPeopleModel {
   private(set) var isLoading = false
   var errorDescription: String?
 
-  @ObservationIgnored private let storage: PeopleStorageClient
+  private let storage: PeopleStorageClient
+  @ObservationIgnored private var hasLoaded = false
 
   init(storage: PeopleStorageClient) {
     self.storage = storage
   }
-
-  @ObservationIgnored private var hasLoaded = false
 
   func load() async {
     isLoading = !hasLoaded
@@ -34,45 +32,37 @@ final class SavedPeopleModel {
     }
   }
 
-  func include(_ person: Person, at date: Date = Date()) async -> Person? {
+  func include(_ person: Person) async -> Person? {
     await include(
       id: person.id,
       displayName: person.displayName,
-      contactIdentifier: person.contactIdentifier,
-      at: date)
+      contactIdentifier: person.contactIdentifier)
   }
 
-  func include(_ contact: ContactSummary, at date: Date = Date()) async -> Person? {
+  func include(_ contact: ContactSummary) async -> Person? {
     guard
       var person = await include(
         id: nil,
         displayName: contact.displayName,
-        contactIdentifier: contact.identifier,
-        at: date)
+        contactIdentifier: contact.identifier)
     else { return nil }
     return person.adopt(contact.paymentDefaults(for: person)) ? await save(person) : person
   }
 
-  func include(name: String, at date: Date = Date()) async -> Person? {
+  func include(name: String) async -> Person? {
     let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !displayName.isEmpty else { return nil }
-    return await include(
-      id: nil,
-      displayName: displayName,
-      contactIdentifier: nil,
-      at: date)
+    return await include(id: nil, displayName: displayName, contactIdentifier: nil)
   }
 
   /// Replaces the stored owner that new receipts start with.
-  func setOwner(_ owner: ReceiptOwner?) async -> Bool {
+  func setOwner(_ owner: ReceiptOwner?) async {
     do {
       try await storage.setOwner(owner)
       self.owner = owner
       errorDescription = nil
-      return true
     } catch {
       errorDescription = error.localizedDescription
-      return false
     }
   }
 
@@ -93,10 +83,11 @@ final class SavedPeopleModel {
       guard let personDefaults = defaults[person.id], person.adopt(personDefaults) else {
         continue
       }
-      _ = await save(person)
+      await save(person)
     }
   }
 
+  @discardableResult
   func save(_ person: Person) async -> Person? {
     do {
       let saved = try await storage.save(person)
@@ -126,11 +117,10 @@ final class SavedPeopleModel {
   private func include(
     id: Person.ID?,
     displayName: String,
-    contactIdentifier: String?,
-    at date: Date
+    contactIdentifier: String?
   ) async -> Person? {
     do {
-      let person = try await storage.include(id, displayName, contactIdentifier, date)
+      let person = try await storage.include(id, displayName, contactIdentifier, Date())
       replace(person)
       errorDescription = nil
       return person

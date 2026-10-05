@@ -1,50 +1,5 @@
 import Foundation
 
-enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case venmo
-  case cashApp
-  case iMessage
-  case none
-
-  var id: Self { self }
-
-  var title: String {
-    switch self {
-    case .venmo:
-      "Venmo"
-    case .cashApp:
-      "Cash App"
-    case .iMessage:
-      "iMessage"
-    case .none:
-      "None"
-    }
-  }
-
-  var iconAssetName: String? {
-    switch self {
-    case .venmo:
-      "PaymentMethods/venmo"
-    case .cashApp:
-      "PaymentMethods/cashApp"
-    case .iMessage:
-      "PaymentMethods/iMessage"
-    case .none:
-      nil
-    }
-  }
-
-  /// Whether requests through this method can be in `currency`. Venmo and Cash App only move USD.
-  func supports(currency: String) -> Bool {
-    switch self {
-    case .venmo, .cashApp:
-      currency == "USD"
-    case .iMessage, .none:
-      true
-    }
-  }
-}
-
 struct Person: Codable, Equatable, Identifiable, Sendable {
   struct PaymentMethods: Codable, Equatable, Sendable {
     var defaultMethod: PaymentMethod?
@@ -52,24 +7,8 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
     var cashApp: CashApp?
     var iMessage: IMessage?
 
-    init(
-      defaultMethod: PaymentMethod? = nil,
-      venmo: Venmo? = nil,
-      cashApp: CashApp? = nil,
-      iMessage: IMessage? = nil
-    ) {
-      self.defaultMethod = defaultMethod
-      self.venmo = venmo
-      self.cashApp = cashApp
-      self.iMessage = iMessage
-    }
-
-    func resolvedMethod(globalDefault: PaymentMethod) -> PaymentMethod {
-      defaultMethod ?? globalDefault
-    }
-
     func destination(globalDefault: PaymentMethod) -> PaymentDestination? {
-      switch resolvedMethod(globalDefault: globalDefault) {
+      switch defaultMethod ?? globalDefault {
       case .venmo:
         venmo.map { .venmo($0.recipient) }
       case .cashApp:
@@ -113,15 +52,6 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
 
     var recipient: Recipient
     var customUsername: String? = nil
-
-    init(recipient: Recipient, customUsername: String? = nil) {
-      self.recipient = recipient
-      self.customUsername = customUsername
-    }
-
-    init(username: String) {
-      self.init(recipient: Recipient(kind: .username, value: username), customUsername: username)
-    }
 
     /// `value` without surrounding whitespace or a leading "@".
     static func normalizedUsername(_ value: String) -> String {
@@ -181,51 +111,9 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
-enum PaymentDestination: Equatable, Sendable {
-  case venmo(Person.Venmo.Recipient)
-  case cashApp(Person.CashApp)
-  case iMessage(Person.IMessage.Recipient)
-
-  var method: PaymentMethod {
-    switch self {
-    case .venmo:
-      .venmo
-    case .cashApp:
-      .cashApp
-    case .iMessage:
-      .iMessage
-    }
-  }
-
-  var displayValue: String {
-    switch self {
-    case .venmo(let recipient):
-      recipient.displayValue
-    case .cashApp(let cashApp):
-      cashApp.displayValue
-    case .iMessage(let recipient):
-      recipient.displayValue
-    }
-  }
-}
-
-enum USPhoneNumber {
-  /// The digits of `value`, dropping a leading US country code of 1 from an 11-digit number.
-  static func nationalDigits(_ value: String) -> String {
-    let digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })
-    return digits.count == 11 && digits.hasPrefix("1") ? String(digits.dropFirst()) : digits
-  }
-
-  /// The ten digits of a US phone number, dropping a leading country code of 1.
-  static func digits(_ value: String) -> String? {
-    let digits = nationalDigits(value)
-    return digits.count == 10 ? digits : nil
-  }
-
-  /// Formats a US phone number as "(xxx) xxx-xxxx".
-  static func formatted(_ value: String) -> String? {
-    guard let digits = digits(value) else { return nil }
-    return "(\(digits.prefix(3))) \(digits.dropFirst(3).prefix(3))-\(digits.suffix(4))"
+extension Person.Venmo {
+  init(username: String) {
+    self.init(recipient: Recipient(kind: .username, value: username), customUsername: username)
   }
 }
 
@@ -233,39 +121,4 @@ enum USPhoneNumber {
 struct ReceiptOwner: Codable, Equatable, Sendable {
   var contactIdentifier: String
   var displayName: String
-}
-
-struct PeopleDocument: Codable, Equatable, Sendable {
-  static let currentSchemaVersion = 3
-
-  var schemaVersion = currentSchemaVersion
-  var people: [Person] = []
-  var owner: ReceiptOwner?
-}
-
-/// A payment recipient that can be one of a contact's phone numbers or email addresses.
-protocol ContactRecipient: Hashable, Identifiable {
-  static func phoneNumber(_ value: String) -> Self
-  static func emailAddress(_ value: String) -> Self
-  var displayValue: String { get }
-}
-
-extension Person.Venmo.Recipient: ContactRecipient {
-  static func phoneNumber(_ value: String) -> Self {
-    .init(kind: .phoneNumber, value: value)
-  }
-
-  static func emailAddress(_ value: String) -> Self {
-    .init(kind: .emailAddress, value: value)
-  }
-}
-
-extension Person.IMessage.Recipient: ContactRecipient {
-  static func phoneNumber(_ value: String) -> Self {
-    .init(kind: .phoneNumber, value: value)
-  }
-
-  static func emailAddress(_ value: String) -> Self {
-    .init(kind: .emailAddress, value: value)
-  }
 }

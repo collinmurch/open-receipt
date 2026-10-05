@@ -10,9 +10,7 @@ extension View {
   ) -> some View {
     alert(
       title,
-      isPresented: Binding(
-        get: { message.wrappedValue != nil },
-        set: { if !$0 { message.wrappedValue = nil } }),
+      isPresented: message.isPresent,
       presenting: message.wrappedValue,
       actions: { _ in actions() },
       message: { Text($0) }

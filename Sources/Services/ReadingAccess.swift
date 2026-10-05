@@ -1,5 +1,5 @@
-import Foundation
-import Observation
+import StoreKit
+import SwiftUI
 
 /// Whether receipts can be read: unlimited after the one-time purchase, and a few free reads
 /// before it. Each free read is recorded under a key when it starts, so a read that is retried,
@@ -15,10 +15,10 @@ final class ReadingAccess {
   private(set) var channel = BuildChannel.current
   private var usedReads: Set<String>
 
-  @ObservationIgnored private let client: PurchaseClient
-  @ObservationIgnored private let store: FreeReadStore
-  @ObservationIgnored private let defaults: UserDefaults
-  @ObservationIgnored private let resolveChannel: @Sendable () async -> BuildChannel
+  private let client: PurchaseClient
+  private let store: FreeReadStore
+  private let defaults: UserDefaults
+  private let resolveChannel: @Sendable () async -> BuildChannel
 
   init(
     client: PurchaseClient,
@@ -53,15 +53,6 @@ final class ReadingAccess {
     String(inflecting: "^[\(freeReadsLeft) free read](inflect: true) left")
   }
 
-  var hasUsedFreeReads: Bool {
-    !usedReads.isEmpty
-  }
-
-  /// Whether the build tests purchases, where free reads can be reset and the purchase removed.
-  var isTesting: Bool {
-    channel.isTesting
-  }
-
   /// Follows purchases and the free read record for as long as the calling task runs.
   func start() async {
     // The channel decides whether a purchase removed in testing counts, so it comes first.
@@ -88,7 +79,7 @@ final class ReadingAccess {
 
   func refresh() async {
     let isEntitled = await client.isEntitled()
-    isUnlocked = isEntitled && !(isTesting && isPurchaseRemovedForTesting)
+    isUnlocked = isEntitled && !(channel.isTesting && isPurchaseRemovedForTesting)
     mergeStoredReads()
   }
 
@@ -119,8 +110,9 @@ final class ReadingAccess {
     displayPrice = try await client.displayPrice()
   }
 
-  func purchase() async throws -> PurchaseOutcome {
-    let outcome = try await client.purchase()
+  /// Buys unlimited reading, confirming through `action` when the view offering it passes one.
+  func purchase(using action: PurchaseAction? = nil) async throws -> PurchaseOutcome {
+    let outcome = try await client.purchase(action)
     if outcome == .purchased {
       isPurchaseRemovedForTesting = false
       await refresh()
@@ -139,7 +131,7 @@ final class ReadingAccess {
   /// Sets how many free reads are left, keeping the reads already recorded where it can. Only
   /// builds that test purchases can.
   func setFreeReadsLeftForTesting(_ count: Int) {
-    guard isTesting else { return }
+    guard channel.isTesting else { return }
     let used = Self.freeReadLimit - min(max(count, 0), Self.freeReadLimit)
     var reads = Set(usedReads.sorted().prefix(used))
     var filler = 0
@@ -154,7 +146,7 @@ final class ReadingAccess {
   /// Treats this build as if the purchase was never made, until it is bought or restored again.
   /// The App Store keeps the purchase, so only builds that test purchases can.
   func removePurchaseForTesting() async {
-    guard isTesting else { return }
+    guard channel.isTesting else { return }
     isPurchaseRemovedForTesting = true
     await refresh()
   }

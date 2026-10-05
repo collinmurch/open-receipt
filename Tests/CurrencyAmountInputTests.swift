@@ -61,7 +61,7 @@ final class CurrencyAmountInputTests: XCTestCase {
   }
 
   func testZeroFractionCurrencyUsesWholeUnits() {
-    let fractionDigits = CurrencyAmountInput.fractionDigits(currencyCode: "JPY")
+    let fractionDigits = ReceiptCurrency.fractionDigits("JPY")
 
     let amount = CurrencyAmountInput.amount(
       replacing: "¥12", with: "¥123", fractionDigits: fractionDigits)

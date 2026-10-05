@@ -24,3 +24,12 @@ struct ReceiptScan: Identifiable, Sendable {
     self.source = source
   }
 }
+
+extension ReceiptScan {
+  /// The scan stored with `document`, with its `pages` loaded.
+  init(document: ReceiptDocument, pages: [ReceiptPage]) {
+    self.init(
+      id: document.id, pages: pages, capturedAt: document.scan.capturedAt,
+      source: document.scan.source)
+  }
+}

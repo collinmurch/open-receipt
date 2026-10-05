@@ -7,6 +7,12 @@ struct ReceiptLibraryView: View {
   let onScan: () -> Void
   let onOpen: (HomeRoute) -> Void
   @State private var searchText = ""
+  @State private var isSearchPresented = false
+  @FocusState private var isSearchFocused: Bool
+  /// Whether the new receipt button stays a close button under search after the chooser faded
+  /// for it, so it turns back while search hides it rather than as search covers it.
+  @State private var holdsCloseUnderSearch = false
+  @State private var chooserPhase = NewReceiptChooserPhase.hidden
   @State private var importedItems: [PhotosPickerItem] = []
   @State private var isPhotoPickerPresented = false
   @State private var isImporting = false
@@ -14,8 +20,8 @@ struct ReceiptLibraryView: View {
   @State private var openingReceiptID: ReceiptSummary.ID?
   @State private var focusedID: ReceiptSummary.ID?
   @State private var focusedRowFrame: CGRect?
-  @State private var isFocusedRowPressed = false
   @State private var haptic = HapticEvent()
+  @State private var riseCount = 0
   @State private var isUnlockPresented = false
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
@@ -24,9 +30,9 @@ struct ReceiptLibraryView: View {
 
   var body: some View {
     @Bindable var library = library
-    let reading = readingReceipts
     let query = searchQuery
-    let sections = displayedSections(reading: reading, query: query)
+    let allSections = librarySections(reading: readingReceipts)
+    let sections = query.isEmpty ? allSections : filtered(allSections, matching: query)
 
     List {
       if recognitions.modelStatus != .available {
@@ -37,7 +43,7 @@ struct ReceiptLibraryView: View {
         }
       }
 
-      if !access.isUnlocked, access.hasUsedFreeReads {
+      if !access.isUnlocked, access.freeReadsLeft < ReadingAccess.freeReadLimit {
         Section {
           FreeReadsNotice { isUnlockPresented = true }
         }
@@ -78,12 +84,21 @@ struct ReceiptLibraryView: View {
         }
       }
     }
-    // Search results update as they're typed, like the system's, rather than animating.
-    .animation(query.isEmpty ? .smooth(duration: 0.3) : nil, value: sections)
+    // Search results update as they're typed and as search closes, like the system's, so only
+    // changes to the library itself animate.
+    .animation(.smooth(duration: 0.3), value: allSections)
+    .gesture(
+      ListBackgroundTapGesture(
+        isEnabled: isSearchPresented && !isFocusing,
+        onTap: lowerSearch
+      )
+    )
     .overlay { libraryFocus(in: sections) }
+    .overlay { newReceiptChooser }
     .navigationTitle("Receipts")
     .buildChannelSubtitle()
-    .searchable(text: $searchText, prompt: "Search receipts")
+    .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "Search receipts")
+    .searchFocused($isSearchFocused)
     .toolbar { libraryToolbar }
     .toolbarVisibility(isFocusing ? .hidden : .automatic, for: .bottomBar)
     .photosPicker(
@@ -104,6 +119,16 @@ struct ReceiptLibraryView: View {
     .onChange(of: searchText) {
       if focusedID != nil { endFocus() }
     }
+    .onChange(of: isSearchPresented) { _, isPresented in
+      if isPresented {
+        // Search's own expansion is the only motion in the bottom bar, so the chooser fades.
+        guard chooserPhase.isRaised else { return }
+        chooserPhase = .fading
+        holdsCloseUnderSearch = true
+      } else {
+        holdsCloseUnderSearch = false
+      }
+    }
     .haptics(haptic)
     .errorAlert("Couldn’t Update Receipts", message: $library.errorDescription) {
       Button("Retry") { Task { await library.load() } }
@@ -116,42 +141,96 @@ struct ReceiptLibraryView: View {
   @ToolbarContentBuilder
   private var libraryToolbar: some ToolbarContent {
     if !isFocusing {
+      // Disabled rather than removed while choosing: rebuilding the toolbar as search activates
+      // takes the search field's focus.
       ToolbarItemGroup(placement: .topBarTrailing) {
         Button("People", systemImage: "person.2") { onOpen(.people) }
+          .disabled(isChoosingSource)
         Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
+          .disabled(isChoosingSource)
       }
     }
 
     DefaultToolbarItem(kind: .search, placement: .bottomBar)
     ToolbarSpacer(.flexible, placement: .bottomBar)
     ToolbarItem(placement: .bottomBar) {
-      newReceiptMenu
+      newReceiptButton
     }
     .matchedTransitionSource(id: HomeZoomSource.newReceipt, in: transitionNamespace)
   }
 
-  private var newReceiptMenu: some View {
-    Menu {
-      Button("Scan", systemImage: "document.viewfinder", action: onScan)
-      Button("Import", systemImage: "photo.on.rectangle.angled") {
-        recognitions.prewarm()
-        isPhotoPickerPresented = true
-      }
-      Button("Create", systemImage: "square.and.pencil") {
-        onOpen(.receipt(.create(), zoomingFrom: .newReceipt))
-      }
+  /// Raises the ways to start a receipt, and turns into a close button while they're up.
+  private var newReceiptButton: some View {
+    Button {
+      toggleChooser()
     } label: {
       if isImporting {
         ProgressView()
           .transition(.opacity)
       } else {
-        Label("New Receipt", systemImage: "plus")
+        Label(showsClose ? "Close" : "New Receipt", systemImage: "plus")
+          .rotationEffect(.degrees(showsClose ? 45 : 0))
+          // Without a chooser, the button only turns back as search hides it, so without a spin.
+          .animation(chooserPhase == .hidden ? nil : .choiceToggle, value: showsClose)
           .transition(.opacity)
       }
     }
     .buttonStyle(.glassProminent)
+    .sensoryFeedback(.rise, trigger: riseCount)
     .disabled(isImporting || isFocusing)
     .animation(.smooth(duration: 0.2), value: isImporting)
+  }
+
+  @ViewBuilder
+  private var newReceiptChooser: some View {
+    if chooserPhase != .hidden {
+      NewReceiptChooser(
+        phase: chooserPhase,
+        onChoose: choose,
+        onDismiss: { chooserPhase = .dropping(pending: nil) },
+        onFinish: { pending in
+          chooserPhase = .hidden
+          if let pending { start(from: pending) }
+        }
+      )
+    }
+  }
+
+  private var isChoosingSource: Bool { chooserPhase.isRaised }
+
+  private var showsClose: Bool { isChoosingSource || holdsCloseUnderSearch }
+
+  private func toggleChooser() {
+    if chooserPhase.isRaised {
+      chooserPhase = .dropping(pending: nil)
+    } else {
+      riseCount += 1
+      chooserPhase = .raised
+    }
+  }
+
+  /// The camera and photo picker cover the screen, so they open at once while the chooser drops
+  /// beneath them. Create zooms out of the new receipt button, so it waits for the drop.
+  private func choose(_ source: NewReceiptSource) {
+    switch source {
+    case .scan, .importPhotos:
+      start(from: source)
+      chooserPhase = .dropping(pending: nil)
+    case .create:
+      chooserPhase = .dropping(pending: source)
+    }
+  }
+
+  private func start(from source: NewReceiptSource) {
+    switch source {
+    case .scan:
+      onScan()
+    case .importPhotos:
+      recognitions.prewarm()
+      isPhotoPickerPresented = true
+    case .create:
+      onOpen(.receipt(.create(), zoomingFrom: .newReceipt))
+    }
   }
 
   private func row(for receipt: ReceiptSummary) -> some View {
@@ -164,7 +243,7 @@ struct ReceiptLibraryView: View {
       isFocused: isFocused,
       isLiftedOut: isFocused && focusedRowFrame != nil,
       onTap: { open(receipt) },
-      onFocus: { focus(receipt, isPressed: $0) },
+      onFocus: { focus(receipt) },
       onDelete: { delete(receipt) },
       onFocusedFrameChange: { focusedRowFrame = $0 }
     )
@@ -180,7 +259,7 @@ struct ReceiptLibraryView: View {
         row: ReceiptLibraryRow(
           receipt: receipt, recognition: recognitions.recognition(for: receipt.id)),
         rowFrame: focusedRowFrame,
-        startsPressed: isFocusedRowPressed,
+        startsPressed: true,
         primaryAction: receipt.isUnavailable
           ? nil
           : .init(title: "Open", systemImage: "arrow.up.forward") { open(receipt) },
@@ -195,10 +274,9 @@ struct ReceiptLibraryView: View {
 
   private var isFocusing: Bool { focusedID != nil }
 
-  private func focus(_ receipt: ReceiptSummary, isPressed: Bool) {
+  private func focus(_ receipt: ReceiptSummary) {
     guard !isFocusing else { return }
     haptic.play(.lift)
-    isFocusedRowPressed = isPressed
     withAnimation(.settle) {
       focusedID = receipt.id
     }
@@ -229,6 +307,16 @@ struct ReceiptLibraryView: View {
     }
   }
 
+  /// Lowers the keyboard, keeping any results on screen, or closes search once there's nothing
+  /// left to lower.
+  private func lowerSearch() {
+    if isSearchFocused, !searchQuery.isEmpty {
+      isSearchFocused = false
+    } else {
+      isSearchPresented = false
+    }
+  }
+
   private var searchQuery: String {
     searchText.trimmingCharacters(in: .whitespacesAndNewlines)
   }
@@ -245,17 +333,19 @@ struct ReceiptLibraryView: View {
       }
   }
 
-  /// The library's sections with `reading` merged in and narrowed to `query`. Reading a streaming
-  /// merchant name here redraws the list as it streams, so it is read only while searching.
-  private func displayedSections(
-    reading: [ReceiptSummary],
-    query: String
-  ) -> [ReceiptLibrarySection] {
-    let sections =
-      reading.isEmpty
+  /// The library's sections with `reading` merged in.
+  private func librarySections(reading: [ReceiptSummary]) -> [ReceiptLibrarySection] {
+    reading.isEmpty
       ? library.sections : ReceiptLibrarySections.grouped(reading + library.receipts)
-    guard !query.isEmpty else { return sections }
-    return ReceiptLibrarySections.filtered(sections) { receipt in
+  }
+
+  /// `sections` narrowed to `query`. Reading a streaming merchant name here redraws the list as it
+  /// streams, so it is read only while searching.
+  private func filtered(
+    _ sections: [ReceiptLibrarySection],
+    matching query: String
+  ) -> [ReceiptLibrarySection] {
+    ReceiptLibrarySections.filtered(sections) { receipt in
       [
         receipt.merchantName,
         recognitions.recognition(for: receipt.id)?.preview.merchantName,
@@ -287,7 +377,7 @@ struct ReceiptLibraryView: View {
     }
     let pages = await ReceiptPhotoImporter.pages(from: items)
     guard !pages.isEmpty else {
-      importErrorDescription = "The selected images could not be read. Select different images."
+      importErrorDescription = "The selected images couldn’t be opened. Select different images."
       return
     }
     let scan = ReceiptScan(pages: pages, source: .photoLibrary)
@@ -295,8 +385,7 @@ struct ReceiptLibraryView: View {
   }
 }
 
-/// A receipt in the library. Taps and long presses are one gesture rather than a button or a
-/// context menu, as receipt items are, so a long press lifts the receipt into focus.
+/// A receipt in the library. A long press lifts it into focus.
 private struct ReceiptLibraryListRow: View {
   let receipt: ReceiptSummary
   let recognition: ReceiptRecognition?
@@ -304,30 +393,18 @@ private struct ReceiptLibraryListRow: View {
   let isFocused: Bool
   let isLiftedOut: Bool
   let onTap: () -> Void
-  let onFocus: (_ isPressed: Bool) -> Void
+  let onFocus: () -> Void
   let onDelete: () -> Void
   let onFocusedFrameChange: (CGRect) -> Void
 
-  @State private var isPressed = false
-
   var body: some View {
     ReceiptLibraryRow(receipt: receipt, recognition: recognition, transition: transition)
-      .onGeometryChange(for: CGRect?.self) { proxy in
-        isFocused ? proxy.frame(in: .global) : nil
-      } action: { frame in
-        if let frame { onFocusedFrameChange(frame) }
-      }
-      .pressScale(isPressed)
-      // The focused copy stands in for the row, so the row hides and returns in one frame.
-      .opacity(isLiftedOut ? 0 : 1)
-      .transaction(value: isLiftedOut) { $0.animation = nil }
-      .contentShape(.rect)
-      .gesture(
-        ReceiptRowPressGesture(
-          onPressingChanged: { isPressed = $0 },
-          onTap: onTap,
-          onLongPress: { onFocus(true) }
-        )
+      .liftableRow(
+        isFocused: isFocused,
+        isLiftedOut: isLiftedOut,
+        onTap: onTap,
+        onLongPress: onFocus,
+        onFocusedFrameChange: onFocusedFrameChange
       )
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(receipt.isUnavailable ? [] : .isButton)
@@ -367,120 +444,7 @@ private struct ReceiptLibraryEmptyState: View {
   }
 }
 
-/// How many free reads are left, shown once the first one is used. Tapping it offers the
-/// purchase.
-private struct FreeReadsNotice: View {
-  let onUnlock: () -> Void
-  @Environment(ReadingAccess.self) private var access
-  @ScaledMetric(relativeTo: .headline) private var ringSize: CGFloat = 36
-
-  var body: some View {
-    Button(action: onUnlock) {
-      HStack(spacing: 14) {
-        indicator
-          .frame(width: ringSize, height: ringSize)
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .font(.headline)
-            .foregroundStyle(.primary)
-          Text(detail)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        }
-        Spacer(minLength: 0)
-        Image(systemName: "chevron.forward")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.tertiary)
-          .accessibilityHidden(true)
-      }
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-    .accessibilityHint("Shows the unlimited reading purchase")
-  }
-
-  @ViewBuilder
-  private var indicator: some View {
-    let left = access.freeReadsLeft
-    if left == 0 {
-      Image(systemName: "lock.fill")
-        .font(.title3)
-        .foregroundStyle(.tint)
-    } else {
-      ZStack {
-        Circle()
-          .stroke(.tint.opacity(0.2), lineWidth: 4)
-        Circle()
-          .trim(from: 0, to: Double(left) / Double(ReadingAccess.freeReadLimit))
-          .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-          .rotationEffect(.degrees(-90))
-        Text("\(left)")
-          .font(.subheadline.weight(.semibold).monospacedDigit())
-          .contentTransition(.numericText(value: Double(left)))
-      }
-      .animation(.smooth, value: left)
-    }
-  }
-
-  private var title: String {
-    access.freeReadsLeft == 0
-      ? "Free Reads Used" : access.freeReadsLeftDescription.localizedCapitalized
-  }
-
-  private var detail: String {
-    access.freeReadsLeft == 0
-      ? "Unlock unlimited reading, or enter receipts yourself."
-      : "Unlock unlimited reading with one purchase."
-  }
-}
-
-/// Persistent status for receipt reading, shown before a person scans rather than after.
-private struct ReceiptModelNotice: View {
-  let status: ReceiptModelStatus
-  let onIncreaseLimit: () -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Label(message, systemImage: systemImage)
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-      if canIncreaseLimit {
-        Button("Increase Limit", action: onIncreaseLimit)
-          .font(.footnote.weight(.semibold))
-      }
-    }
-  }
-
-  private var message: String {
-    switch status {
-    case .available:
-      return ""
-    case .approachingLimit:
-      return "You’re close to today’s limit for reading receipts."
-    case .limitReached(let resetDate, _):
-      let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
-      return
-        "Today’s reading limit is reached. New scans are saved and read automatically \(resumption)."
-    case .unavailable(let reason):
-      return "\(reason) You can still enter receipts manually."
-    }
-  }
-
-  private var systemImage: String {
-    switch status {
-    case .available, .approachingLimit: "gauge.with.dots.needle.67percent"
-    case .limitReached: "hourglass"
-    case .unavailable: "exclamationmark.triangle"
-    }
-  }
-
-  private var canIncreaseLimit: Bool {
-    switch status {
-    case .approachingLimit(let canIncreaseLimit), .limitReached(_, let canIncreaseLimit):
-      canIncreaseLimit
-    case .available, .unavailable:
-      false
-    }
-  }
+extension Animation {
+  /// The new receipt button turning between a plus and a close button.
+  fileprivate static let choiceToggle = Animation.spring(duration: 0.4, bounce: 0.3)
 }

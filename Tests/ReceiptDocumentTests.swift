@@ -6,7 +6,7 @@ import XCTest
 final class ReceiptDocumentTests: XCTestCase {
   func testDraftRoundTripPreservesReceiptValues() throws {
     let draft = makeDraft()
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -19,7 +19,7 @@ final class ReceiptDocumentTests: XCTestCase {
     let draft = makeDraft()
     let participant = draft.addManualParticipant(named: "Sam")
     draft.items[0].participantIDs.insert(participant.id)
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -30,7 +30,7 @@ final class ReceiptDocumentTests: XCTestCase {
   func testDraftRoundTripPreservesOwner() throws {
     let draft = makeDraft()
     draft.setOwner(ReceiptOwner(contactIdentifier: "me", displayName: "Alex"))
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -40,16 +40,9 @@ final class ReceiptDocumentTests: XCTestCase {
 
   func testDraftRoundTripPreservesGlobalPersonIdentifier() throws {
     let draft = makeDraft()
-    let person = Person(
-      id: UUID(),
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      lastIncludedAt: Date(timeIntervalSince1970: 1),
-      displayName: "Sam",
-      contactIdentifier: nil,
-      paymentMethods: .init())
+    let person = Person.fixture(name: "Sam")
     let participant = draft.addPerson(person)
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -59,7 +52,7 @@ final class ReceiptDocumentTests: XCTestCase {
   func testDraftRoundTripPreservesAdjustmentMethod() throws {
     let draft = makeDraft()
     draft.adjustmentSplitMethod = .even
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -69,7 +62,7 @@ final class ReceiptDocumentTests: XCTestCase {
   func testDraftRoundTripPreservesCompletion() throws {
     let draft = makeDraft()
     draft.complete()
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     let loadedDraft = try ReceiptDraft(document: document)
 
@@ -82,7 +75,7 @@ final class ReceiptDocumentTests: XCTestCase {
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     draft.recordRequest(for: participant.id, at: date)
 
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let loadedDraft = try ReceiptDraft(document: document)
 
     XCTAssertEqual(
@@ -93,7 +86,7 @@ final class ReceiptDocumentTests: XCTestCase {
   func testParticipantWithoutLastRequestedDateDecodesWithNoDate() throws {
     let draft = makeDraft()
     draft.addManualParticipant(named: "Sam")
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let data = try encoder.encode(document)
     var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     var split = try XCTUnwrap(json["split"] as? [String: Any])
@@ -112,7 +105,7 @@ final class ReceiptDocumentTests: XCTestCase {
     let draft = makeDraft()
     draft.savings = 2
 
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let savings = try XCTUnwrap(
       document.receipt?.amounts.adjustments.first { $0.kind == .savings })
 
@@ -121,17 +114,10 @@ final class ReceiptDocumentTests: XCTestCase {
 
   func testAvatarDataIsNotStored() throws {
     let draft = makeDraft()
-    let person = Person(
-      id: UUID(),
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      lastIncludedAt: Date(timeIntervalSince1970: 1),
-      displayName: "Sam",
-      contactIdentifier: "contact-1",
-      paymentMethods: .init())
+    let person = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
     draft.addPerson(person, avatarData: Data([1, 2, 3]))
 
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let data = try encoder.encode(document)
     let json = try XCTUnwrap(String(data: data, encoding: .utf8))
 
@@ -155,14 +141,14 @@ final class ReceiptDocumentTests: XCTestCase {
   }
 
   func testNeedsRescanWhenPagesWereNotRecognized() {
-    var document = pendingDocument(id: UUID())
+    var document = ReceiptDocument.pending(id: UUID())
     document.scan.pages = [makePage()]
 
     XCTAssertTrue(document.needsRescan)
   }
 
   func testNeedsRescanAfterPageIsAdded() {
-    var document = pendingDocument(id: UUID())
+    var document = ReceiptDocument.pending(id: UUID())
     let recognized = makePage()
     document.scan.pages = [recognized, makePage()]
     document.recognition.pageIDs = [recognized.id]
@@ -171,7 +157,7 @@ final class ReceiptDocumentTests: XCTestCase {
   }
 
   func testDoesNotNeedRescanWhenPagesWereRecognized() {
-    var document = pendingDocument(id: UUID())
+    var document = ReceiptDocument.pending(id: UUID())
     let page = makePage()
     document.scan.pages = [page]
     document.recognition.pageIDs = [page.id]
@@ -180,7 +166,7 @@ final class ReceiptDocumentTests: XCTestCase {
   }
 
   func testReorderedPagesDoNotNeedRescan() {
-    var document = pendingDocument(id: UUID())
+    var document = ReceiptDocument.pending(id: UUID())
     let pages = [makePage(), makePage()]
     document.scan.pages = pages.reversed()
     document.recognition.pageIDs = pages.map(\.id)
@@ -189,11 +175,11 @@ final class ReceiptDocumentTests: XCTestCase {
   }
 
   func testReceiptWithoutPagesDoesNotNeedRescan() {
-    XCTAssertFalse(pendingDocument(id: UUID()).needsRescan)
+    XCTAssertFalse(ReceiptDocument.pending(id: UUID()).needsRescan)
   }
 
   func testRecognizedPagesEncodeAsPageIds() throws {
-    var document = pendingDocument(id: UUID())
+    var document = ReceiptDocument.pending(id: UUID())
     document.recognition.pageIDs = [UUID()]
 
     let object = try JSONSerialization.jsonObject(with: encoder.encode(document.recognition))
@@ -218,27 +204,6 @@ final class ReceiptDocumentTests: XCTestCase {
         payment: ReceiptPayment(method: "Card", last4: "4242"),
         items: [ReceiptItem(description: "Coffee", quantity: 2, lineTotal: 10)]),
       backgroundStyle: .mint)
-  }
-
-  private func pendingDocument(id: UUID) -> ReceiptDocument {
-    ReceiptDocument(
-      schemaVersion: 1,
-      id: id,
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      presentation: .init(backgroundStyle: .mint),
-      scan: .init(
-        capturedAt: Date(timeIntervalSince1970: 1),
-        source: .documentCamera,
-        pages: []),
-      recognition: .init(
-        status: .pending,
-        contractVersion: 1,
-        lastAttemptedAt: nil,
-        completedAt: nil,
-        failureMessage: nil),
-      receipt: nil,
-      split: nil)
   }
 
   private var encoder: JSONEncoder {

@@ -1,73 +1,6 @@
 import Foundation
 import Observation
 
-struct ReceiptFlowInput: Identifiable, Hashable {
-  enum Source {
-    case create
-    case storedReceipt
-    case recognition(ReceiptRecognition)
-    /// A new scan to store without reading, because the model can't read it.
-    case unreadScan(ReceiptScan)
-  }
-
-  /// The receipt identifier.
-  let id: UUID
-  let source: Source
-  /// The receipt's colors, when they are known before it loads.
-  let backgroundStyle: ReceiptBackgroundStyle?
-  /// The stored receipt, when it was loaded before the screen opened, so the receipt shows on the
-  /// first frame instead of loading during the transition.
-  var preloadedDocument: ReceiptDocument?
-
-  static func create(
-    id: UUID = UUID(),
-    backgroundStyle: ReceiptBackgroundStyle = .random()
-  ) -> ReceiptFlowInput {
-    ReceiptFlowInput(id: id, source: .create, backgroundStyle: backgroundStyle)
-  }
-
-  static func storedReceipt(
-    _ id: UUID,
-    backgroundStyle: ReceiptBackgroundStyle? = nil,
-    document: ReceiptDocument? = nil
-  ) -> ReceiptFlowInput {
-    ReceiptFlowInput(
-      id: id,
-      source: .storedReceipt,
-      backgroundStyle: backgroundStyle,
-      preloadedDocument: document)
-  }
-
-  @MainActor
-  static func recognition(_ recognition: ReceiptRecognition) -> ReceiptFlowInput {
-    ReceiptFlowInput(
-      id: recognition.id,
-      source: .recognition(recognition),
-      backgroundStyle: recognition.backgroundStyle)
-  }
-
-  /// Opens a new scan. It is read right away, or stored unread when the model is unavailable so
-  /// its values can be entered by hand.
-  @MainActor
-  static func scan(
-    _ scan: ReceiptScan,
-    recognitions: ReceiptRecognitionCenter
-  ) -> ReceiptFlowInput {
-    guard case .unavailable = recognitions.modelStatus else {
-      return .recognition(recognitions.recognize(scan))
-    }
-    return ReceiptFlowInput(id: scan.id, source: .unreadScan(scan), backgroundStyle: .random())
-  }
-
-  static func == (lhs: ReceiptFlowInput, rhs: ReceiptFlowInput) -> Bool {
-    lhs.id == rhs.id
-  }
-
-  func hash(into hasher: inout Hasher) {
-    hasher.combine(id)
-  }
-}
-
 /// A receipt's stored pages and whether its values predate them.
 struct ReceiptPagesState: Equatable {
   var pages: [ReceiptDocument.Page]
@@ -115,14 +48,9 @@ final class ReceiptFlowModel {
     /// Whether the stored scan can be kept and its values entered by hand.
     var allowsManualEntry = false
     var manualEntryTitle = "Enter Manually"
-    /// Whether reading needs the one-time purchase, which then retries.
-    var needsUnlock = false
-    /// Whether the receipt is stored but has never been read, and isn't waiting to be.
-    var isUnread = false
-
-    /// Why a stored receipt can't be read until reading is unlocked.
-    static let unlockDescription =
-      "This receipt is saved. Unlock unlimited reading to read it, or enter its items yourself."
+    /// Whether trying again reads the receipt under a new free read, so it needs unlimited
+    /// reading once they are used.
+    var usesFreeRead = false
   }
 
   enum Phase {
@@ -168,8 +96,8 @@ final class ReceiptFlowModel {
   @ObservationIgnored private(set) var startsInEditing = false
   /// The last stored snapshot. Saves replace it without redrawing the receipt.
   @ObservationIgnored private(set) var document: ReceiptDocument?
-  @ObservationIgnored private(set) var lastSavedRevision = 0
-  @ObservationIgnored let receiptID: UUID
+  @ObservationIgnored private var lastSavedRevision = 0
+  let receiptID: UUID
 
   init(input: ReceiptFlowInput) {
     receiptID = input.id
@@ -364,7 +292,7 @@ final class ReceiptFlowModel {
     }
   }
 
-  func saveNow(storage: ReceiptStorageClient) async throws {
+  private func saveNow(storage: ReceiptStorageClient) async throws {
     guard case .reviewing(let draft) = phase,
       let document,
       draft.persistenceRevision != lastSavedRevision
@@ -378,6 +306,7 @@ final class ReceiptFlowModel {
     clearSaveError()
   }
 
+  @discardableResult
   func flush(storage: ReceiptStorageClient) async -> Bool {
     do {
       try await saveNow(storage: storage)
@@ -425,19 +354,21 @@ final class ReceiptFlowModel {
     switch outcome {
     case .cancelled:
       return
-    case .needsUnlock:
+    case .needsUnlock where recognition.isRescan:
       phase = .failed(
         Failure(
-          title: "Free Reads Used",
-          systemImage: "lock",
+          title: "New Pages Not Read",
+          systemImage: "doc.text.viewfinder",
           isError: false,
-          description: recognition.isRescan
-            ? "Unlock unlimited reading to read this receipt again."
-            : Failure.unlockDescription,
+          description: "Read this receipt again to update it from its new pages.",
           retry: .recognize(recognition),
           allowsManualEntry: true,
-          manualEntryTitle: recognition.isRescan ? "Back to Receipt" : "Enter Manually",
-          needsUnlock: true))
+          manualEntryTitle: "Back to Receipt",
+          usesFreeRead: true))
+    case .needsUnlock:
+      // The scan was stored unread, so it opens the way any unread receipt does.
+      guard let document = recognition.document else { return }
+      phase = .failed(Self.unreadFailure(for: document))
     case .recognized(let document):
       do {
         try review(document)
@@ -447,7 +378,7 @@ final class ReceiptFlowModel {
     case .failed(let message, let isRetryable) where recognition.isRescan:
       phase = .failed(
         Failure(
-          title: "Couldn’t Rescan Receipt",
+          title: "Couldn’t Read Receipt Again",
           description: message,
           retry: isRetryable ? .recognize(recognition) : nil,
           allowsManualEntry: true,
@@ -476,11 +407,7 @@ final class ReceiptFlowModel {
       try await storage.save(snapshot)
       let pages = try await storage.loadPages(receiptID)
       guard !Task.isCancelled else { return }
-      let scan = ReceiptScan(
-        id: snapshot.id,
-        pages: pages,
-        capturedAt: snapshot.scan.capturedAt,
-        source: snapshot.scan.source)
+      let scan = ReceiptScan(document: snapshot, pages: pages)
       phase = .recognizing(recognitions.recognize(scan, replacing: snapshot))
     } catch is CancellationError {
       return
@@ -573,11 +500,7 @@ final class ReceiptFlowModel {
       let document = try await storage.load(id)
       let pages = try await storage.loadPages(id)
       guard !Task.isCancelled else { return }
-      let scan = ReceiptScan(
-        id: document.id,
-        pages: pages,
-        capturedAt: document.scan.capturedAt,
-        source: document.scan.source)
+      let scan = ReceiptScan(document: document, pages: pages)
       phase = .recognizing(recognitions.recognize(scan, replacing: document))
     } catch is CancellationError {
       return
@@ -614,6 +537,6 @@ final class ReceiptFlowModel {
       description: "Read this receipt to fill in its items and totals, or enter them yourself.",
       retry: .read(document.id),
       allowsManualEntry: true,
-      isUnread: true)
+      usesFreeRead: true)
   }
 }

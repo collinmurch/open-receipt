@@ -6,7 +6,7 @@ import XCTest
 @testable import open_receipt
 
 final class ReceiptPhotoImporterTests: XCTestCase {
-  func testAppliesImageMetadataOrientation() async throws {
+  func testAppliesImageMetadataOrientation() throws {
     let data = try makeImageData(orientation: .right)
 
     let page = try XCTUnwrap(ReceiptPhotoImporter.page(from: data))

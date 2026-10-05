@@ -71,10 +71,11 @@ struct ReceiptRequestsView: View {
 
       if calculation.unassignedItemCount > 0 {
         Section {
-          Label(
-            "Assign \(unassignedDescription(calculation)) before you send requests.",
-            systemImage: "exclamationmark.triangle"
-          )
+          Label {
+            Text("Assign \(unassignedDescription(calculation)) before you send requests.")
+          } icon: {
+            Image(systemName: "exclamationmark.triangle")
+          }
           .foregroundStyle(.orange)
         }
       }
@@ -128,26 +129,25 @@ struct ReceiptRequestsView: View {
     if let focusedShareID, let focusedRowFrame,
       let share = calculation.participantShares.first(where: { $0.id == focusedShareID })
     {
+      let breakdown = draft.breakdown(for: share, accentScheme: colorScheme)
       ReceiptShareFocusView(
         content: rowContent(share, calculation: calculation),
         rowFrame: focusedRowFrame,
         startsPressed: isFocusedRowPressed,
         request: preparedRequest(for: share, calculation: calculation),
         unavailableRequestReason: unavailableRequestReason(for: share, calculation: calculation),
-        breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
+        breakdown: breakdown,
         messageRecipient: messageRecipients[share.id],
         onRequest: { request in
           requester.open(
             request,
-            breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
+            breakdown: breakdown,
             openURL: openURL,
             onSent: { recordRequest(for: share.participant.id) })
         },
         onMessageBreakdown: { recipient in
-          guard let breakdown = draft.breakdown(for: share, accentScheme: colorScheme) else {
-            return
-          }
-          requester.message([breakdown], to: [recipient], onSent: { playSentHaptic() })
+          guard let breakdown else { return }
+          requester.message([breakdown], to: [recipient], onSent: playSentHaptic)
         },
         onDismiss: endFocus
       )
@@ -192,7 +192,7 @@ struct ReceiptRequestsView: View {
         includesEveryBreakdown: $includesEveryBreakdown,
         onMessage: { selected in
           let recipients = others.compactMap { messageRecipients[$0.id] }
-          requester.message(selected, to: recipients, onSent: { playSentHaptic() })
+          requester.message(selected, to: recipients, onSent: playSentHaptic)
         },
         onDismiss: endFocus
       )
@@ -271,10 +271,9 @@ struct ReceiptRequestsView: View {
 
   private func unassignedDescription(_ calculation: ReceiptSplitCalculation) -> String {
     let count = calculation.unassignedItemCount
-    let items = String(inflecting: "^[\(count) unassigned item](inflect: true)")
-    let amount = calculation.unassignedItemTotal.formatted(
-      .currency(code: draft.displayCurrency))
-    return "\(items) totaling \(amount)"
+    let items = String(inflecting: "^[\(count) item](inflect: true)")
+    let amount = calculation.unassignedItemTotal.formatted(.currency(code: draft.displayCurrency))
+    return "\(items) (\(amount))"
   }
 
   private var focusedShareID: ReceiptParticipant.ID? {
@@ -347,120 +346,5 @@ struct ReceiptRequestsView: View {
 
   private func playSentHaptic() {
     haptic.play(.success)
-  }
-}
-
-/// One person's share in the list. Taps open the breakdown and long presses lift the share out to
-/// request or send it, as receipt items do.
-private struct ReceiptShareRow: View {
-  let content: ReceiptShareRowContent
-  let isFocused: Bool
-  let isLiftedOut: Bool
-  let onTap: () -> Void
-  let onFocus: (_ isPressed: Bool) -> Void
-  let onFocusedFrameChange: (CGRect) -> Void
-
-  @State private var isPressed = false
-
-  /// Taps and long presses are one gesture rather than a `NavigationLink`: a list row's button
-  /// takes its taps from the row's selection, which cancels any long press attached to it.
-  var body: some View {
-    HStack(spacing: 12) {
-      content
-      Image(systemName: "chevron.forward")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.tertiary)
-    }
-    .onGeometryChange(for: CGRect?.self) { proxy in
-      isFocused ? proxy.frame(in: .global) : nil
-    } action: { frame in
-      if let frame { onFocusedFrameChange(frame) }
-    }
-    .pressScale(isPressed)
-    .opacity(isLiftedOut ? 0 : 1)
-    .transaction(value: isLiftedOut) { $0.animation = nil }
-    .contentShape(.rect)
-    .gesture(
-      ReceiptRowPressGesture(
-        onPressingChanged: { isPressed = $0 },
-        onTap: onTap,
-        onLongPress: { onFocus(true) }
-      )
-    )
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(.isButton)
-    .accessibilityAction(.default, onTap)
-    .accessibilityHint("Show this person’s breakdown")
-    .accessibilityActions {
-      Button("Request or Share Individual Breakdown") { onFocus(false) }
-    }
-  }
-}
-
-/// What a share row draws, shared by the list and the share lifted into focus.
-struct ReceiptShareRowContent: View {
-  let share: ReceiptParticipantShare
-  let paymentDestination: PaymentDestination?
-  /// Whether to caption where requests go, which the owner's own share leaves out.
-  let showsPaymentDestination: Bool
-  let showsTotal: Bool
-  let currency: String
-
-  var body: some View {
-    HStack(spacing: 12) {
-      PersonAvatarView(
-        name: share.participant.displayName,
-        imageData: share.participant.avatarData)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(share.participant.displayName)
-        if showsPaymentDestination {
-          PaymentDestinationCaption(destination: paymentDestination)
-        }
-      }
-      Spacer()
-      VStack(alignment: .trailing, spacing: 2) {
-        ShareTotalText(amount: showsTotal ? share.total : nil, currency: currency)
-        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-    }
-  }
-}
-
-/// A person's share, or a dash while unassigned items keep the share from being final.
-struct ShareTotalText: View {
-  let amount: Double?
-  let currency: String
-
-  var body: some View {
-    Group {
-      if let amount {
-        Text(amount, format: .currency(code: currency))
-      } else {
-        Text("—")
-          .foregroundStyle(.secondary)
-          .accessibilityLabel("Total unavailable")
-      }
-    }
-    .font(.body.monospacedDigit())
-    .fontWeight(.semibold)
-  }
-}
-
-/// Where a person's payment requests go, or a warning when they have no payment method.
-struct PaymentDestinationCaption: View {
-  let destination: PaymentDestination?
-
-  var body: some View {
-    if let destination {
-      Text("\(destination.method.title) \(destination.displayValue)")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    } else {
-      Text("No payment method set")
-        .font(.caption)
-        .foregroundStyle(.orange)
-    }
   }
 }

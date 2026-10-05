@@ -30,7 +30,7 @@ enum ReceiptLabRunnerError: Error, LocalizedError {
 struct ReceiptLabRunner {
   let cacheDirectory: URL
   let cachedOnly: Bool
-  var configuration: ReceiptParserConfiguration = .standard
+  let configuration: ReceiptParserConfiguration
   let respond: ReceiptModelClient.Respond
 
   func run(
@@ -51,7 +51,8 @@ struct ReceiptLabRunner {
   private struct ResolvedFixture {
     let label: String
     let sourceURL: URL
-    let expectedURL: URL?
+    /// The fixture's decoded `expected.json`, read once for every sample that shares it.
+    let expected: Result<ExpectedReceipt, any Error>?
   }
 
   private func resolveFixtures(at url: URL) throws -> [ResolvedFixture] {
@@ -62,22 +63,22 @@ struct ReceiptLabRunner {
     if !isDirectory.boolValue { return [fileFixture(at: url)] }
 
     if let samples = fixtureSamples(in: url) {
-      let expected = existingFile(in: url, named: "expected.json")
+      let expected = expectedReceipt(in: url)
       return samples.map {
         ResolvedFixture(
           label: "\(url.lastPathComponent)/\($0.deletingPathExtension().lastPathComponent)",
           sourceURL: $0,
-          expectedURL: expected)
+          expected: expected)
       }
     }
     if url.lastPathComponent == "fixtures", let samples = supportedChildren(in: url) {
       let parent = url.deletingLastPathComponent()
-      let expected = existingFile(in: parent, named: "expected.json")
+      let expected = expectedReceipt(in: parent)
       return samples.map {
         ResolvedFixture(
           label: "\(parent.lastPathComponent)/\($0.deletingPathExtension().lastPathComponent)",
           sourceURL: $0,
-          expectedURL: expected)
+          expected: expected)
       }
     }
 
@@ -107,9 +108,9 @@ struct ReceiptLabRunner {
       return ResolvedFixture(
         label: "\(group.lastPathComponent)/\(url.deletingPathExtension().lastPathComponent)",
         sourceURL: url,
-        expectedURL: existingFile(in: group, named: "expected.json"))
+        expected: expectedReceipt(in: group))
     }
-    return ResolvedFixture(label: url.lastPathComponent, sourceURL: url, expectedURL: nil)
+    return ResolvedFixture(label: url.lastPathComponent, sourceURL: url, expected: nil)
   }
 
   private func fixtureSamples(in folder: URL) -> [URL]? {
@@ -131,9 +132,10 @@ struct ReceiptLabRunner {
     return supported.isEmpty ? nil : supported
   }
 
-  private func existingFile(in folder: URL, named name: String) -> URL? {
-    let candidate = folder.appending(path: name)
-    return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+  private func expectedReceipt(in folder: URL) -> Result<ExpectedReceipt, any Error>? {
+    let url = folder.appending(path: "expected.json")
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return Result { try JSONDecoder().decode(ExpectedReceipt.self, from: Data(contentsOf: url)) }
   }
 
   private func runFixture(_ fixture: ResolvedFixture) async -> FixtureRunResult {
@@ -173,9 +175,7 @@ struct ReceiptLabRunner {
     for receipt: ParsedReceipt,
     fixture: ResolvedFixture
   ) throws -> FixtureEvaluation? {
-    guard let expectedURL = fixture.expectedURL else { return nil }
-    let expected = try JSONDecoder().decode(
-      ExpectedReceipt.self, from: Data(contentsOf: expectedURL))
+    guard let expected = try fixture.expected?.get() else { return nil }
     return FixtureEvaluator.evaluate(actual: receipt, expected: expected)
   }
 }

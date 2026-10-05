@@ -132,7 +132,11 @@ enum FixtureEvaluator {
             actual: format(actualItem.lineTotal),
             detail: actualItem.description))
         checks.append(
-          nameCheck(index: index, expected: item.rawName, actual: actualItem.description))
+          nameCheck(
+            index: index,
+            expected: item.rawName,
+            actual: actualItem.description,
+            similarity: matches.similarityByExpectedIndex[index] ?? 0))
         if let quantity = item.quantity {
           checks.append(
             amountCheck(
@@ -197,6 +201,7 @@ enum FixtureEvaluator {
 
   private struct ItemMatches {
     let actualIndexByExpectedIndex: [Int: Int]
+    let similarityByExpectedIndex: [Int: Double]
     let usedActual: Set<Int>
   }
 
@@ -206,6 +211,7 @@ enum FixtureEvaluator {
     tolerance: Double
   ) -> ItemMatches {
     var actualIndexByExpectedIndex: [Int: Int] = [:]
+    var similarityByExpectedIndex: [Int: Double] = [:]
     var usedActual: Set<Int> = []
     for (expectedIndex, item) in expected.enumerated() {
       guard
@@ -216,10 +222,12 @@ enum FixtureEvaluator {
           tolerance: tolerance)
       else { continue }
       actualIndexByExpectedIndex[expectedIndex] = match.index
+      similarityByExpectedIndex[expectedIndex] = match.similarity
       usedActual.insert(match.index)
     }
     return ItemMatches(
       actualIndexByExpectedIndex: actualIndexByExpectedIndex,
+      similarityByExpectedIndex: similarityByExpectedIndex,
       usedActual: usedActual)
   }
 
@@ -228,7 +236,7 @@ enum FixtureEvaluator {
     actual: [ReceiptItem],
     usedActual: Set<Int>,
     tolerance: Double
-  ) -> (index: Int, score: Double)? {
+  ) -> (index: Int, similarity: Double)? {
     actual.indices
       .filter { !usedActual.contains($0) }
       .compactMap { index -> (Int, Double)? in
@@ -243,9 +251,9 @@ enum FixtureEvaluator {
   private static func nameCheck(
     index: Int,
     expected: String,
-    actual: String
+    actual: String,
+    similarity: Double
   ) -> FixtureEvaluation.Check {
-    let similarity = descriptionSimilarity(expected, actual)
     let pass = similarity >= minimumDescriptionSimilarity
     return FixtureEvaluation.Check(
       field: "items[\(index)].name",
@@ -302,6 +310,8 @@ enum FixtureEvaluator {
   private static func normalizedCharacterSimilarity(_ lhs: String, _ rhs: String) -> Double {
     guard !lhs.isEmpty else { return rhs.isEmpty ? 1 : 0 }
     guard !rhs.isEmpty else { return 0 }
+    let lhs = Array(lhs)
+    let rhs = Array(rhs)
     var previous = Array(0...rhs.count)
     for (leftIndex, left) in lhs.enumerated() {
       var current = [leftIndex + 1]

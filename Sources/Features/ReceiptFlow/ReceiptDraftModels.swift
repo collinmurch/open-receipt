@@ -45,8 +45,8 @@ struct ReceiptDraftItem: Identifiable, Equatable {
   var lineTotal: Double
   var participantIDs: Set<ReceiptParticipant.ID>
 
-  init(item: ReceiptItem, id: UUID = UUID()) {
-    self.id = id
+  init(item: ReceiptItem) {
+    id = UUID()
     description = item.description
     quantity = item.quantity
     lineTotal = item.lineTotal
@@ -113,9 +113,9 @@ struct ReceiptParticipant: Identifiable, Equatable {
 
   static let defaultCurrentUserName = "Me"
 
-  static func currentUser(id: UUID = UUID(), owner: ReceiptOwner? = nil) -> ReceiptParticipant {
+  static func currentUser(owner: ReceiptOwner? = nil) -> ReceiptParticipant {
     ReceiptParticipant(
-      id: id,
+      id: UUID(),
       source: .currentUser(contactIdentifier: owner?.contactIdentifier),
       displayName: owner?.displayName ?? defaultCurrentUserName,
       avatarData: nil)

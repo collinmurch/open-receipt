@@ -125,7 +125,6 @@ receiptlab: gen
 		-quiet
 
 # ─── App Store assets ────────────────────────────────────────────────────
-# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library|paywall limits both steps.
 .PHONY: icons
 icons: $(ICON_EXPORTS) ## Export the app icon renditions to Assets/Icons
 
@@ -135,6 +134,7 @@ $(ASSETS)/Icons/open-receipt-iOS-%-1024@1x.png: $(ICON)/icon.json $(wildcard $(I
 		--platform iOS --rendition $* --width 1024 --height 1024 --scale 1 >/dev/null
 	@echo "Wrote $@"
 
+# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library|paywall limits both steps.
 .PHONY: previews
 previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots. cached=1 only composes.
 	@set -o pipefail; \

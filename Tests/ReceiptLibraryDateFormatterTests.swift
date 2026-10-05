@@ -32,17 +32,28 @@ final class ReceiptLibraryDateFormatterTests: XCTestCase {
       ReceiptLibraryDateFormatter.dayTitle(localDate: "2026-08-01", locale: english), "Aug 1")
   }
 
-  func testMonthTitleOmitsCurrentYear() {
+  func testFormatsDateInLocaleCalendar() {
+    let date = ReceiptLibraryDateFormatter.formatted(
+      localDate: "2026-08-10", locale: Locale(identifier: "th_TH@calendar=buddhist"))
+
+    XCTAssertEqual(date?.contains("2569"), true)
+  }
+
+  func testMonthTitleOmitsYearWhenAsked() {
     XCTAssertEqual(
       ReceiptLibraryDateFormatter.monthTitle(
-        month: "2026-08", currentYear: 2026, locale: english),
+        of: augustFirst, in: ReceiptLocalDate.calendar, includesYear: false, locale: english),
       "August")
   }
 
-  func testMonthTitleIncludesPastYear() {
+  func testMonthTitleIncludesYearWhenAsked() {
     XCTAssertEqual(
       ReceiptLibraryDateFormatter.monthTitle(
-        month: "2025-12", currentYear: 2026, locale: english),
-      "December 2025")
+        of: augustFirst, in: ReceiptLocalDate.calendar, includesYear: true, locale: english),
+      "August 2026")
+  }
+
+  private var augustFirst: Date {
+    ReceiptLocalDate.date(from: "2026-08-01")!
   }
 }

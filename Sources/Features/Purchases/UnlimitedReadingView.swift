@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 extension View {
@@ -24,6 +25,7 @@ struct UnlimitedReadingView: View {
   @State private var errorDescription: String?
   @Environment(ReadingAccess.self) private var access
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.purchase) private var purchaseAction
 
   var body: some View {
     NavigationStack {
@@ -89,7 +91,7 @@ struct UnlimitedReadingView: View {
     VStack(alignment: .leading, spacing: 20) {
       feature(
         "Read every receipt",
-        detail: "Scan or import as many receipts as you like.",
+        detail: "Read as many receipts as you like, from the camera or your photos.",
         systemImage: "infinity")
       feature(
         "Pay once",
@@ -193,7 +195,7 @@ struct UnlimitedReadingView: View {
     Task {
       defer { isPurchasing = false }
       do {
-        isPending = try await access.purchase() == .pending
+        isPending = try await access.purchase(using: purchaseAction) == .pending
       } catch {
         errorDescription = error.localizedDescription
       }

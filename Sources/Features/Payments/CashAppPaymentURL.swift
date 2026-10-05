@@ -7,18 +7,13 @@ enum CashAppPaymentURL {
       CharacterSet(charactersIn: "-_"))
     guard !normalizedCashtag.isEmpty,
       normalizedCashtag.unicodeScalars.allSatisfy(allowedCharacters.contains),
-      amount.isFinite,
-      amount > 0
+      amount.isRequestable
     else { return nil }
 
-    let formattedAmount = String(
-      format: "%.2f",
-      locale: Locale(identifier: "en_US_POSIX"),
-      amount)
     var components = URLComponents()
     components.scheme = "https"
     components.host = "cash.app"
-    components.path = "/$\(normalizedCashtag)/\(formattedAmount)"
+    components.path = "/$\(normalizedCashtag)/\(amount.paymentLinkAmount)"
     return components.url
   }
 }

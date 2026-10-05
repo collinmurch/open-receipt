@@ -11,13 +11,14 @@ final class ReceiptRecognitionCenter {
   /// Increments whenever a recognition finishes, so the library knows to refresh.
   private(set) var finishedCount = 0
 
-  @ObservationIgnored let parsingClient: ReceiptParsingClient
-  @ObservationIgnored private let storage: ReceiptStorageClient
-  @ObservationIgnored private let access: ReadingAccess
-  @ObservationIgnored private let connectivity: ReceiptConnectivity
-  @ObservationIgnored private let connectionRetryLimit: Int
-  @ObservationIgnored private let connectionRetryDelay: Duration
-  @ObservationIgnored private let owner: @Sendable () async -> ReceiptOwner?
+  private static let connectionRetryLimit = 3
+
+  private let parsingClient: ReceiptParsingClient
+  private let storage: ReceiptStorageClient
+  private let access: ReadingAccess
+  private let connectivity: ReceiptConnectivity
+  private let connectionRetryDelay: Duration
+  private let owner: @Sendable () async -> ReceiptOwner?
   @ObservationIgnored private var isResumingDeferredReads = false
   @ObservationIgnored private var deferredReadWake: Task<Void, Never>?
 
@@ -27,7 +28,6 @@ final class ReceiptRecognitionCenter {
     access: ReadingAccess = .unlimited(),
     owner: @escaping @Sendable () async -> ReceiptOwner? = { nil },
     connectivity: ReceiptConnectivity = .live,
-    connectionRetryLimit: Int = 3,
     connectionRetryDelay: Duration = .seconds(2)
   ) {
     self.parsingClient = parsingClient
@@ -35,7 +35,6 @@ final class ReceiptRecognitionCenter {
     self.access = access
     self.owner = owner
     self.connectivity = connectivity
-    self.connectionRetryLimit = connectionRetryLimit
     self.connectionRetryDelay = connectionRetryDelay
   }
 
@@ -125,11 +124,7 @@ final class ReceiptRecognitionCenter {
       let pages = try? await storage.loadPages(id),
       !pages.isEmpty
     else { return nil }
-    let scan = ReceiptScan(
-      id: document.id,
-      pages: pages,
-      capturedAt: document.scan.capturedAt,
-      source: document.scan.source)
+    let scan = ReceiptScan(document: document, pages: pages)
     return recognize(scan, replacing: document, isUserInitiated: false)
   }
 
@@ -157,8 +152,7 @@ final class ReceiptRecognitionCenter {
       scan: failed.scan,
       backgroundStyle: failed.backgroundStyle,
       document: failed.document,
-      parsedReceipt: failed.parsedReceipt,
-      isUserInitiated: true)
+      parsedReceipt: failed.parsedReceipt)
     start(recognition)
     return recognition
   }
@@ -250,11 +244,7 @@ final class ReceiptRecognitionCenter {
       continuesInBackground: recognition.isUserInitiated && recognition.parsedReceipt == nil,
       onExpiration: { [weak recognition] in recognition?.task?.cancel() })
     let outcome = await read(recognition, activity: activity)
-    if case .recognized = outcome {
-      activity.end(succeeded: true)
-    } else {
-      activity.end(succeeded: false)
-    }
+    activity.end(succeeded: outcome.isRecognized)
     return outcome
   }
 
@@ -335,7 +325,7 @@ final class ReceiptRecognitionCenter {
           }
         }
       } catch let error as ReceiptParserError
-        where error.isConnectionFailure && connectionRetries < connectionRetryLimit
+        where error.isConnectionFailure && connectionRetries < Self.connectionRetryLimit
       {
         connectionRetries += 1
         recognition.update(.waitingForConnection)

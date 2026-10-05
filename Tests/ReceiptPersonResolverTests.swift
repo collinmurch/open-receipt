@@ -4,7 +4,7 @@ import XCTest
 
 final class ReceiptPersonResolverTests: XCTestCase {
   func testResolvesCurrentParticipantByPersonIdentifier() throws {
-    let person = makePerson(name: "Sam")
+    let person = Person.fixture(name: "Sam")
     let participant = ReceiptParticipant(
       id: UUID(),
       personID: person.id,
@@ -24,11 +24,11 @@ final class ReceiptPersonResolverTests: XCTestCase {
       avatarData: nil)
 
     XCTAssertNil(
-      ReceiptPersonResolver.person(for: participant, in: [makePerson(name: "Sam")]))
+      ReceiptPersonResolver.person(for: participant, in: [Person.fixture(name: "Sam")]))
   }
 
   func testResolvesLegacyAppleContactByContactIdentifier() throws {
-    let person = makePerson(name: "New name", contactIdentifier: "contact-1")
+    let person = Person.fixture(name: "New name", contactIdentifier: "contact-1")
     let participant = ReceiptParticipant(
       id: UUID(),
       source: .contact(identifier: "contact-1"),
@@ -39,7 +39,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
   }
 
   func testResolvesLegacyCustomPersonByUniqueName() throws {
-    let person = makePerson(name: "Sam")
+    let person = Person.fixture(name: "Sam")
     let participant = ReceiptParticipant(
       id: UUID(),
       source: .manual,
@@ -59,21 +59,6 @@ final class ReceiptPersonResolverTests: XCTestCase {
     XCTAssertNil(
       ReceiptPersonResolver.person(
         for: participant,
-        in: [makePerson(name: "Sam"), makePerson(name: "Sam")]))
-  }
-
-  private func makePerson(
-    name: String,
-    contactIdentifier: String? = nil
-  ) -> Person {
-    let date = Date(timeIntervalSince1970: 1)
-    return Person(
-      id: UUID(),
-      createdAt: date,
-      updatedAt: date,
-      lastIncludedAt: date,
-      displayName: name,
-      contactIdentifier: contactIdentifier,
-      paymentMethods: .init())
+        in: [Person.fixture(name: "Sam"), Person.fixture(name: "Sam")]))
   }
 }

@@ -17,6 +17,8 @@ struct ReceiptReviewView: View {
   @State private var selectedItemID: ReceiptDraftItem.ID?
   @State private var selectedParticipantIDs: Set<ReceiptParticipant.ID> = []
   @State private var seededItemID: ReceiptDraftItem.ID?
+  @State private var sweep: ReceiptItemSweep?
+  @State private var itemRowFrames = ReceiptItemRowFrames()
   @State private var focusedItemID: ReceiptDraftItem.ID?
   @State private var paymentsFocus: ReceiptPaymentsFocus?
   @State private var focusedRowFrame: CGRect?
@@ -124,6 +126,7 @@ struct ReceiptReviewView: View {
         haptic: $haptic,
         focusedItemID: focusedItemID,
         isFocusPresented: isItemFocusPresented,
+        rowFrames: itemRowFrames,
         onSelectItem: { selectedItemID = $0 },
         onFocusItem: focusItem,
         onFocusedRowFrameChange: { focusedRowFrame = $0 }
@@ -141,6 +144,14 @@ struct ReceiptReviewView: View {
       }
     }
     .scrollContentBackground(.hidden)
+    // Attached before the people bar, so a sweep starts only over the list.
+    .gesture(
+      TwoFingerSweepGesture(
+        isEnabled: !selectedParticipantIDs.isEmpty && !isEditing && !isFocusing,
+        onChanged: sweepItems(at:),
+        onEnded: { sweep = nil }
+      )
+    )
     // Editing adds the receipt's fields above the items. Holding the top edge still lets them push
     // the items down; holding the items still instead places the fields by estimated height and
     // jumps once they're measured.
@@ -150,7 +161,7 @@ struct ReceiptReviewView: View {
       // the strip slides up behind the navigation bar instead of over it.
       ParticipantStrip(
         participants: draft.participants,
-        amountsOwed: participantAmountsOwed,
+        amountsOwed: draft.splitCalculation.amountsOwed,
         currency: draft.displayCurrency,
         selectedParticipantIDs: selectedParticipantIDs,
         onSelect: toggleParticipantSelection,
@@ -209,7 +220,7 @@ struct ReceiptReviewView: View {
         startsPressed: isFocusedItemPressed,
         stripFrame: participantStripFrame,
         stripSelection: selectedParticipantIDs,
-        amountsOwed: participantAmountsOwed,
+        amountsOwed: draft.splitCalculation.amountsOwed,
         haptic: $haptic,
         onManagePeople: { isPeoplePresented = true },
         addTransition: peopleSheetTransition,
@@ -231,11 +242,6 @@ struct ReceiptReviewView: View {
 
   private var peopleSheetTransition: (id: AnyHashable, namespace: Namespace.ID) {
     (id: ReceiptReviewSheet.people, namespace: sheetTransition)
-  }
-
-  private var participantAmountsOwed: [ReceiptParticipant.ID: Double] {
-    Dictionary(
-      uniqueKeysWithValues: draft.splitCalculation.participantShares.map { ($0.id, $0.total) })
   }
 
   private var completionButton: some View {
@@ -364,6 +370,29 @@ struct ReceiptReviewView: View {
       } else {
         selectedParticipantIDs.insert(id)
       }
+    }
+  }
+
+  /// Extends a two-finger sweep to the item under the fingers, starting it on the first item they
+  /// reach.
+  private func sweepItems(at location: CGPoint) {
+    guard let itemID = itemRowFrames.item(at: location) else { return }
+    let updated: ReceiptItemSweep
+    if var sweep {
+      guard sweep.extend(to: itemID) else { return }
+      updated = sweep
+    } else if let started = ReceiptItemSweep(
+      startingAt: itemID, in: draft.items, participantIDs: selectedParticipantIDs)
+    {
+      updated = started
+    } else {
+      return
+    }
+    sweep = updated
+    seededItemID = nil
+    haptic.play(.selection)
+    withAnimation(.selectionChange) {
+      draft.apply(updated)
     }
   }
 

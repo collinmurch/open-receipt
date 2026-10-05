@@ -12,18 +12,4 @@ extension Animation {
 
   /// Glass controls morphing into one another.
   static let glassMorph = Animation.bouncy(duration: 0.5, extraBounce: 0.1)
-
-  /// A pressed row growing until the press becomes a long press.
-  static let pressGrowth = Animation.easeOut(duration: ReceiptRowPressRecognizer.pressGrowth)
-
-  /// A pressed row springing back after the finger lifts early.
-  static let pressRelease = Animation.spring(duration: 0.3, bounce: 0.3)
-}
-
-extension View {
-  /// Grows a row across a long press, then springs it back if the finger lifts early.
-  func pressScale(_ isPressed: Bool) -> some View {
-    scaleEffect(isPressed ? ReceiptItemRowContent.pressedScale : 1)
-      .animation(isPressed ? .pressGrowth : .pressRelease, value: isPressed)
-  }
 }

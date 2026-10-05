@@ -96,7 +96,7 @@ private struct PersonBreakdown: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
           .font(.headline)
-        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
+        Text(share.itemCountText)
           .font(.subheadline)
           .foregroundStyle(.secondary)
       }
@@ -106,7 +106,7 @@ private struct PersonBreakdown: View {
       ForEach(share.items) { item in
         BreakdownLine(
           title: item.description,
-          detail: item.fraction < 1 ? "\(formattedPercentage(item.fraction)) share" : nil,
+          detail: item.fraction < 1 ? "\(item.fraction.sharePercentText) share" : nil,
           amount: item.amount,
           currency: breakdown.currency)
       }
@@ -118,7 +118,7 @@ private struct PersonBreakdown: View {
         ForEach(share.adjustments) { adjustment in
           BreakdownLine(
             title: adjustment.title,
-            detail: formattedPercentage(adjustment.fraction),
+            detail: adjustment.fraction.sharePercentText,
             amount: adjustment.amount,
             currency: breakdown.currency)
         }
@@ -129,10 +129,6 @@ private struct PersonBreakdown: View {
     BreakdownTotal(
       title: "Total", amount: share.total, currency: breakdown.currency, accent: accent)
   }
-
-  private func formattedPercentage(_ fraction: Double) -> String {
-    fraction.formatted(.percent.precision(.fractionLength(0...1)))
-  }
 }
 
 private struct GroupBreakdown: View {
@@ -141,14 +137,16 @@ private struct GroupBreakdown: View {
   let accent: Color
 
   var body: some View {
+    let colors = shareColors
+
     BreakdownTotal(
       title: "Total", amount: breakdown.total, currency: breakdown.currency, accent: accent)
 
-    ShareBar(fractions: fractions, colors: shares.indices.map { color(at: $0) })
+    ShareBar(fractions: fractions, colors: colors)
 
     VStack(alignment: .leading, spacing: 14) {
       ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
-        row(share, color: color(at: index))
+        row(share, color: colors[index])
       }
     }
 
@@ -187,7 +185,7 @@ private struct GroupBreakdown: View {
               .background(accent.opacity(0.12), in: .capsule)
           }
         }
-        Text(String(inflecting: "^[\(share.items.count) item](inflect: true)"))
+        Text(share.itemCountText)
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -199,18 +197,18 @@ private struct GroupBreakdown: View {
 
   private var fractions: [Double] {
     let total = shares.reduce(0) { $0 + max($1.total, 0) }
-    guard total > 0 else { return shares.map { _ in 1 / Double(max(shares.count, 1)) } }
+    guard total > 0 else { return shares.map { _ in 1 / Double(shares.count) } }
     return shares.map { max($0.total, 0) / total }
   }
 
   /// People take the receipt's two colors first, then the rest of the theme palette, in the
   /// palette's bright variants so the bar stays vivid on the paper.
-  private func color(at index: Int) -> Color {
+  private var shareColors: [Color] {
     let style = breakdown.style
     let palette =
       [style.primary, style.secondary]
       + ReceiptThemeColor.allCases.filter { $0 != style.primary && $0 != style.secondary }
-    return palette[index % palette.count].accentColor(for: .dark)
+    return shares.indices.map { palette[$0 % palette.count].accentColor(for: .dark) }
   }
 }
 

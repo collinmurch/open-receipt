@@ -2,18 +2,23 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
+/// Stores each receipt as a directory of its document and page images. New receipts are built in
+/// staging and moved into place whole, and deleted ones wait in a trash directory.
 actor ReceiptFileStorage {
   static let live = ReceiptFileStorage()
 
-  private let fileManager: FileManager
+  private static let documentFileName = "receipt.json"
+  private static let deletionRecordFileName = "deletion.json"
+  private static let stagingDirectoryName = ".staging"
+
+  private let fileManager = FileManager.default
   private let rootOverride: URL?
   private var cachedRoot: URL?
   private var documentCache: [UUID: CachedDocument] = [:]
   private var index: ReceiptLibraryIndex?
   private var isIndexChanged = false
 
-  init(fileManager: FileManager = .default, rootURL: URL? = nil) {
-    self.fileManager = fileManager
+  init(rootURL: URL? = nil) {
     rootOverride = rootURL
   }
 
@@ -89,7 +94,7 @@ actor ReceiptFileStorage {
   }
 
   func load(id: UUID) throws -> ReceiptDocument {
-    let url = try receiptDirectory(id: id).appending(path: "receipt.json")
+    let url = try receiptDirectory(id: id).appending(path: Self.documentFileName)
     let modifiedAt = modificationDate(of: url)
     if let modifiedAt, let cached = documentCache[id], cached.modifiedAt == modifiedAt {
       return cached.document
@@ -99,19 +104,6 @@ actor ReceiptFileStorage {
       documentCache[id] = CachedDocument(modifiedAt: modifiedAt, document: document)
     }
     return document
-  }
-
-  func loadPages(id: UUID) throws -> [ReceiptPage] {
-    try pageURLs(document: load(id: id)).map { url in
-      guard let page = ReceiptPage(contentsOf: url) else {
-        throw ReceiptStorageError.unreadablePage(url.lastPathComponent)
-      }
-      return page
-    }
-  }
-
-  func pageURLs(id: UUID) throws -> [URL] {
-    try pageURLs(document: load(id: id))
   }
 
   /// Saves receipt values. Scan pages are owned by `addPages`, `deletePage`, and `reorderPages`,
@@ -127,6 +119,118 @@ actor ReceiptFileStorage {
       document.scan = stored.scan
     }
     try write(document, in: directory)
+  }
+
+  /// Builds a new receipt's directory in staging and then moves it into place, so a receipt is
+  /// stored whole or not at all.
+  private func insert(
+    id: UUID,
+    makeDocument: (_ directory: URL) throws -> ReceiptDocument
+  ) throws -> ReceiptDocument {
+    let stagingURL = try stagingRoot().appending(path: id.uuidString, directoryHint: .isDirectory)
+    let receiptURL = try receiptDirectory(id: id)
+    guard !fileManager.fileExists(atPath: receiptURL.path) else {
+      throw ReceiptStorageError.receiptAlreadyExists(id)
+    }
+
+    do {
+      try fileManager.createProtectedDirectory(at: stagingURL)
+      let document = try makeDocument(stagingURL)
+      try write(document, in: stagingURL)
+      try fileManager.moveItem(at: stagingURL, to: receiptURL)
+      try fileManager.protectItem(at: receiptURL)
+      return document
+    } catch {
+      try? fileManager.removeItem(at: stagingURL)
+      throw error
+    }
+  }
+
+  private func decodeDocument(id: UUID, at url: URL) throws -> ReceiptDocument {
+    let data = try Data(contentsOf: url)
+    let document = try Self.decoder.decode(ReceiptDocument.self, from: data)
+    guard document.schemaVersion == ReceiptDocument.currentSchemaVersion else {
+      throw ReceiptDocumentError.unsupportedSchemaVersion(document.schemaVersion)
+    }
+    guard document.id == id else { throw ReceiptStorageError.identifierMismatch }
+    return document
+  }
+
+  private func write(_ document: ReceiptDocument, in directory: URL) throws {
+    let data = try Self.encoder.encode(document)
+    let url = directory.appending(path: Self.documentFileName)
+    try data.write(to: url, options: .atomic)
+    try fileManager.protectItem(at: url)
+    remember(document, writtenTo: url)
+  }
+
+  private static let timestampStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+  private static let wholeSecondTimestampStyle = Date.ISO8601FormatStyle()
+
+  private static let encoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .custom { date, encoder in
+      var container = encoder.singleValueContainer()
+      try container.encode(date.formatted(ReceiptFileStorage.timestampStyle))
+    }
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    return encoder
+  }()
+
+  private static let decoder: JSONDecoder = {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .custom { decoder in
+      let container = try decoder.singleValueContainer()
+      let value = try container.decode(String.self)
+      if let date = try? ReceiptFileStorage.timestampStyle.parse(value) { return date }
+      guard let date = try? ReceiptFileStorage.wholeSecondTimestampStyle.parse(value) else {
+        throw DecodingError.dataCorruptedError(
+          in: container,
+          debugDescription: "Expected an ISO 8601 timestamp.")
+      }
+      return date
+    }
+    return decoder
+  }()
+
+  private static let indexEncoder = JSONEncoder()
+  private static let indexDecoder = JSONDecoder()
+
+  private struct CachedDocument {
+    let modifiedAt: Date
+    let document: ReceiptDocument
+  }
+
+  private struct DeletionRecord: Codable {
+    let deletedAt: Date
+  }
+
+  /// Summaries of stored receipts, keyed by the modification date of each receipt's file.
+  private struct ReceiptLibraryIndex: Codable {
+    static let currentVersion = 3
+
+    struct Entry: Codable {
+      let modifiedAt: Date
+      let summary: ReceiptSummary
+    }
+
+    var version = currentVersion
+    var entries: [UUID: Entry] = [:]
+  }
+}
+
+extension ReceiptFileStorage {
+  func loadPages(id: UUID) throws -> [ReceiptPage] {
+    try pageURLs(document: load(id: id)).map { url in
+      guard let page = ReceiptPage(contentsOf: url) else {
+        throw ReceiptStorageError.unreadablePage(url.lastPathComponent)
+      }
+      return page
+    }
+  }
+
+  func pageURLs(id: UUID) throws -> [URL] {
+    try pageURLs(document: load(id: id))
   }
 
   func addPages(_ pages: [ReceiptPage], to id: UUID) throws -> ReceiptDocument {
@@ -177,6 +281,177 @@ actor ReceiptFileStorage {
     return document
   }
 
+  private func pageURLs(document: ReceiptDocument) throws -> [URL] {
+    let directory = try receiptDirectory(id: document.id)
+    return try document.scan.pages.map { page in
+      let url = try pageURL(for: page, in: directory)
+      guard fileManager.fileExists(atPath: url.path) else {
+        throw ReceiptStorageError.unreadablePage(url.lastPathComponent)
+      }
+      return url
+    }
+  }
+
+  private func pageURL(for page: ReceiptDocument.Page, in directory: URL) throws -> URL {
+    guard page.file.hasPrefix("pages/"),
+      !page.file.contains(".."),
+      page.file.split(separator: "/").count == 2
+    else { throw ReceiptDocumentError.invalidPagePath(page.file) }
+    let url = directory.appending(path: page.file)
+    let standardizedDirectory = directory.standardizedFileURL.path + "/"
+    guard url.standardizedFileURL.path.hasPrefix(standardizedDirectory) else {
+      throw ReceiptDocumentError.invalidPagePath(page.file)
+    }
+    return url
+  }
+
+  private func writePages(_ pages: [ReceiptPage], in directory: URL) throws
+    -> [ReceiptDocument.Page]
+  {
+    let pagesURL = directory.appending(path: "pages", directoryHint: .isDirectory)
+    try fileManager.createProtectedDirectory(at: pagesURL)
+    var written: [ReceiptDocument.Page] = []
+    do {
+      for page in pages {
+        let id = UUID()
+        let filename = "\(id.uuidString.lowercased()).heic"
+        let url = pagesURL.appending(path: filename)
+        try Self.writeHEIC(page, to: url)
+        try fileManager.protectItem(at: url)
+        written.append(
+          ReceiptDocument.Page(id: id, file: "pages/\(filename)", mediaType: "image/heic"))
+      }
+    } catch {
+      for page in written {
+        try? fileManager.removeItem(at: directory.appending(path: page.file))
+      }
+      throw error
+    }
+    return written
+  }
+
+  private static func writeHEIC(_ page: ReceiptPage, to url: URL) throws {
+    guard let image = ReceiptImageNormalizer.normalized(page.image, orientation: page.orientation),
+      let destination = CGImageDestinationCreateWithURL(
+        url as CFURL,
+        UTType.heic.identifier as CFString,
+        1,
+        nil)
+    else { throw ReceiptStorageError.cannotEncodePage }
+    let properties = [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary
+    CGImageDestinationAddImage(destination, image, properties)
+    guard CGImageDestinationFinalize(destination) else {
+      throw ReceiptStorageError.cannotEncodePage
+    }
+  }
+}
+
+extension ReceiptFileStorage {
+  /// Summaries for every stored receipt. Entries come from the persisted index while a
+  /// receipt's file is unchanged, so only new or edited receipts are decoded.
+  private func libraryEntries() throws -> [ReceiptLibraryIndex.Entry] {
+    let contents = try fileManager.contentsOfDirectory(
+      at: try receiptsRoot(),
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles])
+    var index = loadIndex()
+    var entries: [ReceiptLibraryIndex.Entry] = []
+    var storedIDs = Set<UUID>()
+
+    for url in contents {
+      guard let id = UUID(uuidString: url.lastPathComponent) else { continue }
+      storedIDs.insert(id)
+      let modifiedAt = modificationDate(of: url.appending(path: Self.documentFileName))
+      if let modifiedAt, let entry = index.entries[id], entry.modifiedAt == modifiedAt {
+        entries.append(entry)
+        continue
+      }
+      let entry = libraryEntry(id: id, in: url, modifiedAt: modifiedAt)
+      if modifiedAt != nil {
+        index.entries[id] = entry
+        isIndexChanged = true
+      }
+      entries.append(entry)
+    }
+
+    for id in index.entries.keys where !storedIDs.contains(id) {
+      index.entries[id] = nil
+      isIndexChanged = true
+    }
+    self.index = index
+    if isIndexChanged {
+      try? saveIndex(index)
+    }
+    return entries
+  }
+
+  private func libraryEntry(id: UUID, in directory: URL, modifiedAt: Date?)
+    -> ReceiptLibraryIndex.Entry
+  {
+    let summary: ReceiptSummary
+    do {
+      summary = try ReceiptSummary(load(id: id))
+    } catch {
+      summary = .unavailable(
+        id: id, date: modificationDate(of: directory) ?? .distantPast, error: error)
+    }
+    return ReceiptLibraryIndex.Entry(modifiedAt: modifiedAt ?? .distantPast, summary: summary)
+  }
+
+  private func removeStagedReceipts() throws {
+    let stagingRoot = try receiptsRoot().appending(
+      path: Self.stagingDirectoryName, directoryHint: .isDirectory)
+    guard fileManager.fileExists(atPath: stagingRoot.path) else { return }
+    let stagedItems = try fileManager.contentsOfDirectory(
+      at: stagingRoot,
+      includingPropertiesForKeys: nil)
+    for item in stagedItems {
+      try fileManager.removeItem(at: item)
+    }
+  }
+
+  private func loadIndex() -> ReceiptLibraryIndex {
+    if let index { return index }
+    guard let url = try? indexURL(),
+      let data = try? Data(contentsOf: url),
+      let stored = try? Self.indexDecoder.decode(ReceiptLibraryIndex.self, from: data),
+      stored.version == ReceiptLibraryIndex.currentVersion
+    else { return ReceiptLibraryIndex() }
+    return stored
+  }
+
+  private func saveIndex(_ index: ReceiptLibraryIndex) throws {
+    let url = try indexURL()
+    try Self.indexEncoder.encode(index).write(to: url, options: .atomic)
+    try fileManager.protectItem(at: url)
+    isIndexChanged = false
+  }
+
+  private func indexURL() throws -> URL {
+    try receiptsRoot().appending(path: ".index.json")
+  }
+
+  /// Records a document just written to `url`, so later loads and listings skip decoding it.
+  private func remember(_ document: ReceiptDocument, writtenTo url: URL) {
+    guard let modifiedAt = modificationDate(of: url) else { return }
+    documentCache[document.id] = CachedDocument(modifiedAt: modifiedAt, document: document)
+    guard let summary = try? ReceiptSummary(document) else { return }
+    var index = loadIndex()
+    index.entries[document.id] = ReceiptLibraryIndex.Entry(modifiedAt: modifiedAt, summary: summary)
+    self.index = index
+    isIndexChanged = true
+  }
+
+  private func forget(_ id: UUID) {
+    documentCache[id] = nil
+    var index = loadIndex()
+    guard index.entries.removeValue(forKey: id) != nil else { return }
+    self.index = index
+    isIndexChanged = true
+  }
+}
+
+extension ReceiptFileStorage {
   func delete(id: UUID) throws {
     let directory = try receiptDirectory(id: id)
     guard fileManager.fileExists(atPath: directory.path) else { return }
@@ -213,8 +488,8 @@ actor ReceiptFileStorage {
       let deletedAt = deletionDate(in: url)
       let receipt: ReceiptSummary
       do {
-        receipt = try summary(
-          for: decodeDocument(id: id, at: url.appending(path: "receipt.json")))
+        receipt = try ReceiptSummary(
+          decodeDocument(id: id, at: url.appending(path: Self.documentFileName)))
       } catch {
         receipt = .unavailable(
           id: id, date: modificationDate(of: url) ?? deletedAt, error: error)
@@ -235,7 +510,7 @@ actor ReceiptFileStorage {
       throw ReceiptStorageError.receiptAlreadyExists(id)
     }
     try fileManager.moveItem(at: deletedDirectory, to: directory)
-    try? fileManager.removeItem(at: directory.appending(path: "deletion.json"))
+    try? fileManager.removeItem(at: directory.appending(path: Self.deletionRecordFileName))
   }
 
   func permanentlyDelete(id: UUID) throws {
@@ -253,237 +528,53 @@ actor ReceiptFileStorage {
     }
   }
 
+  /// Deletes receipts deleted more than the retention interval before `now`. Only deletion dates
+  /// are read, so expired receipts are never decoded.
   func purgeExpiredTrash(now: Date) throws {
     let expirationDate = now.addingTimeInterval(-DeletedReceiptSummary.retentionInterval)
-    for deletedReceipt in try listDeleted() where deletedReceipt.deletedAt < expirationDate {
-      try permanentlyDelete(id: deletedReceipt.id)
-    }
-  }
-
-  /// Builds a new receipt's directory in staging and then moves it into place, so a receipt is
-  /// stored whole or not at all.
-  private func insert(
-    id: UUID,
-    makeDocument: (_ directory: URL) throws -> ReceiptDocument
-  ) throws -> ReceiptDocument {
-    let stagingURL = try stagingRoot().appending(path: id.uuidString, directoryHint: .isDirectory)
-    let receiptURL = try receiptDirectory(id: id)
-    guard !fileManager.fileExists(atPath: receiptURL.path) else {
-      throw ReceiptStorageError.receiptAlreadyExists(id)
-    }
-
-    do {
-      try createProtectedDirectory(stagingURL)
-      let document = try makeDocument(stagingURL)
-      try write(document, in: stagingURL)
-      try fileManager.moveItem(at: stagingURL, to: receiptURL)
-      try protect(receiptURL)
-      return document
-    } catch {
-      try? fileManager.removeItem(at: stagingURL)
-      throw error
-    }
-  }
-
-  private func decodeDocument(id: UUID, at url: URL) throws -> ReceiptDocument {
-    let data = try Data(contentsOf: url)
-    let document = try Self.decoder.decode(ReceiptDocument.self, from: data)
-    guard document.schemaVersion == ReceiptDocument.currentSchemaVersion else {
-      throw ReceiptDocumentError.unsupportedSchemaVersion(document.schemaVersion)
-    }
-    guard document.id == id else { throw ReceiptStorageError.identifierMismatch }
-    return document
-  }
-
-  /// Summaries for every stored receipt. Entries come from the persisted index while a
-  /// receipt's file is unchanged, so only new or edited receipts are decoded.
-  private func libraryEntries() throws -> [ReceiptLibraryIndex.Entry] {
     let contents = try fileManager.contentsOfDirectory(
-      at: try receiptsRoot(),
-      includingPropertiesForKeys: nil,
+      at: try trashRoot(),
+      includingPropertiesForKeys: [.contentModificationDateKey],
       options: [.skipsHiddenFiles])
-    var index = loadIndex()
-    var entries: [ReceiptLibraryIndex.Entry] = []
-    var storedIDs = Set<UUID>()
-
-    for url in contents {
-      guard let id = UUID(uuidString: url.lastPathComponent) else { continue }
-      storedIDs.insert(id)
-      let modifiedAt = modificationDate(of: url.appending(path: "receipt.json"))
-      if let modifiedAt, let entry = index.entries[id], entry.modifiedAt == modifiedAt {
-        entries.append(entry)
-        continue
-      }
-      let entry = libraryEntry(id: id, in: url, modifiedAt: modifiedAt)
-      if modifiedAt != nil {
-        index.entries[id] = entry
-        isIndexChanged = true
-      }
-      entries.append(entry)
-    }
-
-    for id in index.entries.keys where !storedIDs.contains(id) {
-      index.entries[id] = nil
-      isIndexChanged = true
-    }
-    self.index = index
-    if isIndexChanged {
-      try? saveIndex(index)
-    }
-    return entries
-  }
-
-  private func libraryEntry(id: UUID, in directory: URL, modifiedAt: Date?)
-    -> ReceiptLibraryIndex.Entry
-  {
-    let summary: ReceiptSummary
-    do {
-      summary = try self.summary(for: load(id: id))
-    } catch {
-      summary = .unavailable(
-        id: id, date: modificationDate(of: directory) ?? .distantPast, error: error)
-    }
-    return ReceiptLibraryIndex.Entry(modifiedAt: modifiedAt ?? .distantPast, summary: summary)
-  }
-
-  private func removeStagedReceipts() throws {
-    let stagingRoot = try receiptsRoot().appending(path: ".staging", directoryHint: .isDirectory)
-    guard fileManager.fileExists(atPath: stagingRoot.path) else { return }
-    let stagedItems = try fileManager.contentsOfDirectory(
-      at: stagingRoot,
-      includingPropertiesForKeys: nil)
-    for item in stagedItems {
-      try fileManager.removeItem(at: item)
+    for url in contents
+    where UUID(uuidString: url.lastPathComponent) != nil && deletionDate(in: url) < expirationDate {
+      try fileManager.removeItem(at: url)
     }
   }
 
-  private func loadIndex() -> ReceiptLibraryIndex {
-    if let index { return index }
-    guard let url = try? indexURL(),
-      let data = try? Data(contentsOf: url),
-      let stored = try? Self.indexDecoder.decode(ReceiptLibraryIndex.self, from: data),
-      stored.version == ReceiptLibraryIndex.currentVersion
-    else { return ReceiptLibraryIndex() }
-    return stored
+  private func trashRoot() throws -> URL {
+    let trash = try receiptsRoot().appending(path: ".trash", directoryHint: .isDirectory)
+    try fileManager.createProtectedDirectory(at: trash)
+    return trash
   }
 
-  private func saveIndex(_ index: ReceiptLibraryIndex) throws {
-    let url = try indexURL()
-    try Self.indexEncoder.encode(index).write(to: url, options: .atomic)
-    try protect(url)
-    isIndexChanged = false
+  private func deletedReceiptDirectory(id: UUID) throws -> URL {
+    try trashRoot().appending(path: id.uuidString, directoryHint: .isDirectory)
   }
 
-  private func indexURL() throws -> URL {
-    try receiptsRoot().appending(path: ".index.json")
+  private func writeDeletionRecord(_ record: DeletionRecord, in directory: URL) throws {
+    let url = directory.appending(path: Self.deletionRecordFileName)
+    let data = try Self.encoder.encode(record)
+    try data.write(to: url, options: .atomic)
+    try fileManager.protectItem(at: url)
   }
 
-  private func modificationDate(of url: URL) -> Date? {
-    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-  }
-
-  /// Records a document just written to `url`, so later loads and listings skip decoding it.
-  private func remember(_ document: ReceiptDocument, writtenTo url: URL) {
-    guard let modifiedAt = modificationDate(of: url) else { return }
-    documentCache[document.id] = CachedDocument(modifiedAt: modifiedAt, document: document)
-    guard let summary = try? self.summary(for: document) else { return }
-    var index = loadIndex()
-    index.entries[document.id] = ReceiptLibraryIndex.Entry(modifiedAt: modifiedAt, summary: summary)
-    self.index = index
-    isIndexChanged = true
-  }
-
-  private func forget(_ id: UUID) {
-    documentCache[id] = nil
-    var index = loadIndex()
-    guard index.entries.removeValue(forKey: id) != nil else { return }
-    self.index = index
-    isIndexChanged = true
-  }
-
-  private func summary(for document: ReceiptDocument) throws -> ReceiptSummary {
-    let total = try document.receipt.map { try decimal($0.amounts.total) }
-    return ReceiptSummary(
-      id: document.id,
-      updatedAt: document.updatedAt,
-      capturedAt: document.scan.capturedAt,
-      backgroundStyle: document.presentation.backgroundStyle,
-      recognitionStatus: document.recognition.status,
-      merchantName: document.receipt?.merchant.name,
-      localDate: document.receipt?.transaction.localDate,
-      total: total,
-      currency: document.receipt?.currency,
-      isUnavailable: false,
-      unavailableDescription: nil,
-      deferredUntil: document.recognition.status == .succeeded
-        ? nil : document.recognition.deferredUntil)
-  }
-
-  private func pageURLs(document: ReceiptDocument) throws -> [URL] {
-    let directory = try receiptDirectory(id: document.id)
-    return try document.scan.pages.map { page in
-      let url = try pageURL(for: page, in: directory)
-      guard fileManager.fileExists(atPath: url.path) else {
-        throw ReceiptStorageError.unreadablePage(url.lastPathComponent)
-      }
-      return url
+  private func deletionDate(in directory: URL) -> Date {
+    let recordURL = directory.appending(path: Self.deletionRecordFileName)
+    if let data = try? Data(contentsOf: recordURL),
+      let record = try? Self.decoder.decode(DeletionRecord.self, from: data)
+    {
+      return record.deletedAt
     }
+    return modificationDate(of: directory) ?? .distantPast
   }
+}
 
-  private func pageURL(for page: ReceiptDocument.Page, in directory: URL) throws -> URL {
-    guard page.file.hasPrefix("pages/"),
-      !page.file.contains(".."),
-      page.file.split(separator: "/").count == 2
-    else { throw ReceiptDocumentError.invalidPagePath(page.file) }
-    let url = directory.appending(path: page.file)
-    let standardizedDirectory = directory.standardizedFileURL.path + "/"
-    guard url.standardizedFileURL.path.hasPrefix(standardizedDirectory) else {
-      throw ReceiptDocumentError.invalidPagePath(page.file)
-    }
-    return url
-  }
-
-  private func writePages(_ pages: [ReceiptPage], in directory: URL) throws
-    -> [ReceiptDocument.Page]
-  {
-    let pagesURL = directory.appending(path: "pages", directoryHint: .isDirectory)
-    try createProtectedDirectory(pagesURL)
-    var written: [ReceiptDocument.Page] = []
-    do {
-      for page in pages {
-        let id = UUID()
-        let filename = "\(id.uuidString.lowercased()).heic"
-        let url = pagesURL.appending(path: filename)
-        try Self.writeHEIC(page, to: url)
-        try protect(url)
-        written.append(
-          ReceiptDocument.Page(id: id, file: "pages/\(filename)", mediaType: "image/heic"))
-      }
-    } catch {
-      for page in written {
-        try? fileManager.removeItem(at: directory.appending(path: page.file))
-      }
-      throw error
-    }
-    return written
-  }
-
+extension ReceiptFileStorage {
   private func receiptsRoot() throws -> URL {
     if let cachedRoot { return cachedRoot }
-    let root: URL
-    if let rootOverride {
-      root = rootOverride
-    } else {
-      root = try fileManager.url(
-        for: .applicationSupportDirectory,
-        in: .userDomainMask,
-        appropriateFor: nil,
-        create: true
-      )
-      .appending(path: "OpenReceipt", directoryHint: .isDirectory)
-      .appending(path: "Receipts", directoryHint: .isDirectory)
-    }
-    try createProtectedDirectory(root)
+    let root = try rootOverride ?? fileManager.openReceiptDirectory("Receipts")
+    try fileManager.createProtectedDirectory(at: root)
     cachedRoot = root
     return root
   }
@@ -493,134 +584,15 @@ actor ReceiptFileStorage {
   }
 
   private func stagingRoot() throws -> URL {
-    let staging = try receiptsRoot().appending(path: ".staging", directoryHint: .isDirectory)
-    try createProtectedDirectory(staging)
+    let staging = try receiptsRoot().appending(
+      path: Self.stagingDirectoryName, directoryHint: .isDirectory)
+    try fileManager.createProtectedDirectory(at: staging)
     return staging
   }
 
-  private func trashRoot() throws -> URL {
-    let trash = try receiptsRoot().appending(path: ".trash", directoryHint: .isDirectory)
-    try createProtectedDirectory(trash)
-    return trash
+  private func modificationDate(of url: URL) -> Date? {
+    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
   }
-
-  private func deletedReceiptDirectory(id: UUID) throws -> URL {
-    try trashRoot().appending(path: id.uuidString, directoryHint: .isDirectory)
-  }
-
-  private func writeDeletionRecord(_ record: DeletionRecord, in directory: URL) throws {
-    let url = directory.appending(path: "deletion.json")
-    let data = try Self.encoder.encode(record)
-    try data.write(to: url, options: .atomic)
-    try protect(url)
-  }
-
-  private func deletionDate(in directory: URL) -> Date {
-    let recordURL = directory.appending(path: "deletion.json")
-    if let data = try? Data(contentsOf: recordURL),
-      let record = try? Self.decoder.decode(DeletionRecord.self, from: data)
-    {
-      return record.deletedAt
-    }
-    return modificationDate(of: directory) ?? .distantPast
-  }
-
-  private func createProtectedDirectory(_ url: URL) throws {
-    try fileManager.createDirectory(
-      at: url,
-      withIntermediateDirectories: true,
-      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-  }
-
-  private func protect(_ url: URL) throws {
-    try fileManager.setAttributes(
-      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-      ofItemAtPath: url.path)
-  }
-
-  private func write(_ document: ReceiptDocument, in directory: URL) throws {
-    let data = try Self.encoder.encode(document)
-    let url = directory.appending(path: "receipt.json")
-    try data.write(to: url, options: .atomic)
-    try protect(url)
-    remember(document, writtenTo: url)
-  }
-
-  private func decimal(_ value: DecimalString) throws -> Double {
-    guard let result = value.doubleValue else {
-      throw ReceiptDocumentError.invalidDecimal(value.value)
-    }
-    return result
-  }
-
-  private static func writeHEIC(_ page: ReceiptPage, to url: URL) throws {
-    guard let image = ReceiptImageNormalizer.normalized(page.image, orientation: page.orientation),
-      let destination = CGImageDestinationCreateWithURL(
-        url as CFURL,
-        UTType.heic.identifier as CFString,
-        1,
-        nil)
-    else { throw ReceiptStorageError.cannotEncodePage }
-    let properties = [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary
-    CGImageDestinationAddImage(destination, image, properties)
-    guard CGImageDestinationFinalize(destination) else {
-      throw ReceiptStorageError.cannotEncodePage
-    }
-  }
-
-  private static let timestampStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-  private static let wholeSecondTimestampStyle = Date.ISO8601FormatStyle()
-
-  private static let encoder: JSONEncoder = {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .custom { date, encoder in
-      var container = encoder.singleValueContainer()
-      try container.encode(date.formatted(ReceiptFileStorage.timestampStyle))
-    }
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    return encoder
-  }()
-
-  private static let decoder: JSONDecoder = {
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .custom { decoder in
-      let container = try decoder.singleValueContainer()
-      let value = try container.decode(String.self)
-      if let date = try? ReceiptFileStorage.timestampStyle.parse(value) { return date }
-      guard let date = try? ReceiptFileStorage.wholeSecondTimestampStyle.parse(value) else {
-        throw DecodingError.dataCorruptedError(
-          in: container,
-          debugDescription: "Expected an ISO 8601 timestamp.")
-      }
-      return date
-    }
-    return decoder
-  }()
-
-  private static let indexEncoder = JSONEncoder()
-  private static let indexDecoder = JSONDecoder()
-
-  private struct CachedDocument {
-    let modifiedAt: Date
-    let document: ReceiptDocument
-  }
-
-  private struct DeletionRecord: Codable {
-    let deletedAt: Date
-  }
-}
-
-/// Summaries of stored receipts, keyed by the modification date of each receipt's file.
-struct ReceiptLibraryIndex: Codable {
-  static let currentVersion = 3
-
-  struct Entry: Codable {
-    let modifiedAt: Date
-    let summary: ReceiptSummary
-  }
-
-  var version = currentVersion
-  var entries: [UUID: Entry] = [:]
 }
 
 enum ReceiptStorageError: Error, LocalizedError {
@@ -636,7 +608,7 @@ enum ReceiptStorageError: Error, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .emptyScan:
-      "The scan does not contain any receipt pages."
+      "The receipt does not contain any pages."
     case .receiptAlreadyExists:
       "A receipt with this identifier already exists."
     case .receiptAlreadyDeleted:
@@ -646,9 +618,9 @@ enum ReceiptStorageError: Error, LocalizedError {
     case .cannotEncodePage:
       "A receipt page could not be encoded."
     case .unreadablePage(let name):
-      "The receipt page \(name) could not be read."
+      "The receipt page \(name) could not be opened."
     case .lastPage:
-      "A scanned receipt needs at least one page."
+      "A receipt needs at least one page."
     case .pagesChanged:
       "The receipt pages changed while they were being reordered. Try again."
     }

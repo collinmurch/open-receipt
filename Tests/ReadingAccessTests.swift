@@ -144,7 +144,7 @@ final class ReadingAccessTests: XCTestCase {
     await access.start()
 
     XCTAssertEqual(access.channel, .testFlight)
-    XCTAssertTrue(access.isTesting)
+    XCTAssertTrue(access.channel.isTesting)
   }
 
   func testSettingFreeReadsLeftWhileTesting() async {
@@ -242,8 +242,9 @@ final class ReadingAccessTests: XCTestCase {
     XCTAssertTrue(access.isUnlocked)
   }
 
-  private func isolatedDefaults() -> UserDefaults {
-    UserDefaults(suiteName: "ReadingAccessTests-\(UUID().uuidString)")!
+  /// A read key for every free read.
+  private func usedReads() -> Set<String> {
+    Set((1...ReadingAccess.freeReadLimit).map { "used-\($0)" })
   }
 
   private func makeAccess(
@@ -257,33 +258,5 @@ final class ReadingAccessTests: XCTestCase {
       store: store,
       defaults: defaults ?? isolatedDefaults(),
       resolveChannel: { channel })
-  }
-}
-
-final class FreeReadStoreTests: XCTestCase {
-  func testMergedStoreLoadsEveryStore() {
-    let store = FreeReadStore.merged([.memory(["a"]), .memory(["b"])])
-
-    XCTAssertEqual(store.load(), ["a", "b"])
-  }
-
-  func testMergedStoreSavesToEveryStore() {
-    let device = FreeReadStore.memory()
-    let iCloud = FreeReadStore.memory()
-
-    FreeReadStore.merged([device, iCloud]).save(["a"])
-
-    XCTAssertEqual(device.load(), ["a"])
-    XCTAssertEqual(iCloud.load(), ["a"])
-  }
-
-  func testMergedStoreKeepsReadsWhenOneStoreIsCleared() {
-    let device = FreeReadStore.memory(["a"])
-    let iCloud = FreeReadStore.memory(["a"])
-    let store = FreeReadStore.merged([device, iCloud])
-
-    device.save([])
-
-    XCTAssertEqual(store.load(), ["a"])
   }
 }

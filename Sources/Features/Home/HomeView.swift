@@ -18,7 +18,7 @@ enum HomeZoomSource: Hashable {
 struct HomeView: View {
   @State private var path: [HomeRoute] = []
   @State private var isScannerPresented = false
-  @State private var scanErrorDescription: String?
+  @State private var cameraErrorDescription: String?
   @Namespace private var libraryTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
@@ -44,12 +44,12 @@ struct HomeView: View {
         onCancel: { isScannerPresented = false },
         onFailure: { error in
           isScannerPresented = false
-          scanErrorDescription = error.localizedDescription
+          cameraErrorDescription = error.localizedDescription
         }
       )
       .ignoresSafeArea()
     }
-    .errorAlert("Couldn’t Scan Receipt", message: $scanErrorDescription)
+    .errorAlert("Couldn’t Open Camera", message: $cameraErrorDescription)
     .environment(\.receiptLibraryRefresh, ReceiptLibraryRefreshAction(library: library))
     .task {
       await library.load()

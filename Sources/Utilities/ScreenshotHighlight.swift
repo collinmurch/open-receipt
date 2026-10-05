@@ -1,36 +1,10 @@
 import SwiftUI
 
 extension View {
-  /// Names Debug and TestFlight builds in the navigation bar, except in App Store screenshots.
-  func buildChannelSubtitle() -> some View {
-    modifier(BuildChannelSubtitleModifier())
-  }
-
   /// Marks a view that App Store screenshots lift above the screen. Debug builds launched by
   /// `make previews` record where it is drawn; otherwise this does nothing.
   func screenshotHighlight(_ name: String) -> some View {
     modifier(ScreenshotHighlightModifier(name: name))
-  }
-}
-
-private struct BuildChannelSubtitleModifier: ViewModifier {
-  @Environment(ReadingAccess.self) private var access
-
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    if access.channel.isTesting, !isCapturing {
-      content.navigationSubtitle(access.channel.title)
-    } else {
-      content
-    }
-  }
-
-  private var isCapturing: Bool {
-    #if DEBUG
-      return ScreenshotHighlights.isCapturing
-    #else
-      return false
-    #endif
   }
 }
 
@@ -58,7 +32,7 @@ private struct ScreenshotHighlightModifier: ViewModifier {
 #if DEBUG
   /// Writes highlighted frames, in points, to the path passed as `-ScreenshotHighlights`.
   @MainActor
-  private enum ScreenshotHighlights {
+  enum ScreenshotHighlights {
     static let isCapturing = UserDefaults.standard.string(forKey: "ScreenshotScenario") != nil
 
     private static let url = UserDefaults.standard.string(forKey: "ScreenshotHighlights")

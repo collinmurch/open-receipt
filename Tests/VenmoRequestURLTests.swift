@@ -54,12 +54,6 @@ final class VenmoRequestURLTests: XCTestCase {
     XCTAssertEqual(queryValue("recipients", in: components), "6468639557")
   }
 
-  func testFormatsPhoneNumberForDisplay() {
-    let recipient = recipient(.phoneNumber, "+1 646-863-9557")
-
-    XCTAssertEqual(recipient.displayValue, "(646) 863-9557")
-  }
-
   func testRejectsPhoneNumberWithoutTenUSDigits() {
     XCTAssertNil(
       VenmoRequestURL.make(

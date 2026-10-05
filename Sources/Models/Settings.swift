@@ -27,3 +27,22 @@ enum AdjustmentSplitSettings {
       ?? initialDefaultMethod
   }
 }
+
+/// Whether reads use the sample receipt instead of Private Cloud Compute, so the simulator and
+/// testers can read without PCC or its quota. Only testing builds can; it starts on in development.
+enum SampleReceipts {
+  static let key = "TestingSampleReceipts"
+
+  static var isEnabled: Bool {
+    isEnabled(in: BuildChannel.current, defaults: .standard)
+  }
+
+  static func isEnabled(in channel: BuildChannel, defaults: UserDefaults) -> Bool {
+    guard channel.isTesting else { return false }
+    return defaults.object(forKey: key) as? Bool ?? isOnByDefault(in: channel)
+  }
+
+  static func isOnByDefault(in channel: BuildChannel) -> Bool {
+    channel == .development
+  }
+}

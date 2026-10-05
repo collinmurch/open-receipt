@@ -38,7 +38,7 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
     case .timedOut:
       "Reading the receipt took too long. Try again."
     case .refused:
-      "These pages couldn’t be read as a receipt. Try scanning the receipt again."
+      "These pages couldn’t be read as a receipt. Try reading the receipt again."
     case .tooManyPages:
       "These pages are too large to read together. Remove a page and try again."
     case .invalidResponse(let message):
@@ -69,17 +69,24 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
   }
 }
 
+/// Whether receipt reading can run right now, for showing persistent status before a read.
+enum ReceiptModelStatus: Sendable, Equatable {
+  case available
+  case approachingLimit(canIncreaseLimit: Bool)
+  case limitReached(resetDate: Date?, canIncreaseLimit: Bool)
+  case unavailable(String)
+}
+
 // The simulator runtime lacks the parser's FoundationModels symbols, so it reads sample receipts.
 #if os(macOS) || !targetEnvironment(simulator)
   public enum ReceiptParser {
-    /// Parses `pages`, reporting the receipt as it is read when `onPreview` is supplied.
-    public static func parse(
+    /// Parses `pages`, reporting the receipt to `onPreview` as it is read.
+    static func parse(
       pages: [ReceiptPage],
-      configuration: ReceiptParserConfiguration = .standard,
-      onPreview: (@Sendable (ReceiptParsePreview) async -> Void)? = nil
+      onPreview: @escaping @Sendable (ReceiptParsePreview) async -> Void
     ) async throws -> ParsedReceipt {
       ReceiptModelContract.receipt(
-        from: try await respond(pages: pages, configuration: configuration, onPreview: onPreview))
+        from: try await respond(pages: pages, configuration: .standard, onPreview: onPreview))
     }
 
     /// Returns the model response encoded as the JSON that `ReceiptModelContract.receipt(from:)` decodes.
@@ -93,7 +100,7 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
 
     /// Prepares a session ahead of a likely request, such as when the scanner opens. The next
     /// parse uses it. A session that is already warm is kept.
-    public static func prewarm() {
+    static func prewarm() {
       guard model.isAvailable, prewarmedSession.withLock({ $0 == nil }) else { return }
       let session = makeSession()
       session.prewarm(promptPrefix: Prompt { ReceiptModelContract.prompt })
@@ -102,7 +109,7 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
 
     /// The current availability and quota of the receipt model. Reading it inside a SwiftUI view
     /// body tracks changes, because the model is observable.
-    public static func status() -> ReceiptModelStatus {
+    static func status() -> ReceiptModelStatus {
       if case .unavailable(let reason) = model.availability {
         return .unavailable(description(of: reason))
       }
@@ -120,7 +127,7 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
     }
 
     /// Shows the system offer to raise the receipt reading limit, when one exists.
-    public static func showLimitIncrease() {
+    static func showLimitIncrease() {
       model.quotaUsage.limitIncreaseSuggestion?.show()
     }
 

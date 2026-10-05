@@ -26,3 +26,22 @@ struct ReceiptActionButton: View {
     .glassEffect(.regular.tint(tint).interactive(), in: .capsule)
   }
 }
+
+/// A glass capsule button's title and symbol, sized like `ReceiptActionButton`.
+struct GlassActionLabel: View {
+  let title: String
+  let systemImage: String
+  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 50
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Text(title)
+        .lineLimit(1)
+      Image(systemName: systemImage)
+    }
+    .font(.body.weight(.semibold))
+    .padding(.horizontal, 22)
+    .frame(minHeight: height)
+    .contentShape(.capsule)
+  }
+}

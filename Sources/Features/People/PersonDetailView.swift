@@ -12,7 +12,7 @@ struct PersonDetailView: View {
   /// person is shown from inside a receipt, so receipts and people can't open each other without
   /// end.
   let showsReceipts: Bool
-  let onSave: (Person) async -> Person?
+  let onSave: (Person) async -> Void
   let onDelete: (Person) async -> Bool
   private let savedPerson: Person
   /// What was last saved, so leaving for a receipt and then leaving the screen saves only once.
@@ -43,7 +43,7 @@ struct PersonDetailView: View {
   init(
     person: Person,
     showsReceipts: Bool,
-    onSave: @escaping (Person) async -> Person?,
+    onSave: @escaping (Person) async -> Void,
     onDelete: @escaping (Person) async -> Bool
   ) {
     self.showsReceipts = showsReceipts
@@ -191,37 +191,38 @@ struct PersonDetailView: View {
   }
 
   private var customUsernameField: some View {
-    LabeledContent("Username") {
-      HStack(spacing: 2) {
-        Text("@")
-          .foregroundStyle(.secondary)
-        FormTextField("username", text: $customVenmoUsername)
-          .textContentType(.username)
-          .textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-          .focused($focusedField, equals: .venmoUsername)
-          .fixedSize(horizontal: true, vertical: false)
-      }
-      .fixedSize(horizontal: true, vertical: false)
-    }
-    .focusesOnTap($focusedField, equals: .venmoUsername)
+    handleField(
+      "Username", prefix: "@", placeholder: "username", text: $customVenmoUsername,
+      field: .venmoUsername)
   }
 
   private var cashAppField: some View {
-    LabeledContent("Cashtag") {
+    handleField(
+      "Cashtag", prefix: "$", placeholder: "cashtag", text: $cashAppCashtag, field: .cashtag)
+  }
+
+  /// A username field that shows the service's `prefix` before what's typed.
+  private func handleField(
+    _ title: LocalizedStringKey,
+    prefix: String,
+    placeholder: String,
+    text: Binding<String>,
+    field: Field
+  ) -> some View {
+    LabeledContent(title) {
       HStack(spacing: 2) {
-        Text("$")
+        Text(prefix)
           .foregroundStyle(.secondary)
-        FormTextField("cashtag", text: $cashAppCashtag)
+        FormTextField(placeholder, text: text)
           .textContentType(.username)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
-          .focused($focusedField, equals: .cashtag)
+          .focused($focusedField, equals: field)
           .fixedSize(horizontal: true, vertical: false)
       }
       .fixedSize(horizontal: true, vertical: false)
     }
-    .focusesOnTap($focusedField, equals: .cashtag)
+    .focusesOnTap($focusedField, equals: field)
   }
 
   private var customIMessageField: some View {
@@ -371,7 +372,7 @@ struct PersonDetailView: View {
     guard updatedPerson != lastSavedPerson else { return }
     lastSavedPerson = updatedPerson
     Task {
-      _ = await onSave(updatedPerson)
+      await onSave(updatedPerson)
     }
   }
 }
@@ -433,71 +434,5 @@ private struct PersonReceiptRow: View {
 
   private var date: String? {
     receipt.summary.localDate.flatMap { ReceiptLibraryDateFormatter.formatted(localDate: $0) }
-  }
-}
-
-/// A menu of the contact's phone numbers and email addresses, plus a custom entry that selects
-/// `nil`.
-private struct ContactRecipientPicker<Recipient: ContactRecipient>: View {
-  private struct Option: Identifiable {
-    let recipient: Recipient
-    let title: String
-
-    var id: Recipient.ID { recipient.id }
-  }
-
-  let contact: ContactSummary?
-  @Binding var selection: Recipient?
-  let customTitle: LocalizedStringKey
-
-  var body: some View {
-    let options = self.options
-    LabeledContent("Recipient") {
-      Menu {
-        ForEach(options) { option in
-          Toggle(isOn: isSelected(option.recipient)) {
-            Text(option.title)
-          }
-        }
-        Toggle(isOn: isSelected(nil)) {
-          Text(customTitle)
-        }
-      } label: {
-        if let option = options.first(where: { $0.recipient == selection }) {
-          Text(option.title)
-        } else {
-          Text(customTitle)
-        }
-      }
-    }
-  }
-
-  private var options: [Option] {
-    let phoneNumbers = (contact?.phoneNumbers ?? []).map {
-      (recipient: Recipient.phoneNumber($0.value), label: $0.label)
-    }
-    let emailAddresses = (contact?.emailAddresses ?? []).map {
-      (recipient: Recipient.emailAddress($0.value), label: $0.label)
-    }
-    var options: [Option] = []
-    for (recipient, label) in phoneNumbers + emailAddresses {
-      guard !options.contains(where: { $0.recipient == recipient }) else { continue }
-      let title = label.map { "\($0): \(recipient.displayValue)" } ?? recipient.displayValue
-      options.append(Option(recipient: recipient, title: title))
-    }
-    if let selection, !options.contains(where: { $0.recipient == selection }) {
-      options.append(Option(recipient: selection, title: selection.displayValue))
-    }
-    return options
-  }
-
-  private func isSelected(_ recipient: Recipient?) -> Binding<Bool> {
-    Binding(
-      get: { selection == recipient },
-      set: { isSelected in
-        if isSelected {
-          selection = recipient
-        }
-      })
   }
 }

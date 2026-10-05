@@ -1,20 +1,5 @@
 import Foundation
 
-enum ReportFormat: String {
-  case text
-  case json
-  case summary
-
-  init?(_ raw: String) {
-    switch raw.lowercased() {
-    case "text", "txt": self = .text
-    case "json": self = .json
-    case "summary", "short": self = .summary
-    default: return nil
-    }
-  }
-}
-
 struct ExpectedReceipt: Codable {
   var currency: String?
   var subtotal: Double?

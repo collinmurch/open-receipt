@@ -8,6 +8,7 @@ struct ReceiptPeopleView: View {
   @State private var contactModel: PeoplePickerModel
   @State private var peopleModel: SavedPeopleModel
   @State private var isNewPersonPresented = false
+  @State private var initialParticipants: [ReceiptParticipant]
   @Environment(\.dismiss) private var dismiss
 
   init(
@@ -19,6 +20,7 @@ struct ReceiptPeopleView: View {
     self.contactClient = contactClient
     contactModel = PeoplePickerModel(client: contactClient)
     peopleModel = SavedPeopleModel(storage: peopleStorage)
+    initialParticipants = draft.participants
   }
 
   var body: some View {
@@ -34,8 +36,9 @@ struct ReceiptPeopleView: View {
           }
         }
 
-        if !peopleModel.people.isEmpty {
-          savedPeopleSection
+        let savedPeople = filteredSavedPeople
+        if !savedPeople.isEmpty {
+          savedPeopleSection(savedPeople)
         }
 
         if contactModel.isLoading || peopleModel.isLoading {
@@ -64,10 +67,15 @@ struct ReceiptPeopleView: View {
       .navigationBarTitleDisplayMode(.inline)
       .searchable(text: $contactModel.searchText, prompt: "Search people")
       .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
-          Button(role: .close) { dismiss() }
+        ToolbarItem(placement: .topBarTrailing) {
+          if hasChanges {
+            Button("Done", systemImage: "checkmark", role: .confirm) { dismiss() }
+          } else {
+            Button(role: .close) { dismiss() }
+          }
         }
       }
+      .animation(.selectionChange, value: hasChanges)
       .sheet(isPresented: $isNewPersonPresented) {
         NewPersonView { name in
           Task {
@@ -134,6 +142,10 @@ struct ReceiptPeopleView: View {
     }
   }
 
+  private var hasChanges: Bool {
+    draft.participants != initialParticipants
+  }
+
   private var ownerContactIdentifier: String? {
     draft.currentUser?.source.contactIdentifier
   }
@@ -151,9 +163,9 @@ struct ReceiptPeopleView: View {
     }
   }
 
-  private var savedPeopleSection: some View {
+  private func savedPeopleSection(_ people: [Person]) -> some View {
     Section("Saved People") {
-      ForEach(filteredSavedPeople) { person in
+      ForEach(people) { person in
         let participant =
           draft.participant(forPersonID: person.id)
           ?? person.contactIdentifier.flatMap(draft.participant(forContactIdentifier:))
@@ -182,18 +194,20 @@ struct ReceiptPeopleView: View {
   }
 
   private var contactsSection: some View {
-    Section("Contacts") {
+    // The owner is already listed among the receipt's people, so it is never offered here.
+    let contacts = contactModel.filteredContacts.filter {
+      $0.identifier != ownerContactIdentifier
+    }
+    return Section("Contacts") {
       LimitedContactAccessRows(model: contactModel) { identifiers in
         Task { await addResolvedContacts(identifiers) }
       }
 
-      if contactModel.filteredContacts.isEmpty {
+      if contacts.isEmpty {
         Text("No matching contacts")
           .foregroundStyle(.secondary)
       } else {
-        ForEach(
-          contactModel.filteredContacts.filter { $0.identifier != ownerContactIdentifier }
-        ) { contact in
+        ForEach(contacts) { contact in
           contactRow(contact)
         }
       }
@@ -201,7 +215,7 @@ struct ReceiptPeopleView: View {
   }
 
   private var filteredSavedPeople: [Person] {
-    let query = contactModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let query = contactModel.searchQuery
     let people = peopleModel.people.filter {
       $0.contactIdentifier == nil || $0.contactIdentifier != ownerContactIdentifier
     }

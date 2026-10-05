@@ -36,10 +36,8 @@ struct LimitedContactAccessRows: View {
         model.isContactAccessPickerPresented = true
       }
 
-      if !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        ContactAccessButton(queryString: model.searchText) { identifiers in
-          onGrant(identifiers)
-        }
+      if !model.searchQuery.isEmpty {
+        ContactAccessButton(queryString: model.searchText) { onGrant($0) }
       }
     }
   }

@@ -12,7 +12,7 @@ struct ReceiptParticipantBreakdownView: View {
   /// The breakdown to share, once the split is final.
   let breakdown: ReceiptBreakdown?
   let onRequest: (Date) -> Void
-  let onSavePerson: (Person) async -> Person?
+  let onSavePerson: (Person) async -> Void
   let onDeletePerson: (Person) async -> Bool
   @State private var selectedPerson: Person?
   @State private var requester = PaymentRequester()
@@ -130,7 +130,7 @@ struct ReceiptParticipantBreakdownView: View {
             breakdownRow(
               title: item.description,
               subtitle: item.fraction < 1
-                ? "\(formattedPercentage(item.fraction)) share" : nil,
+                ? "\(item.fraction.sharePercentText) share" : nil,
               amount: item.amount)
           }
         }
@@ -141,7 +141,7 @@ struct ReceiptParticipantBreakdownView: View {
           ForEach(share.adjustments) { adjustment in
             breakdownRow(
               title: adjustment.title,
-              subtitle: formattedPercentage(adjustment.fraction),
+              subtitle: adjustment.fraction.sharePercentText,
               amount: adjustment.amount)
           }
         } header: {
@@ -235,10 +235,6 @@ struct ReceiptParticipantBreakdownView: View {
         .font(.body.monospacedDigit())
         .foregroundStyle(.secondary)
     }
-  }
-
-  private func formattedPercentage(_ fraction: Double) -> String {
-    fraction.formatted(.percent.precision(.fractionLength(0...1)))
   }
 
   /// Plays the removal haptic here because the contact sheet dismisses itself on delete.

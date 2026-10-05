@@ -3,20 +3,11 @@ import XCTest
 @testable import open_receipt
 
 final class AdjustmentSplitSettingsTests: XCTestCase {
-  private var suiteName: String!
   private var defaults: UserDefaults!
 
   override func setUp() {
     super.setUp()
-    suiteName = "AdjustmentSplitSettingsTests-\(UUID().uuidString)"
-    defaults = UserDefaults(suiteName: suiteName)
-  }
-
-  override func tearDown() {
-    defaults.removePersistentDomain(forName: suiteName)
-    defaults = nil
-    suiteName = nil
-    super.tearDown()
+    defaults = isolatedDefaults()
   }
 
   func testDefaultMethodIsProportionalWhenUnset() {

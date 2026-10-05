@@ -4,6 +4,9 @@ extension SensoryFeedback {
   /// Played as a long press lifts a row out of its list into focus.
   static let lift = SensoryFeedback.impact(weight: .medium)
 
+  /// Played as choices rise into view, such as the ways to start a receipt.
+  static let rise = SensoryFeedback.impact(flexibility: .soft)
+
   /// Played after a person removes content, such as a receipt, item, page, or person.
   static let removal = SensoryFeedback.impact(weight: .medium)
 }

@@ -16,7 +16,7 @@ let package = Package(
         .target(
             name: "ReceiptKit",
             path: "Sources",
-            exclude: ["App", "Features", "Models", "Services", "Utilities"],
+            exclude: ["Components", "Features", "Models", "Services", "Utilities"],
             sources: ["ReceiptCore"]
         ),
         .executableTarget(

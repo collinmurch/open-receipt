@@ -6,10 +6,9 @@ import XCTest
 final class ReceiptDraftEditingTests: XCTestCase {
   func testPurchaseDateReadsStoredReceiptDate() {
     let draft = makeDraft()
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
 
-    let components = calendar.dateComponents([.year, .month, .day], from: draft.purchaseDate)
+    let components = ReceiptLocalDate.calendar.dateComponents(
+      [.year, .month, .day], from: draft.purchaseDate)
 
     XCTAssertEqual(components.year, 2026)
     XCTAssertEqual(components.month, 8)
@@ -18,10 +17,8 @@ final class ReceiptDraftEditingTests: XCTestCase {
 
   func testPurchaseDateWritesStorageFormat() throws {
     let draft = makeDraft()
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
     let selectedDate = try XCTUnwrap(
-      calendar.date(from: DateComponents(year: 2027, month: 2, day: 3)))
+      ReceiptLocalDate.calendar.date(from: DateComponents(year: 2027, month: 2, day: 3)))
 
     draft.purchaseDate = selectedDate
 
@@ -276,15 +273,7 @@ final class ReceiptDraftEditingTests: XCTestCase {
 
   func testAvatarMutationDoesNotAdvancePersistenceRevision() {
     let draft = makeDraft()
-    draft.addPerson(
-      Person(
-        id: UUID(),
-        createdAt: Date(timeIntervalSince1970: 1),
-        updatedAt: Date(timeIntervalSince1970: 1),
-        lastIncludedAt: Date(timeIntervalSince1970: 1),
-        displayName: "Sam",
-        contactIdentifier: "contact-1",
-        paymentMethods: .init()))
+    draft.addPerson(.fixture(name: "Sam", contactIdentifier: "contact-1"))
     let revision = draft.persistenceRevision
 
     draft.updateAvatar(Data([1, 2, 3]), forContactIdentifier: "contact-1")

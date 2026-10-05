@@ -52,7 +52,7 @@ struct ReceiptItemEditorView: View {
         }
         .focusesOnTap($focusedField, equals: .quantity)
         LabeledContent("Line Total") {
-          CurrencyAmountField("Amount", value: $item.lineTotal, currencyCode: currency)
+          CurrencyAmountField(value: $item.lineTotal, currencyCode: currency)
             .multilineTextAlignment(.trailing)
             .focused($focusedField, equals: .lineTotal)
             .accessibilityLabel("Line total")
@@ -96,13 +96,8 @@ struct ReceiptItemEditorView: View {
     .navigationTitle(isNew ? "New Item" : "Edit Item")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
-    .toolbar {
-      // Number pads have no return key, so the keyboard gets its own way to close.
-      if focusedField == .quantity || focusedField == .lineTotal {
-        ToolbarItem(placement: .keyboard) {
-          Button("Done") { focusedField = nil }
-        }
-      }
+    .keyboardDoneButton(isVisible: focusedField == .quantity || focusedField == .lineTotal) {
+      focusedField = nil
     }
     .onAppear {
       if isNew { focusedField = .name }

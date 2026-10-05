@@ -1,26 +1,26 @@
 import Foundation
 
 /// A receipt as it is being read, built from a partially generated model response.
-public struct ReceiptParsePreview: Sendable, Equatable {
-  public struct Item: Sendable, Equatable {
-    public var description: String
-    public var quantity: Double?
-    public var lineTotal: Double?
+struct ReceiptParsePreview: Sendable, Equatable {
+  struct Item: Sendable, Equatable {
+    var description: String
+    var quantity: Double?
+    var lineTotal: Double?
 
-    public init(description: String, quantity: Double? = nil, lineTotal: Double? = nil) {
+    init(description: String, quantity: Double? = nil, lineTotal: Double? = nil) {
       self.description = description
       self.quantity = quantity
       self.lineTotal = lineTotal
     }
   }
 
-  public var merchantName: String?
-  public var date: String?
-  public var total: Double?
-  public var currency: String?
-  public var items: [Item]
+  var merchantName: String?
+  var date: String?
+  var total: Double?
+  var currency: String?
+  var items: [Item]
 
-  public init(
+  init(
     merchantName: String? = nil,
     date: String? = nil,
     total: Double? = nil,
@@ -35,7 +35,7 @@ public struct ReceiptParsePreview: Sendable, Equatable {
   }
 
   /// The sum of the line totals read so far.
-  public var itemTotal: Double {
+  var itemTotal: Double {
     items.reduce(0) { $0 + ($1.lineTotal ?? 0) }
   }
 }

@@ -46,7 +46,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
     let storage = makeStorage(create: { scan, style in
       try await Task.sleep(for: .milliseconds(50))
       await log.append("create")
-      return ReceiptRecognitionCenterTests.pendingDocument(id: scan.id, style: style)
+      return ReceiptDocument.pending(id: scan.id, style: style)
     })
     let center = makeCenter(parsingClient: client, storage: storage)
 
@@ -96,7 +96,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   func testRescanKeepsReceiptCurrentUser() async {
     let scan = ReceiptScan(pages: [])
     let previous = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Old"), id: scan.id)
-    let stored = Self.pendingDocument(id: scan.id, style: .mint).updating(from: previous)
+    let stored = ReceiptDocument.pending(id: scan.id, style: .mint).updating(from: previous)
     let center = makeCenter(owner: ReceiptOwner(contactIdentifier: "me", displayName: "Alex"))
 
     let outcome = await center.recognize(scan, replacing: stored).outcome
@@ -338,7 +338,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testReadUsesFreeRead() async {
-    let access = lockedAccess()
+    let access = ReadingAccess.locked()
     let center = makeCenter(access: access)
 
     _ = await center.recognize(ReceiptScan(pages: [])).outcome
@@ -356,7 +356,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testReadWithoutFreeReadsNeedsUnlock() async {
-    let center = makeCenter(access: lockedAccess(used: ReadingAccess.freeReadLimit))
+    let center = makeCenter(access: .locked(used: ReadingAccess.freeReadLimit))
 
     let outcome = await center.recognize(ReceiptScan(pages: [])).outcome
 
@@ -372,7 +372,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
       return ParsedReceipt(merchantName: "Cafe")
     }
     let center = makeCenter(
-      parsingClient: client, access: lockedAccess(used: ReadingAccess.freeReadLimit))
+      parsingClient: client, access: .locked(used: ReadingAccess.freeReadLimit))
 
     _ = await center.recognize(ReceiptScan(pages: [])).outcome
 
@@ -382,7 +382,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
 
   func testReadWithoutFreeReadsStoresScan() async {
     let scan = ReceiptScan(pages: [])
-    let center = makeCenter(access: lockedAccess(used: ReadingAccess.freeReadLimit))
+    let center = makeCenter(access: .locked(used: ReadingAccess.freeReadLimit))
     let recognition = center.recognize(scan)
 
     _ = await recognition.outcome
@@ -397,7 +397,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
       return ParsedReceipt(merchantName: "Cafe")
     }
     let center = makeCenter(
-      parsingClient: client, access: lockedAccess(used: ReadingAccess.freeReadLimit - 1))
+      parsingClient: client, access: .locked(used: ReadingAccess.freeReadLimit - 1))
 
     let first = center.recognize(ReceiptScan(pages: []))
     let second = center.recognize(ReceiptScan(pages: []))
@@ -411,7 +411,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testFailedReadReturnsFreeRead() async {
-    let access = lockedAccess()
+    let access = ReadingAccess.locked()
     let client = ReceiptParsingClient(usesSampleData: false) { _ in
       throw ReceiptParserError.timedOut
     }
@@ -423,7 +423,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testDeferredReadKeepsFreeRead() async {
-    let access = lockedAccess()
+    let access = ReadingAccess.locked()
     let client = ReceiptParsingClient(usesSampleData: false) { _ in
       throw ReceiptParserError.quotaLimitReached(resetDate: Date().addingTimeInterval(600))
     }
@@ -435,7 +435,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testReadCancelledBeforeItemsReturnsFreeRead() async {
-    let access = lockedAccess()
+    let access = ReadingAccess.locked()
     let client = ReceiptParsingClient(usesSampleData: false) { _ in
       throw ReceiptParserError.connectionUnavailable
     }
@@ -447,7 +447,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   }
 
   func testReadCancelledAfterItemsKeepsFreeRead() async {
-    let access = lockedAccess()
+    let access = ReadingAccess.locked()
     let client = ReceiptParsingClient(
       usesSampleData: false,
       stream: { _, onPreview in
@@ -492,7 +492,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
     let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
     let center = makeCenter(
       storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }),
-      access: lockedAccess(used: ReadingAccess.freeReadLimit))
+      access: .locked(used: ReadingAccess.freeReadLimit))
 
     await center.resumeDeferredReads()
 
@@ -506,7 +506,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
     let scan = ReceiptScan(pages: [])
     let first = ReceiptRecognition(scan: scan, backgroundStyle: .blue)
     let retry = ReceiptRecognition(
-      scan: scan, backgroundStyle: .blue, document: Self.pendingDocument(id: scan.id, style: .blue))
+      scan: scan, backgroundStyle: .blue, document: .pending(id: scan.id, style: .blue))
 
     XCTAssertEqual(
       ReceiptRecognitionCenter.readKey(for: first), ReceiptRecognitionCenter.readKey(for: retry))
@@ -515,17 +515,12 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
   func testRescanHasNewReadKey() {
     let scan = ReceiptScan(pages: [])
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Old"), id: scan.id)
-    let stored = Self.pendingDocument(id: scan.id, style: .mint).updating(from: draft)
+    let stored = ReceiptDocument.pending(id: scan.id, style: .mint).updating(from: draft)
     let first = ReceiptRecognition(scan: scan, backgroundStyle: .mint)
     let rescan = ReceiptRecognition(scan: scan, backgroundStyle: .mint, document: stored)
 
     XCTAssertNotEqual(
       ReceiptRecognitionCenter.readKey(for: first), ReceiptRecognitionCenter.readKey(for: rescan))
-  }
-
-  private func lockedAccess(used: Int = 0) -> ReadingAccess {
-    let reads = used > 0 ? Set((1...used).map { "used-\($0)" }) : []
-    return ReadingAccess(client: .fixed(isEntitled: false), store: .memory(reads))
   }
 
   private func makeCenter(
@@ -548,22 +543,18 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
     create:
       @escaping @Sendable (ReceiptScan, ReceiptBackgroundStyle) async throws
       -> ReceiptDocument = { scan, style in
-        ReceiptRecognitionCenterTests.pendingDocument(id: scan.id, style: style)
+        ReceiptDocument.pending(id: scan.id, style: style)
       },
     save: @escaping @Sendable (ReceiptDocument) async throws -> Void = { _ in }
   ) -> ReceiptStorageClient {
-    ReceiptStorageClient(
-      create: create,
-      createBlank: { _, _ in throw TestError.unused },
-      list: { [] },
-      load: { _ in throw TestError.unused },
-      loadPages: { _ in [] },
-      pageURLs: { _ in [] },
-      addPages: { _, _ in throw TestError.unused },
-      deletePage: { _, _ in throw TestError.unused },
-      reorderPages: { _, _ in throw TestError.unused },
-      save: save,
-      delete: { _ in })
+    var storage = ReceiptStorageClient.unimplemented
+    storage.create = create
+    storage.list = { [] }
+    storage.loadPages = { _ in [] }
+    storage.pageURLs = { _ in [] }
+    storage.save = save
+    storage.delete = { _ in }
+    return storage
   }
 
   private func makeDeferredStorage(
@@ -584,22 +575,18 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
       unavailableDescription: nil,
       deferredUntil: document.recognition.deferredUntil)
     let page = Self.page()
-    return ReceiptStorageClient(
-      create: { _, _ in throw TestError.unused },
-      createBlank: { _, _ in throw TestError.unused },
-      list: { [summary] },
-      load: { _ in document },
-      loadPages: { _ in [page] },
-      pageURLs: { _ in [] },
-      addPages: { _, _ in throw TestError.unused },
-      deletePage: { _, _ in throw TestError.unused },
-      reorderPages: { _, _ in throw TestError.unused },
-      save: save,
-      delete: { _ in })
+    var storage = ReceiptStorageClient.unimplemented
+    storage.list = { [summary] }
+    storage.load = { _ in document }
+    storage.loadPages = { _ in [page] }
+    storage.pageURLs = { _ in [] }
+    storage.save = save
+    storage.delete = { _ in }
+    return storage
   }
 
   private nonisolated static func deferredDocument(until date: Date) -> ReceiptDocument {
-    var document = pendingDocument(id: UUID(), style: .blue)
+    var document = ReceiptDocument.pending(style: .blue)
     document.recognition.status = .failed
     document.recognition.deferredUntil = date
     return document
@@ -616,31 +603,6 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
     return ReceiptPage(image: context!.makeImage()!)
   }
-
-  private nonisolated static func pendingDocument(
-    id: UUID,
-    style: ReceiptBackgroundStyle
-  ) -> ReceiptDocument {
-    ReceiptDocument(
-      schemaVersion: ReceiptDocument.currentSchemaVersion,
-      id: id,
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      presentation: .init(backgroundStyle: style),
-      scan: .init(capturedAt: Date(timeIntervalSince1970: 1), source: .documentCamera, pages: []),
-      recognition: .init(
-        status: .pending,
-        contractVersion: 1,
-        lastAttemptedAt: nil,
-        completedAt: nil,
-        failureMessage: nil),
-      receipt: nil,
-      split: nil)
-  }
-}
-
-private enum TestError: Error {
-  case unused
 }
 
 private actor EventLog {
@@ -648,18 +610,5 @@ private actor EventLog {
 
   func append(_ event: String) {
     events.append(event)
-  }
-}
-
-extension ReceiptConnectivity {
-  /// A connection that never returns until the waiting task is cancelled.
-  static let offline = ReceiptConnectivity { try? await Task.sleep(for: .seconds(3600)) }
-}
-
-private actor SaveRecorder {
-  private(set) var documents: [ReceiptDocument] = []
-
-  func append(_ document: ReceiptDocument) {
-    documents.append(document)
   }
 }

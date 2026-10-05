@@ -20,25 +20,18 @@ struct ReceiptDraftPersistenceState {
       throw ReceiptDocumentError.missingReceipt
     }
 
-    func decimal(_ value: DecimalString) throws -> Double {
-      guard let result = value.doubleValue else {
-        throw ReceiptDocumentError.invalidDecimal(value.value)
-      }
-      return result
-    }
-
     id = document.id
     backgroundStyle = document.presentation.backgroundStyle
     merchantName = receipt.merchant.name
     date = receipt.transaction.localDate
-    subtotal = try decimal(receipt.amounts.subtotal)
+    subtotal = try receipt.amounts.subtotal.requiredDouble()
     var loadedAdjustments = ReceiptTotalAdjustments()
     for adjustment in receipt.amounts.adjustments {
-      let value = try decimal(adjustment.amount)
+      let value = try adjustment.amount.requiredDouble()
       loadedAdjustments[adjustment.kind] = adjustment.kind == .savings ? abs(value) : value
     }
     adjustments = loadedAdjustments
-    total = try decimal(receipt.amounts.total)
+    total = try receipt.amounts.total.requiredDouble()
     currency = receipt.currency
     payment = receipt.payment.map {
       ReceiptPayment(
@@ -54,8 +47,8 @@ struct ReceiptDraftPersistenceState {
       ReceiptDraftItem(
         id: item.id,
         description: item.description,
-        quantity: try decimal(item.quantity),
-        lineTotal: try decimal(item.lineTotal),
+        quantity: try item.quantity.requiredDouble(),
+        lineTotal: try item.lineTotal.requiredDouble(),
         participantIDs: assignments[item.id, default: []])
     }
     adjustmentSplitMethod = split.adjustmentMethod

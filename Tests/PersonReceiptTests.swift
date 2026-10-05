@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class PersonReceiptTests: XCTestCase {
   func testOwedIsPersonsShare() throws {
-    let sam = makePerson(name: "Sam")
+    let sam = Person.fixture(name: "Sam")
     let draft = makeDraft()
     let participant = draft.addPerson(sam)
     draft.items[0].participantIDs = [participant.id]
@@ -18,7 +18,7 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testOwedIsNilWhileItemsAreUnassigned() throws {
-    let sam = makePerson(name: "Sam")
+    let sam = Person.fixture(name: "Sam")
     let draft = makeDraft()
     let participant = draft.addPerson(sam)
     draft.items[0].participantIDs = [participant.id]
@@ -29,8 +29,8 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testPersonNotOnReceiptIsLeftOut() {
-    let sam = makePerson(name: "Sam")
-    let alex = makePerson(name: "Alex")
+    let sam = Person.fixture(name: "Sam")
+    let alex = Person.fixture(name: "Alex")
     let draft = makeDraft()
     draft.addPerson(alex)
 
@@ -38,10 +38,10 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testLegacyParticipantMatchesByName() throws {
-    let sam = makePerson(name: "Sam")
+    let sam = Person.fixture(name: "Sam")
     let draft = makeDraft()
     draft.addManualParticipant(named: "Sam")
-    var document = pendingDocument(id: draft.id).updating(from: draft)
+    var document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     document.split?.participants[1].personID = nil
 
     XCTAssertNotNil(
@@ -53,7 +53,7 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testCurrentUserIsNotMatched() {
-    let owner = makePerson(name: "Alex", contactIdentifier: "me")
+    let owner = Person.fixture(name: "Alex", contactIdentifier: "me")
     let draft = makeDraft()
     draft.setOwner(ReceiptOwner(contactIdentifier: "me", displayName: "Alex"))
 
@@ -61,10 +61,10 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testLoadSkipsUnreadAndUnavailableReceipts() async {
-    let sam = makePerson(name: "Sam")
+    let sam = Person.fixture(name: "Sam")
     let draft = makeDraft()
     draft.addPerson(sam)
-    let document = pendingDocument(id: draft.id).updating(from: draft)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let summaries = [
       makeSummary(id: UUID(), status: .pending),
       makeSummary(id: UUID(), isUnavailable: true),
@@ -81,13 +81,13 @@ final class PersonReceiptTests: XCTestCase {
   }
 
   func testLoadSkipsReceiptsThatFailToLoad() async {
-    let sam = makePerson(name: "Sam")
+    let sam = Person.fixture(name: "Sam")
 
     let receipts = await PersonReceipt.load(
       for: sam,
       in: [makeSummary(id: UUID())],
       people: [sam],
-      storage: makeStorage { _ in throw TestError.loadFailed })
+      storage: makeStorage { _ in throw TestError.failed })
 
     XCTAssertTrue(receipts.isEmpty)
   }
@@ -95,7 +95,7 @@ final class PersonReceiptTests: XCTestCase {
   private func make(_ draft: ReceiptDraft, person: Person, people: [Person]) -> PersonReceipt? {
     PersonReceipt.make(
       summary: makeSummary(id: draft.id),
-      document: pendingDocument(id: draft.id).updating(from: draft),
+      document: ReceiptDocument.pending(id: draft.id).updating(from: draft),
       person: person,
       people: people)
   }
@@ -114,18 +114,6 @@ final class PersonReceiptTests: XCTestCase {
           ReceiptItem(description: "Coffee", quantity: 1, lineTotal: 4),
         ]),
       backgroundStyle: .mint)
-  }
-
-  private func makePerson(name: String, contactIdentifier: String? = nil) -> Person {
-    let date = Date(timeIntervalSince1970: 1)
-    return Person(
-      id: UUID(),
-      createdAt: date,
-      updatedAt: date,
-      lastIncludedAt: date,
-      displayName: name,
-      contactIdentifier: contactIdentifier,
-      paymentMethods: .init())
   }
 
   private func makeSummary(
@@ -147,41 +135,12 @@ final class PersonReceiptTests: XCTestCase {
       unavailableDescription: nil)
   }
 
-  private func pendingDocument(id: UUID) -> ReceiptDocument {
-    ReceiptDocument(
-      schemaVersion: 1,
-      id: id,
-      createdAt: Date(timeIntervalSince1970: 1),
-      updatedAt: Date(timeIntervalSince1970: 1),
-      presentation: .init(backgroundStyle: .mint),
-      scan: .init(
-        capturedAt: Date(timeIntervalSince1970: 1),
-        source: .documentCamera,
-        pages: []),
-      recognition: .init(status: .pending, contractVersion: 1),
-      receipt: nil,
-      split: nil)
-  }
-
   private func makeStorage(
     load: @escaping @Sendable (UUID) async throws -> ReceiptDocument
   ) -> ReceiptStorageClient {
-    ReceiptStorageClient(
-      create: { _, _ in throw TestError.unused },
-      createBlank: { _, _ in throw TestError.unused },
-      list: { [] },
-      load: load,
-      loadPages: { _ in throw TestError.unused },
-      pageURLs: { _ in throw TestError.unused },
-      addPages: { _, _ in throw TestError.unused },
-      deletePage: { _, _ in throw TestError.unused },
-      reorderPages: { _, _ in throw TestError.unused },
-      save: { _ in throw TestError.unused },
-      delete: { _ in throw TestError.unused })
-  }
-
-  private enum TestError: Error {
-    case loadFailed
-    case unused
+    var storage = ReceiptStorageClient.unimplemented
+    storage.list = { [] }
+    storage.load = load
+    return storage
   }
 }

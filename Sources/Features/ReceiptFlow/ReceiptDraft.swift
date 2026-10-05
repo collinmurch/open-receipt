@@ -20,8 +20,7 @@ final class ReceiptDraft {
   private(set) var isCompleted: Bool
   private(set) var participants: [ReceiptParticipant]
   private(set) var persistenceRevision = 0
-  @ObservationIgnored private var splitCalculationCache:
-    [ReceiptAdjustmentSplitMethod: ReceiptSplitCalculation] = [:]
+  @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
   private var splitCalculationRevision = 0
   @ObservationIgnored private var warningsCache: (revision: Int, warnings: [String])?
 
@@ -109,13 +108,11 @@ final class ReceiptDraft {
 
   var splitCalculation: ReceiptSplitCalculation {
     _ = splitCalculationRevision
-    if let calculation = splitCalculationCache[adjustmentSplitMethod] {
-      return calculation
-    }
+    if let splitCalculationCache { return splitCalculationCache }
     let calculation = ReceiptSplitCalculator.calculate(
       draft: self,
       adjustmentMethod: adjustmentSplitMethod)
-    splitCalculationCache[adjustmentSplitMethod] = calculation
+    splitCalculationCache = calculation
     return calculation
   }
 
@@ -198,6 +195,12 @@ final class ReceiptDraft {
     }
   }
 
+  /// Applies `sweep`'s assignments in one change, so the split recalculates once per step.
+  func apply(_ sweep: ReceiptItemSweep) {
+    let swept = sweep.applied(to: items)
+    if swept != items { items = swept }
+  }
+
   func participants(assignedTo item: ReceiptDraftItem) -> [ReceiptParticipant] {
     participants.filter { item.participantIDs.contains($0.id) }
   }
@@ -237,7 +240,7 @@ final class ReceiptDraft {
     if merchantName != self.merchantName { self.merchantName = merchantName }
     let date = self.date.trimmingCharacters(in: .whitespacesAndNewlines)
     if date != self.date { self.date = date }
-    let currency = self.currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    let currency = normalizedCurrency
     if currency != self.currency { self.currency = currency }
     let items = self.items.map { item in
       var item = item
@@ -265,7 +268,7 @@ final class ReceiptDraft {
   }
 
   private func invalidateSplitCalculation() {
-    splitCalculationCache.removeAll(keepingCapacity: true)
+    splitCalculationCache = nil
     splitCalculationRevision &+= 1
   }
 }

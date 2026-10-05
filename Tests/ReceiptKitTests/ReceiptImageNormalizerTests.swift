@@ -58,6 +58,23 @@ final class ReceiptImageNormalizerTests: XCTestCase {
     XCTAssertTrue(normalized === image)
   }
 
+  func testDownscaleLimitsLongestSide() throws {
+    let image = try makeImage(width: 300, height: 1200)
+
+    let scaled = try XCTUnwrap(ReceiptImageNormalizer.downscaled(image, maxPixelDimension: 600))
+
+    XCTAssertEqual(scaled.width, 150)
+    XCTAssertEqual(scaled.height, 600)
+  }
+
+  func testDownscaleKeepsImageThatFits() throws {
+    let image = try makeImage(width: 300, height: 400)
+
+    let scaled = try XCTUnwrap(ReceiptImageNormalizer.downscaled(image, maxPixelDimension: 600))
+
+    XCTAssertTrue(scaled === image)
+  }
+
   private func assertNormalizationMatchesImageIO(
     _ orientation: CGImagePropertyOrientation,
     file: StaticString = #filePath,
@@ -143,5 +160,20 @@ final class ReceiptImageNormalizerTests: XCTestCase {
       context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     return data
+  }
+
+  private func makeImage(width: Int, height: Int) throws -> CGImage {
+    let context = try XCTUnwrap(
+      CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    return try XCTUnwrap(context.makeImage())
   }
 }
