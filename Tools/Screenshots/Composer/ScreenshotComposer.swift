@@ -13,13 +13,15 @@ struct ScreenshotComposer {
   static func main() {
     do {
       let options = try Options(CommandLine.arguments.dropFirst())
-      let shots =
-        try options.only.map { name in
-          guard let shot = StoreShot.all.first(where: { $0.name.contains(name) }) else {
-            throw ComposerError.unknownShot(name)
-          }
-          return [shot]
-        } ?? StoreShot.all
+      var shots = StoreShot.all
+      var reviewShots = StoreShot.reviewOnly
+      if let name = options.only {
+        shots = StoreShot.all.first { $0.name.contains(name) }.map { [$0] } ?? []
+        reviewShots = StoreShot.reviewOnly.first { $0.contains(name) }.map { [$0] } ?? []
+        guard !shots.isEmpty || !reviewShots.isEmpty else {
+          throw ComposerError.unknownShot(name)
+        }
+      }
 
       for appearance in StoreAppearance.allCases {
         let captures = options.captures.appending(path: appearance.rawValue)
@@ -38,6 +40,15 @@ struct ScreenshotComposer {
           try writeOpaquePNG(try render(frame, name: shot.name), to: url)
           print("Wrote \(url.path(percentEncoded: false))")
         }
+      }
+
+      let review = options.output.appending(path: "review")
+      try FileManager.default.createDirectory(at: review, withIntermediateDirectories: true)
+      for name in reviewShots {
+        let capture = options.captures.appending(path: StoreAppearance.light.rawValue)
+        let url = review.appending(path: "\(name).png")
+        try writeOpaquePNG(try loadImage(capture.appending(path: "\(name).png")), to: url)
+        print("Wrote \(url.path(percentEncoded: false))")
       }
     } catch {
       FileHandle.standardError.write(Data("ScreenshotComposer: \(error)\n".utf8))

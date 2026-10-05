@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS) || !DEBUG
+#if os(macOS) || !targetEnvironment(simulator)
   import CoreGraphics
   import FoundationModels
   import Synchronization
@@ -69,8 +69,8 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
   }
 }
 
-// The iOS Debug build uses sample data, and the simulator runtime lacks the parser's FoundationModels symbols.
-#if os(macOS) || !DEBUG
+// The simulator runtime lacks the parser's FoundationModels symbols, so it reads sample receipts.
+#if os(macOS) || !targetEnvironment(simulator)
   public enum ReceiptParser {
     /// Parses `pages`, reporting the receipt as it is read when `onPreview` is supplied.
     public static func parse(

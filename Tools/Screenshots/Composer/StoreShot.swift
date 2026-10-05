@@ -14,6 +14,10 @@ struct StoreShot {
   /// A photo under the frame, relative to `Assets`.
   var backdrop = "Receipts/example-receipt.jpg"
 
+  /// Captures uploaded to App Review as they are, without a frame, such as the in-app purchase's
+  /// review screenshot.
+  static let reviewOnly = ["07-paywall"]
+
   /// The capture whose receipt wash colors every backdrop.
   static let paletteSource = "03-split"
 

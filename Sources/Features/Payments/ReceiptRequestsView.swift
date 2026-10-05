@@ -13,7 +13,8 @@ struct ReceiptRequestsView: View {
   let onFlush: () async -> Void
   @Binding var focus: ReceiptPaymentsFocus?
   @State private var people: SavedPeopleModel
-  @State private var hasLoadedPeople = false
+  /// The participants the saved people were last loaded for.
+  @State private var loadedParticipantIDs: Set<ReceiptParticipant.ID>?
   @State private var selectedShareID: ReceiptParticipant.ID?
   @State private var focusedRowFrame: CGRect?
   /// Where each focused person's contact card says to message them.
@@ -84,11 +85,8 @@ struct ReceiptRequestsView: View {
     .navigationDestination(item: $selectedShareID) { id in
       breakdownDestination(id: id)
     }
-    .task {
-      guard !hasLoadedPeople else { return }
-      await people.load()
-      await people.adoptContactPaymentDefaults(from: contactClient)
-      hasLoadedPeople = people.errorDescription == nil
+    .task(id: participantIDs) {
+      await loadPeople()
     }
     .task(id: participantContactIdentifiers) {
       await loadMessageRecipients()
@@ -282,6 +280,20 @@ struct ReceiptRequestsView: View {
   private var focusedShareID: ReceiptParticipant.ID? {
     if case .share(let id) = focus { return id }
     return nil
+  }
+
+  private var participantIDs: Set<ReceiptParticipant.ID> {
+    Set(draft.participants.map(\.id))
+  }
+
+  /// Reloads saved people when participants change, since this page stays built while people are
+  /// added elsewhere and would otherwise miss their payment methods.
+  private func loadPeople() async {
+    let ids = participantIDs
+    guard loadedParticipantIDs != ids else { return }
+    await people.load()
+    await people.adoptContactPaymentDefaults(from: contactClient)
+    if people.errorDescription == nil { loadedParticipantIDs = ids }
   }
 
   /// The contact card behind each participant picked from Contacts.

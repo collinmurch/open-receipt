@@ -16,8 +16,10 @@ struct ReceiptLibraryView: View {
   @State private var focusedRowFrame: CGRect?
   @State private var isFocusedRowPressed = false
   @State private var haptic = HapticEvent()
+  @State private var isUnlockPresented = false
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
+  @Environment(ReadingAccess.self) private var access
   @Environment(\.receiptStorageClient) private var storage
 
   var body: some View {
@@ -32,6 +34,12 @@ struct ReceiptLibraryView: View {
           ReceiptModelNotice(
             status: recognitions.modelStatus,
             onIncreaseLimit: recognitions.showLimitIncrease)
+        }
+      }
+
+      if !access.isUnlocked, access.hasUsedFreeReads {
+        Section {
+          FreeReadsNotice { isUnlockPresented = true }
         }
       }
 
@@ -74,7 +82,7 @@ struct ReceiptLibraryView: View {
     .animation(query.isEmpty ? .smooth(duration: 0.3) : nil, value: sections)
     .overlay { libraryFocus(in: sections) }
     .navigationTitle("Receipts")
-    .debugBuildSubtitle()
+    .buildChannelSubtitle()
     .searchable(text: $searchText, prompt: "Search receipts")
     .toolbar { libraryToolbar }
     .toolbarVisibility(isFocusing ? .hidden : .automatic, for: .bottomBar)
@@ -102,6 +110,7 @@ struct ReceiptLibraryView: View {
       Button("OK", role: .cancel) {}
     }
     .errorAlert("Couldn’t Import Receipt", message: $importErrorDescription)
+    .unlimitedReadingSheet(isPresented: $isUnlockPresented)
   }
 
   @ToolbarContentBuilder
@@ -355,6 +364,74 @@ private struct ReceiptLibraryEmptyState: View {
         .padding(.top, 20)
     }
     .onAppear { hasAppeared = true }
+  }
+}
+
+/// How many free reads are left, shown once the first one is used. Tapping it offers the
+/// purchase.
+private struct FreeReadsNotice: View {
+  let onUnlock: () -> Void
+  @Environment(ReadingAccess.self) private var access
+  @ScaledMetric(relativeTo: .headline) private var ringSize: CGFloat = 36
+
+  var body: some View {
+    Button(action: onUnlock) {
+      HStack(spacing: 14) {
+        indicator
+          .frame(width: ringSize, height: ringSize)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.headline)
+            .foregroundStyle(.primary)
+          Text(detail)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.forward")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityHint("Shows the unlimited reading purchase")
+  }
+
+  @ViewBuilder
+  private var indicator: some View {
+    let left = access.freeReadsLeft
+    if left == 0 {
+      Image(systemName: "lock.fill")
+        .font(.title3)
+        .foregroundStyle(.tint)
+    } else {
+      ZStack {
+        Circle()
+          .stroke(.tint.opacity(0.2), lineWidth: 4)
+        Circle()
+          .trim(from: 0, to: Double(left) / Double(ReadingAccess.freeReadLimit))
+          .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+        Text("\(left)")
+          .font(.subheadline.weight(.semibold).monospacedDigit())
+          .contentTransition(.numericText(value: Double(left)))
+      }
+      .animation(.smooth, value: left)
+    }
+  }
+
+  private var title: String {
+    access.freeReadsLeft == 0
+      ? "Free Reads Used" : access.freeReadsLeftDescription.localizedCapitalized
+  }
+
+  private var detail: String {
+    access.freeReadsLeft == 0
+      ? "Unlock unlimited reading, or enter receipts yourself."
+      : "Unlock unlimited reading with one purchase."
   }
 }
 

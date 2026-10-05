@@ -67,6 +67,13 @@ final class ScreenshotCapture: XCTestCase {
       name: "01-library", scenario: "library", highlight: "library-row-Cru Food and Wine Bar")
   }
 
+  /// The in-app purchase's review screenshot, which App Review sees instead of customers.
+  @MainActor
+  func testPaywall() throws {
+    try capture(
+      name: "07-paywall", scenario: "paywall", highlight: "unlimited-reading-purchase")
+  }
+
   /// Launches `scenario`, runs `prepare`, waits for the app to draw `highlight`, and writes the
   /// screen with its manifests in light appearance, then again in dark from the same launch.
   @MainActor

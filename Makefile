@@ -41,14 +41,14 @@ ASC_AUTH_FLAGS = $(if $(strip $(ASC_KEY_PATH)),-authenticationKeyPath "$(ASC_KEY
 .PHONY: configuration
 configuration:
 	@if [ "$(CONFIGURATION)" = "Debug" ]; then \
-		echo "Configuration: Debug. Receipt parsing uses sample data. PCC is disabled."; \
+		echo "Configuration: Debug. Unsigned; sample receipts start on (Settings > Testing)."; \
 	else \
-		echo "Configuration: Release. Receipt parsing uses live PCC."; \
+		echo "Configuration: Release. Signed with the PCC entitlement."; \
 	fi
 
 .PHONY: release-configuration
 release-configuration:
-	@echo "Configuration: Release. Receipt parsing uses live PCC."
+	@echo "Configuration: Release. Signed with the PCC entitlement."
 
 .PHONY: help
 help: ## Show available commands
@@ -125,7 +125,7 @@ receiptlab: gen
 		-quiet
 
 # ─── App Store assets ────────────────────────────────────────────────────
-# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library limits both steps.
+# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library|paywall limits both steps.
 .PHONY: icons
 icons: $(ICON_EXPORTS) ## Export the app icon renditions to Assets/Icons
 
@@ -162,7 +162,7 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots. cac
 
 # ─── Build / Test ─────────────────────────────────────────────────────────────
 .PHONY: build
-build: configuration gen ## Build the app. Set release=1 to use live PCC parsing.
+build: configuration gen ## Build the app. Set release=1 for a signed Release build.
 	xcodebuild build \
 		-project $(PROJECT) \
 		-scheme $(SCHEME) \
@@ -198,7 +198,7 @@ run: build ## Build and run on simulator
 
 # ─── Device ───────────────────────────────────────────────────────────────────
 .PHONY: build-device
-build-device: configuration gen ## Build for iOS hardware. Set release=1 to use live PCC parsing.
+build-device: configuration gen ## Build for iOS hardware. Set release=1 for a signed Release build.
 	xcodebuild build \
 		-project $(PROJECT) \
 		-scheme $(SCHEME) \
@@ -265,7 +265,7 @@ upload: archive ## Archive and upload to App Store Connect. build_number=auto pi
 		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
 
 .PHONY: run-device
-run-device: build-device ## Build and run on iOS hardware. Set release=1 to use live PCC parsing.
+run-device: build-device ## Build and run on iOS hardware. Set release=1 for a signed Release build.
 	@UDID=$$(xcrun devicectl list devices 2>/dev/null \
 		| grep -oEi '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{16}' \
 		| head -1); \

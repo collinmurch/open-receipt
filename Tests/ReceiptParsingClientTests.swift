@@ -53,11 +53,35 @@ final class ReceiptParsingClientTests: XCTestCase {
     XCTAssertEqual(receipt.merchantName, "Cafe")
   }
 
-  #if !DEBUG
-    func testLiveClientIsNotMarkedAsSampleData() {
-      XCTAssertFalse(ReceiptParsingClient.live.usesSampleData)
-    }
-  #endif
+  func testLiveClientIsNotMarkedAsSampleData() {
+    XCTAssertFalse(ReceiptParsingClient.live.usesSampleData)
+  }
+
+  func testSampleReceiptsStartOnInDevelopment() {
+    XCTAssertTrue(SampleReceipts.isEnabled(in: .development, defaults: isolatedDefaults()))
+  }
+
+  func testSampleReceiptsStartOffInTestFlight() {
+    XCTAssertFalse(SampleReceipts.isEnabled(in: .testFlight, defaults: isolatedDefaults()))
+  }
+
+  func testSampleReceiptsFollowSettingInTestFlight() {
+    let defaults = isolatedDefaults()
+    defaults.set(true, forKey: SampleReceipts.key)
+
+    XCTAssertTrue(SampleReceipts.isEnabled(in: .testFlight, defaults: defaults))
+  }
+
+  func testSampleReceiptsNeverApplyInAppStore() {
+    let defaults = isolatedDefaults()
+    defaults.set(true, forKey: SampleReceipts.key)
+
+    XCTAssertFalse(SampleReceipts.isEnabled(in: .appStore, defaults: defaults))
+  }
+
+  private func isolatedDefaults() -> UserDefaults {
+    UserDefaults(suiteName: "ReceiptParsingClientTests-\(UUID().uuidString)")!
+  }
 }
 
 private actor PreviewRecorder {

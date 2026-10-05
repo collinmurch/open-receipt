@@ -19,6 +19,8 @@ final class ReceiptRecognition: Identifiable {
     case failed(message: String, isRetryable: Bool)
     /// The read was stopped before it finished, and nothing was recorded.
     case cancelled
+    /// The free reads are used, so the receipt was stored without being read.
+    case needsUnlock
   }
 
   /// The receipt identifier, which is also the scan identifier.
@@ -32,6 +34,8 @@ final class ReceiptRecognition: Identifiable {
   private(set) var preview = ReceiptParsePreview()
   private(set) var status = Status.reading
   private(set) var thumbnail: CGImage?
+  /// Whether the model has shown any of the receipt's items.
+  @ObservationIgnored private(set) var hasShownItems = false
 
   @ObservationIgnored let scan: ReceiptScan
   /// The stored receipt, once it exists. A rescan starts with it.
@@ -71,6 +75,7 @@ final class ReceiptRecognition: Identifiable {
   func update(_ preview: ReceiptParsePreview) {
     guard preview != self.preview else { return }
     self.preview = preview
+    if !preview.items.isEmpty { hasShownItems = true }
   }
 
   func update(_ status: Status) {

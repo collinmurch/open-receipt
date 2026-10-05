@@ -8,6 +8,8 @@ You go out to dinner, drinks, or an event with friends. You pay. Then, you spend
 
 Open Receipt was designed with one goal in mind: create a dead-simple receipt-splitting app with no subscriptions. That's it. Anyone should be able to accurately scan, split, and settle a receipt in under 3 minutes. And it shouldn't require $5 per month to do so.
 
+Your first 5 receipts are read for free. After that, a single one-time purchase unlocks unlimited reading. Entering receipts by hand, splitting, and payment requests are always free.
+
 I tried a lot of receipt-splitting apps looking for the right one. I kept running into expensive subscriptions or poor receipt scanning, so I built Open Receipt.
 
 Receipts are read with Apple's Private Cloud Compute, so your data stays private.

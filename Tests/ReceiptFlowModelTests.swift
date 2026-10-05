@@ -123,6 +123,37 @@ final class ReceiptFlowModelTests: XCTestCase {
     XCTAssertNil(failure.retry)
   }
 
+  func testReadWithoutFreeReadsOffersUnlock() async {
+    let scan = ReceiptScan(pages: [])
+    let storage = storage(for: scan)
+    let center = center(storage: storage, access: usedUpAccess())
+    let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+
+    await model.performWork(using: center, storage: storage)
+
+    guard case .failed(let failure) = model.phase else {
+      return XCTFail("Expected failed phase")
+    }
+    XCTAssertTrue(failure.needsUnlock)
+    XCTAssertFalse(failure.isError)
+    XCTAssertTrue(failure.allowsManualEntry)
+  }
+
+  func testReadWithoutFreeReadsCanRetryAfterUnlocking() async {
+    let scan = ReceiptScan(pages: [])
+    let storage = storage(for: scan)
+    let access = usedUpAccess()
+    let center = center(storage: storage, access: access)
+    let model = ReceiptFlowModel(input: .recognition(center.recognize(scan)))
+    await model.performWork(using: center, storage: storage)
+
+    _ = try? await access.purchase()
+    model.retry(using: center)
+    await model.performWork(using: center, storage: storage)
+
+    XCTAssertNotNil(model.reviewingDraft)
+  }
+
   func testFailedRecognitionAllowsManualEntry() async {
     let scan = ReceiptScan(pages: [])
     let storage = storage(for: scan)
@@ -426,6 +457,29 @@ final class ReceiptFlowModelTests: XCTestCase {
 
     let parseCount = await parser.count
     XCTAssertEqual(parseCount, 0)
+  }
+
+  func testStoredPendingReceiptIsUnread() async {
+    let scan = ReceiptScan(pages: [])
+    let storage = storage(for: scan)
+    let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+
+    await model.performWork(using: center(storage: storage), storage: storage)
+
+    XCTAssertEqual(model.failure?.isUnread, true)
+  }
+
+  func testStoredDeferredReceiptIsNotUnread() async {
+    let scan = ReceiptScan(pages: [])
+    var document = pendingDocument(for: scan)
+    document.recognition.status = .failed
+    document.recognition.deferredUntil = Date().addingTimeInterval(3600)
+    let storage = storage(document: document)
+    let model = ReceiptFlowModel(input: .storedReceipt(scan.id))
+
+    await model.performWork(using: center(storage: storage), storage: storage)
+
+    XCTAssertEqual(model.failure?.isUnread, false)
   }
 
   func testStoredDeferredReceiptWaitsForReadingLimit() async {
@@ -864,13 +918,20 @@ final class ReceiptFlowModelTests: XCTestCase {
   private func center(
     parsingClient: ReceiptParsingClient = .sample(pacing: .zero),
     storage: ReceiptStorageClient,
+    access: ReadingAccess = .unlimited(),
     connectivity: ReceiptConnectivity = .immediate
   ) -> ReceiptRecognitionCenter {
     ReceiptRecognitionCenter(
       parsingClient: parsingClient,
       storage: storage,
+      access: access,
       connectivity: connectivity,
       connectionRetryDelay: .zero)
+  }
+
+  private func usedUpAccess() -> ReadingAccess {
+    let used = (1...ReadingAccess.freeReadLimit).map { "used-\($0)" }
+    return ReadingAccess(client: .fixed(isEntitled: false), store: .memory(Set(used)))
   }
 
   private func storage(for scan: ReceiptScan) -> ReceiptStorageClient {

@@ -115,6 +115,14 @@ final class ReceiptFlowModel {
     /// Whether the stored scan can be kept and its values entered by hand.
     var allowsManualEntry = false
     var manualEntryTitle = "Enter Manually"
+    /// Whether reading needs the one-time purchase, which then retries.
+    var needsUnlock = false
+    /// Whether the receipt is stored but has never been read, and isn't waiting to be.
+    var isUnread = false
+
+    /// Why a stored receipt can't be read until reading is unlocked.
+    static let unlockDescription =
+      "This receipt is saved. Unlock unlimited reading to read it, or enter its items yourself."
   }
 
   enum Phase {
@@ -417,6 +425,19 @@ final class ReceiptFlowModel {
     switch outcome {
     case .cancelled:
       return
+    case .needsUnlock:
+      phase = .failed(
+        Failure(
+          title: "Free Reads Used",
+          systemImage: "lock",
+          isError: false,
+          description: recognition.isRescan
+            ? "Unlock unlimited reading to read this receipt again."
+            : Failure.unlockDescription,
+          retry: .recognize(recognition),
+          allowsManualEntry: true,
+          manualEntryTitle: recognition.isRescan ? "Back to Receipt" : "Enter Manually",
+          needsUnlock: true))
     case .recognized(let document):
       do {
         try review(document)
@@ -592,6 +613,7 @@ final class ReceiptFlowModel {
       isError: false,
       description: "Read this receipt to fill in its items and totals, or enter them yourself.",
       retry: .read(document.id),
-      allowsManualEntry: true)
+      allowsManualEntry: true,
+      isUnread: true)
   }
 }

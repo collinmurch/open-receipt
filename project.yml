@@ -52,6 +52,7 @@ targets:
       - sdk: FoundationModels.framework
       - sdk: VisionKit.framework
       - sdk: PhotosUI.framework
+      - sdk: StoreKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.collinmurch.open-receipt
@@ -128,7 +129,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_ENTITLEMENTS: App/OpenReceipt.entitlements
+        CODE_SIGN_ENTITLEMENTS: Tools/ReceiptLab/ReceiptLab.entitlements
 
 schemes:
   open-receipt:

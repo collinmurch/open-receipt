@@ -2,9 +2,13 @@ import SwiftUI
 
 /// Where floating controls along the bottom of the screen sit.
 enum ReceiptBottomBar {
-  /// The distance from the screen's bottom edge to a control's bottom, matching the capsule of a
-  /// system tab bar, so every floating control lines up with the page switcher.
-  static let screenEdgeInset: CGFloat = 21
+  /// The distance from the screen's bottom edge to a control's bottom. Controls sit above the
+  /// capsule of a system tab bar so a caption fits beneath them, and every control lines up
+  /// whether or not it has one.
+  static let screenEdgeInset: CGFloat = 45
+
+  /// The gap between a control and a caption hanging beneath it.
+  static let captionSpacing: CGFloat = 8
 }
 
 extension View {

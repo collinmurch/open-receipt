@@ -21,7 +21,8 @@ An iOS app that reads receipts and splits bills.
 
 ## Architecture
 
-- `ReceiptParsingClient` is the seam between Debug and Release. Debug uses `ReceiptParsingClient.sample`, which streams fixed rows with a short delay so UI can be built without PCC. Release calls PCC. Everything else is shared.
+- `BuildChannel` decides what a build does at runtime: `development` (Debug), `testFlight` (TestFlight and App Review, found through StoreKit's sandbox environment), or `appStore`. Debug and Release otherwise behave the same; Release is just signed with the entitlements and optimized.
+- `ReceiptParsingClient.standard` calls PCC, or streams `ReceiptParsingClient.sample` while Sample Receipts is on. That setting only applies in testing channels and starts on in development. The simulator has no PCC, so it can only read samples.
 - `ReceiptFlowModel` owns the phases of the receipt flow.
 - `ReceiptDraft` owns editable review state.
 - `ContactClient` wraps the Contacts framework.
@@ -29,6 +30,9 @@ An iOS app that reads receipts and splits bills.
 - Reading is always an explicit action; opening an unread receipt never calls PCC.
 - User-started reads run as a `BGContinuedProcessingTask` (`ReceiptReadActivity`) so they can finish in the background.
 - If a read hits the usage limit, it saves `recognition.deferredUntil`, and `ReceiptRecognitionCenter.resumeDeferredReads()` retries after the limit resets.
+- `ReadingAccess` gates reads: unlimited after the one-time purchase (`PurchaseClient`, StoreKit 2), and `ReadingAccess.freeReadLimit` free reads before it. `ReceiptRecognitionCenter` admits each read under a key, so retries and deferred resumes of the same read share one free read. Reads that fail before the model answers, or stop before any items appear, give it back.
+- The free read record is in `FreeReadStore`: the device keychain, iCloud Keychain, and iCloud key-value storage, merged, so reinstalling doesn't reset it. Debug uses a stand-in purchase, since unsigned builds can't reach StoreKit (`-DebugUnlimitedReading YES` starts unlocked).
+- Testing channels name the build in orange at the top of Settings and under the library title, and Settings shows a Testing section: Sample Receipts, a stepper for free reads left, and Remove Purchase, which makes the build act unpurchased until it is bought or restored again. App Store builds show none of it and ignore its settings.
 - The receipt background is a Metal shader (`ReceiptInkWash.metal`), so builds need Xcode's Metal Toolchain component.
 
 ## Commands
@@ -51,13 +55,13 @@ Use `make` for everything, run from the repository root.
 
 Build flags:
 
-- Default builds use the `Debug` configuration: no entitlements, sample parser.
-- `release=1` uses `Release`, adds `App/OpenReceipt.entitlements`, and calls PCC.
+- Default builds use the `Debug` configuration: unsigned, no entitlements, and sample receipts on.
+- `release=1` uses `Release` and signs with `App/OpenReceipt.entitlements`, for testing live PCC and StoreKit on a device.
 - `device="<simulator name>"` picks a simulator for `run` and `test` (default `iPhone 17 Pro`).
 
 ## Receipt harness
 
-`make receipts` builds `ReceiptLab.app`, a signed macOS app with the same entitlements as the iOS app. It sends fixture images through `ReceiptParser` to PCC, just like Release, and compares the results to each fixture's `expected.json`.
+`make receipts` builds `ReceiptLab.app`, a signed macOS app with the iOS app's PCC entitlement (`Tools/ReceiptLab/ReceiptLab.entitlements`). It sends fixture images through `ReceiptParser` to PCC, just like Release, and compares the results to each fixture's `expected.json`.
 
 | Flag | Effect |
 | --- | --- |
@@ -80,7 +84,8 @@ Example: `make receipts of=whole-foods-1 format=summary`
 
 `make previews` captures screens on the iPhone 17 Pro Max simulator, then renders 1284x2778 frames (App Store 6.5") into `Assets/Previews/{light,dark}/`.
 
-- `of=reading|split|requests|breakdown|share|library` renders one screenshot.
+- `of=reading|split|requests|breakdown|share|library|paywall` renders one screenshot.
+- `paywall` is the in-app purchase's App Review screenshot. It is copied unframed, light only, to `Assets/Previews/review/`.
 - `cached=1` skips capture and re-renders from `Assets/ScreenshotData/`. Use it for design and copy changes.
 
 How it works:
@@ -94,4 +99,4 @@ How it works:
 - No emojis in code, comments, logs, or commit messages unless asked.
 - Comment only public APIs or genuinely non-obvious logic.
 - Prefer many small, focused tests over large table-driven ones.
-- Tests must never call PCC, since it uses quota. Inject `ReceiptParsingClient` in app tests and a fake `ReceiptModelClient.Respond` in harness tests. Only `make receipts` makes live calls.
+- Tests must never call PCC, since it uses quota. Inject `ReceiptParsingClient` in app tests (never `.standard` or `.live`) and a fake `ReceiptModelClient.Respond` in harness tests. Only `make receipts` makes live calls.

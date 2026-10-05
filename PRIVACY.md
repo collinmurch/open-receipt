@@ -6,11 +6,17 @@ Open Receipt does not collect your data. There are no accounts, analytics, adver
 
 ## Data on your device
 
-Receipts you scan, import, or create are stored only on your device, together with their page images, items, and splits. The same applies to the people you add and their payment details. Your device backups include this data in the same way as other app data. Deleted receipts stay in Recently Deleted for 30 days, and then the app removes them. Deleting the app removes all of its data.
+Receipts you scan, import, or create are stored only on your device, together with their page images, items, and splits. The same applies to the people you add and their payment details. Your device backups include this data in the same way as other app data. Deleted receipts stay in Recently Deleted for 30 days, and then the app removes them. Deleting the app removes all of its data, except the record of free reads described below.
 
 ## Receipt reading
 
 When you scan or import a receipt, Open Receipt sends the page images to Apple Intelligence to read the items and totals. Apple processes the images with [Private Cloud Compute](https://security.apple.com/blog/private-cloud-compute/), which does not keep them after the request, and the developer never receives them. [Apple's privacy policy](https://www.apple.com/legal/privacy/) covers this processing.
+
+## Purchases and free reads
+
+Unlimited reading is a one-time in-app purchase. Apple handles the payment through the App Store, and the developer never receives your payment details or Apple Account.
+
+Before the purchase, a few receipts can be read for free. To count them, Open Receipt keeps a short list of random identifiers, one for each free read, in your device's keychain, in iCloud Keychain, and in iCloud key-value storage. The list contains nothing from your receipts. It stays after the app is deleted so the free reads aren't counted again, and it syncs through your Apple Account like other iCloud data.
 
 ## Contacts
 

@@ -337,15 +337,208 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
     XCTAssertTrue(first === second)
   }
 
+  func testReadUsesFreeRead() async {
+    let access = lockedAccess()
+    let center = makeCenter(access: access)
+
+    _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit - 1)
+  }
+
+  func testUnlockedReadUsesNoFreeRead() async {
+    let access = ReadingAccess(client: .fixed(isEntitled: true), store: .memory(), isUnlocked: true)
+    let center = makeCenter(access: access)
+
+    _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit)
+  }
+
+  func testReadWithoutFreeReadsNeedsUnlock() async {
+    let center = makeCenter(access: lockedAccess(used: ReadingAccess.freeReadLimit))
+
+    let outcome = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    guard case .needsUnlock = outcome else {
+      return XCTFail("Expected the read to need unlimited reading")
+    }
+  }
+
+  func testReadWithoutFreeReadsDoesNotCallModel() async {
+    let log = EventLog()
+    let client = ReceiptParsingClient(usesSampleData: false) { _ in
+      await log.append("parse")
+      return ParsedReceipt(merchantName: "Cafe")
+    }
+    let center = makeCenter(
+      parsingClient: client, access: lockedAccess(used: ReadingAccess.freeReadLimit))
+
+    _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    let events = await log.events
+    XCTAssertEqual(events, [])
+  }
+
+  func testReadWithoutFreeReadsStoresScan() async {
+    let scan = ReceiptScan(pages: [])
+    let center = makeCenter(access: lockedAccess(used: ReadingAccess.freeReadLimit))
+    let recognition = center.recognize(scan)
+
+    _ = await recognition.outcome
+
+    XCTAssertEqual(recognition.document?.id, scan.id)
+    XCTAssertEqual(recognition.document?.recognition.status, .pending)
+  }
+
+  func testReadsStartedTogetherStopAtFreeLimit() async {
+    let client = ReceiptParsingClient(usesSampleData: false) { _ in
+      try await Task.sleep(for: .milliseconds(20))
+      return ParsedReceipt(merchantName: "Cafe")
+    }
+    let center = makeCenter(
+      parsingClient: client, access: lockedAccess(used: ReadingAccess.freeReadLimit - 1))
+
+    let first = center.recognize(ReceiptScan(pages: []))
+    let second = center.recognize(ReceiptScan(pages: []))
+
+    guard case .recognized = await first.outcome else {
+      return XCTFail("Expected the first read to finish")
+    }
+    guard case .needsUnlock = await second.outcome else {
+      return XCTFail("Expected the second read to need unlimited reading")
+    }
+  }
+
+  func testFailedReadReturnsFreeRead() async {
+    let access = lockedAccess()
+    let client = ReceiptParsingClient(usesSampleData: false) { _ in
+      throw ReceiptParserError.timedOut
+    }
+    let center = makeCenter(parsingClient: client, access: access)
+
+    _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit)
+  }
+
+  func testDeferredReadKeepsFreeRead() async {
+    let access = lockedAccess()
+    let client = ReceiptParsingClient(usesSampleData: false) { _ in
+      throw ReceiptParserError.quotaLimitReached(resetDate: Date().addingTimeInterval(600))
+    }
+    let center = makeCenter(parsingClient: client, access: access)
+
+    _ = await center.recognize(ReceiptScan(pages: [])).outcome
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit - 1)
+  }
+
+  func testReadCancelledBeforeItemsReturnsFreeRead() async {
+    let access = lockedAccess()
+    let client = ReceiptParsingClient(usesSampleData: false) { _ in
+      throw ReceiptParserError.connectionUnavailable
+    }
+    let center = makeCenter(parsingClient: client, access: access, connectivity: .offline)
+
+    await center.cancel(center.recognize(ReceiptScan(pages: [])))
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit)
+  }
+
+  func testReadCancelledAfterItemsKeepsFreeRead() async {
+    let access = lockedAccess()
+    let client = ReceiptParsingClient(
+      usesSampleData: false,
+      stream: { _, onPreview in
+        await onPreview(ReceiptParsePreview(items: [.init(description: "Cold Brew")]))
+        try await Task.sleep(for: .seconds(3600))
+        return ParsedReceipt(merchantName: "Cafe")
+      })
+    let center = makeCenter(parsingClient: client, access: access)
+    let recognition = center.recognize(ReceiptScan(pages: []))
+    while !recognition.hasShownItems {
+      await Task.yield()
+    }
+
+    await center.cancel(recognition)
+
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit - 1)
+  }
+
+  func testResumedDeferredReadUsesNoNewFreeRead() async {
+    let recorder = SaveRecorder()
+    let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
+    let key = ReceiptRecognitionCenter.readKey(
+      for: ReceiptRecognition(
+        scan: ReceiptScan(id: document.id, pages: []),
+        backgroundStyle: .blue,
+        document: document))
+    let others = (1..<ReadingAccess.freeReadLimit).map { "other-\($0)" }
+    let access = ReadingAccess(
+      client: .fixed(isEntitled: false), store: .memory(Set([key] + others)))
+    let center = makeCenter(
+      storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }),
+      access: access)
+
+    await center.resumeDeferredReads()
+
+    let saved = await recorder.documents
+    XCTAssertEqual(saved.last?.recognition.status, .succeeded)
+  }
+
+  func testDeferredReadWithoutFreeReadsStopsWaiting() async {
+    let recorder = SaveRecorder()
+    let document = Self.deferredDocument(until: Date().addingTimeInterval(-60))
+    let center = makeCenter(
+      storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }),
+      access: lockedAccess(used: ReadingAccess.freeReadLimit))
+
+    await center.resumeDeferredReads()
+
+    let saved = await recorder.documents
+    XCTAssertEqual(saved.last?.id, document.id)
+    XCTAssertNil(saved.last?.recognition.deferredUntil)
+    XCTAssertEqual(saved.last?.recognition.status, .failed)
+  }
+
+  func testReadsOfSameReceiptShareReadKey() {
+    let scan = ReceiptScan(pages: [])
+    let first = ReceiptRecognition(scan: scan, backgroundStyle: .blue)
+    let retry = ReceiptRecognition(
+      scan: scan, backgroundStyle: .blue, document: Self.pendingDocument(id: scan.id, style: .blue))
+
+    XCTAssertEqual(
+      ReceiptRecognitionCenter.readKey(for: first), ReceiptRecognitionCenter.readKey(for: retry))
+  }
+
+  func testRescanHasNewReadKey() {
+    let scan = ReceiptScan(pages: [])
+    let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Old"), id: scan.id)
+    let stored = Self.pendingDocument(id: scan.id, style: .mint).updating(from: draft)
+    let first = ReceiptRecognition(scan: scan, backgroundStyle: .mint)
+    let rescan = ReceiptRecognition(scan: scan, backgroundStyle: .mint, document: stored)
+
+    XCTAssertNotEqual(
+      ReceiptRecognitionCenter.readKey(for: first), ReceiptRecognitionCenter.readKey(for: rescan))
+  }
+
+  private func lockedAccess(used: Int = 0) -> ReadingAccess {
+    let reads = used > 0 ? Set((1...used).map { "used-\($0)" }) : []
+    return ReadingAccess(client: .fixed(isEntitled: false), store: .memory(reads))
+  }
+
   private func makeCenter(
     parsingClient: ReceiptParsingClient = .sample(pacing: .zero),
     storage: ReceiptStorageClient? = nil,
+    access: ReadingAccess = .unlimited(),
     owner: ReceiptOwner? = nil,
     connectivity: ReceiptConnectivity = .immediate
   ) -> ReceiptRecognitionCenter {
     ReceiptRecognitionCenter(
       parsingClient: parsingClient,
       storage: storage ?? makeStorage(),
+      access: access,
       owner: { owner },
       connectivity: connectivity,
       connectionRetryDelay: .zero)

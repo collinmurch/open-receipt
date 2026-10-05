@@ -15,6 +15,9 @@
       case share
       /// The receipt library with a few months of receipts.
       case library
+      /// The unlimited reading purchase over the library, after the free reads are used. It is
+      /// uploaded for App Review rather than shown on the App Store.
+      case paywall
     }
 
     let kind: Kind
@@ -58,7 +61,8 @@
       func stage(
         _ path: [HomeRoute],
         parsing: ReceiptParsingClient = parsing,
-        recognitions: ReceiptRecognitionCenter = recognitions
+        recognitions: ReceiptRecognitionCenter = recognitions,
+        access: ReadingAccess = .unlimited()
       ) -> ScreenshotStage {
         ScreenshotStage(
           path: path,
@@ -67,7 +71,9 @@
           people: people,
           parsing: parsing,
           recognitions: recognitions,
-          contacts: kind == .share ? .cards(for: scene.people) : .unavailable)
+          access: access,
+          contacts: kind == .share ? .cards(for: scene.people) : .unavailable,
+          showsUnlimitedReading: kind == .paywall)
       }
 
       switch kind {
@@ -88,23 +94,40 @@
         ])
 
       case .library:
-        let now = Date()
-        var today = receipt
-        today.date = Self.localDate(daysBefore: 0, now: now)
-        _ = try await Self.storeRead(
-          today, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-        for entry in scene.library ?? [] {
-          let captured = ReceiptScan(
-            pages: [page],
-            capturedAt: now.addingTimeInterval(-Double(entry.daysAgo) * 24 * 60 * 60),
-            source: .documentCamera)
-          _ = try await Self.storeRead(
-            entry.receipt(date: Self.localDate(daysBefore: entry.daysAgo, now: now)),
-            scan: captured,
-            backgroundStyle: entry.backgroundStyle,
-            storage: storage)
-        }
+        try await storeLibrary(scan, page: page, storage: storage)
         return stage([])
+
+      case .paywall:
+        try await storeLibrary(scan, page: page, storage: storage)
+        let usedReads = (1...ReadingAccess.freeReadLimit).map { "screenshot-\($0)" }
+        return stage(
+          [],
+          access: ReadingAccess(client: .fixed(isEntitled: false), store: .memory(Set(usedReads))))
+      }
+    }
+
+    /// Reads the scene's receipt as today's, and its library entries on their own days.
+    @MainActor
+    private func storeLibrary(
+      _ scan: ReceiptScan,
+      page: ReceiptPage,
+      storage: ReceiptStorageClient
+    ) async throws {
+      let now = Date()
+      var today = scene.receipt
+      today.date = Self.localDate(daysBefore: 0, now: now)
+      _ = try await Self.storeRead(
+        today, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
+      for entry in scene.library ?? [] {
+        let captured = ReceiptScan(
+          pages: [page],
+          capturedAt: now.addingTimeInterval(-Double(entry.daysAgo) * 24 * 60 * 60),
+          source: .documentCamera)
+        _ = try await Self.storeRead(
+          entry.receipt(date: Self.localDate(daysBefore: entry.daysAgo, now: now)),
+          scan: captured,
+          backgroundStyle: entry.backgroundStyle,
+          storage: storage)
       }
     }
 
@@ -220,7 +243,10 @@
     let people: PeopleStorageClient
     let parsing: ReceiptParsingClient
     let recognitions: ReceiptRecognitionCenter
+    let access: ReadingAccess
     let contacts: ContactClient
+    /// Whether the unlimited reading purchase opens over the screen.
+    let showsUnlimitedReading: Bool
   }
 
   /// A receipt photo and the values it reads as, who had what, and the rest of the library.
@@ -368,13 +394,16 @@
   struct ScreenshotScenarioView: View {
     let scenario: ScreenshotScenario
     @State private var stage: ScreenshotStage?
+    @State private var showsUnlimitedReading = false
 
     var body: some View {
       Group {
         if let stage {
           HomeView(initialPath: stage.path)
+            .unlimitedReadingSheet(isPresented: $showsUnlimitedReading)
             .environment(stage.library)
             .environment(stage.recognitions)
+            .environment(stage.access)
             .environment(\.receiptStorageClient, stage.storage)
             .environment(\.peopleStorageClient, stage.people)
             .environment(\.receiptParsingClient, stage.parsing)
@@ -385,7 +414,9 @@
       }
       .task {
         do {
-          stage = try await scenario.stage()
+          let stage = try await scenario.stage()
+          self.stage = stage
+          showsUnlimitedReading = stage.showsUnlimitedReading
         } catch {
           preconditionFailure("Couldn't stage the \(scenario.kind) screenshot: \(error)")
         }

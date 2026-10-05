@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -12,6 +13,7 @@ final class ReceiptRecognitionCenter {
 
   @ObservationIgnored let parsingClient: ReceiptParsingClient
   @ObservationIgnored private let storage: ReceiptStorageClient
+  @ObservationIgnored private let access: ReadingAccess
   @ObservationIgnored private let connectivity: ReceiptConnectivity
   @ObservationIgnored private let connectionRetryLimit: Int
   @ObservationIgnored private let connectionRetryDelay: Duration
@@ -22,6 +24,7 @@ final class ReceiptRecognitionCenter {
   init(
     parsingClient: ReceiptParsingClient,
     storage: ReceiptStorageClient,
+    access: ReadingAccess = .unlimited(),
     owner: @escaping @Sendable () async -> ReceiptOwner? = { nil },
     connectivity: ReceiptConnectivity = .live,
     connectionRetryLimit: Int = 3,
@@ -29,6 +32,7 @@ final class ReceiptRecognitionCenter {
   ) {
     self.parsingClient = parsingClient
     self.storage = storage
+    self.access = access
     self.owner = owner
     self.connectivity = connectivity
     self.connectionRetryLimit = connectionRetryLimit
@@ -161,8 +165,20 @@ final class ReceiptRecognitionCenter {
 
   private func start(_ recognition: ReceiptRecognition) {
     recognitions[recognition.id] = recognition
+    // A retry of a receipt that was already read only saves it, so it reads nothing.
+    let readKey = recognition.parsedReceipt == nil ? Self.readKey(for: recognition) : nil
+    // Admitting before the task starts keeps reads started together from sharing a free read.
+    let isAdmitted = readKey.map { access.admit($0) } ?? true
     recognition.task = Task {
-      let outcome = await run(recognition)
+      let outcome: ReceiptRecognition.Outcome
+      if let readKey, !isAdmitted, !(await access.admitAfterRefreshing(readKey)) {
+        outcome = await storeUnread(recognition)
+      } else {
+        outcome = await run(recognition)
+        if let readKey, Self.returnsFreeRead(after: outcome, of: recognition) {
+          access.release(readKey)
+        }
+      }
       if recognitions[recognition.id] === recognition {
         recognitions[recognition.id] = nil
       }
@@ -178,6 +194,54 @@ final class ReceiptRecognitionCenter {
         await recognition.update(thumbnail: thumbnail)
       }
     }
+  }
+
+  /// The key a read is recorded under in the free read record. Every attempt at a receipt's first
+  /// read shares a key, and reading it again after its pages change takes a new one.
+  static func readKey(for recognition: ReceiptRecognition) -> String {
+    var source = recognition.id.uuidString
+    if recognition.isRescan {
+      let pages = recognition.document?.scan.pages ?? []
+      source += "/rescan" + pages.map { "/\($0.id.uuidString)" }.joined()
+    }
+    return SHA256.hash(data: Data(source.utf8)).prefix(16)
+      .map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Whether a read that ended with `outcome` gives back its free read: it failed before the
+  /// model answered and isn't waiting to read again, or it stopped before showing any items.
+  private static func returnsFreeRead(
+    after outcome: ReceiptRecognition.Outcome,
+    of recognition: ReceiptRecognition
+  ) -> Bool {
+    switch outcome {
+    case .recognized, .needsUnlock:
+      false
+    case .cancelled:
+      !recognition.hasShownItems
+    case .failed:
+      recognition.parsedReceipt == nil && recognition.document?.recognition.deferredUntil == nil
+    }
+  }
+
+  /// Keeps a receipt that can't be read without the purchase: a new scan is stored unread, and
+  /// a deferred read stops waiting to start on its own.
+  private func storeUnread(_ recognition: ReceiptRecognition) async -> ReceiptRecognition.Outcome {
+    var document: ReceiptDocument
+    do {
+      document = try await storedDocument(for: recognition).value
+    } catch {
+      return .failed(message: error.localizedDescription, isRetryable: true)
+    }
+    if document.recognition.deferredUntil != nil, !recognition.isRescan {
+      document.recognition.deferredUntil = nil
+      document.updatedAt = max(Date(), document.updatedAt)
+      if (try? await storage.save(document)) == nil {
+        return .failed(message: "The receipt couldn’t be saved.", isRetryable: true)
+      }
+    }
+    recognition.document = document
+    return .needsUnlock
   }
 
   private func run(_ recognition: ReceiptRecognition) async -> ReceiptRecognition.Outcome {

@@ -57,7 +57,7 @@ struct ReceiptParticipantBreakdownView: View {
               .opacity(lastRequestedCaption == nil ? 0 : 1)
               .accessibilityHidden(lastRequestedCaption == nil)
               .fixedSize()
-              .alignmentGuide(.bottom) { $0[.top] - 6 }
+              .alignmentGuide(.bottom) { $0[.top] - ReceiptBottomBar.captionSpacing }
           }
           .animation(.smooth(duration: 0.3), value: lastRequestedCaption)
         }

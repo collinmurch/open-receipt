@@ -22,7 +22,8 @@ let package = Package(
         .executableTarget(
             name: "ReceiptLab",
             dependencies: ["ReceiptKit"],
-            path: "Tools/ReceiptLab"
+            path: "Tools/ReceiptLab",
+            exclude: ["ReceiptLab.entitlements"]
         ),
         .executableTarget(
             name: "ScreenshotComposer",

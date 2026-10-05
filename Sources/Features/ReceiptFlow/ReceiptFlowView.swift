@@ -101,6 +101,7 @@ struct ReceiptFlowView: View {
     case .failed(let failure):
       ReceiptFailureView(
         failure: failure,
+        backgroundStyle: model.backgroundStyle,
         onRetry: { model.retry(using: recognitions) },
         onEnterManually: enterManually)
     }
@@ -149,11 +150,36 @@ struct ReceiptFlowView: View {
 /// limit is reached, and the receipt can always be entered by hand.
 private struct ReceiptFailureView: View {
   let failure: ReceiptFlowModel.Failure
+  /// The receipt's colors, which tint its buttons as they do on the rest of the receipt.
+  let backgroundStyle: ReceiptBackgroundStyle?
   let onRetry: () -> Void
   let onEnterManually: () -> Void
+  @State private var isUnlockPresented = false
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
+  @Environment(ReadingAccess.self) private var access
 
   var body: some View {
+    Group {
+      if isLocked {
+        locked
+      } else {
+        unread
+      }
+    }
+    .tint(backgroundStyle?.accentColor(for: colorScheme))
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .unlimitedReadingSheet(isPresented: $isUnlockPresented, onUnlock: onRetry)
+  }
+
+  /// Reading this receipt needs the purchase: a read was refused, or an unread receipt is opened
+  /// with every free read used.
+  private var isLocked: Bool {
+    guard !access.isUnlocked else { return false }
+    return failure.needsUnlock || (failure.isUnread && access.freeReadsLeft == 0)
+  }
+
+  private var unread: some View {
     ContentUnavailableView {
       Label(failure.title, systemImage: failure.systemImage)
     } description: {
@@ -163,20 +189,53 @@ private struct ReceiptFailureView: View {
         if let retry = failure.retry {
           Button(retryTitle(retry), action: onRetry)
             .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .tint(backgroundStyle?.prominentColor)
             .disabled(retry.readsReceipt && !recognitions.canReadNow)
-          if retry.readsReceipt, let limitNote, limitNote != failure.description {
-            Text(limitNote)
+          if retry.readsReceipt, let readingNote, readingNote != failure.description {
+            Text(readingNote)
               .font(.footnote)
               .foregroundStyle(.secondary)
           }
         }
-        if failure.allowsManualEntry {
-          Button(failure.manualEntryTitle, action: onEnterManually)
-            .buttonStyle(.glass)
-        }
+        manualEntryButton
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var locked: some View {
+    ContentUnavailableView {
+      Label("Free Reads Used", systemImage: "lock.fill")
+        .symbolRenderingMode(.hierarchical)
+    } description: {
+      Text(lockedDescription)
+    } actions: {
+      VStack(spacing: 12) {
+        Button("Unlock Unlimited Reading") { isUnlockPresented = true }
+          .buttonStyle(.glassProminent)
+          .controlSize(.large)
+          .tint(backgroundStyle?.prominentColor)
+        manualEntryButton
+        Text("One-time purchase. No subscription.")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .padding(.top, 4)
+      }
+    }
+  }
+
+  private var lockedDescription: String {
+    let reason =
+      failure.needsUnlock ? failure.description : ReceiptFlowModel.Failure.unlockDescription
+    return "You’ve used all \(ReadingAccess.freeReadLimit) free reads. \(reason)"
+  }
+
+  @ViewBuilder
+  private var manualEntryButton: some View {
+    if failure.allowsManualEntry {
+      Button(failure.manualEntryTitle, action: onEnterManually)
+        .buttonStyle(.glass)
+    }
   }
 
   private func retryTitle(_ retry: ReceiptFlowModel.Failure.Retry) -> String {
@@ -186,7 +245,7 @@ private struct ReceiptFailureView: View {
     }
   }
 
-  private var limitNote: String? {
+  private var readingNote: String? {
     switch recognitions.modelStatus {
     case .limitReached(let resetDate, _):
       resetDate.map { "Reading is available again \(DeferredReceiptRead.resumption(at: $0))." }
@@ -194,8 +253,15 @@ private struct ReceiptFailureView: View {
     case .unavailable(let reason):
       reason
     case .available, .approachingLimit:
-      nil
+      freeReadsNote
     }
+  }
+
+  private var freeReadsNote: String? {
+    guard !access.isUnlocked, !failure.needsUnlock else { return nil }
+    return access.freeReadsLeft == 0
+      ? "Reading this receipt needs unlimited reading."
+      : "\(access.freeReadsLeftDescription)."
   }
 }
 

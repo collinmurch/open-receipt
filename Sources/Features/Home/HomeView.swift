@@ -117,4 +117,5 @@ extension View {
   HomeView()
     .environment(ReceiptLibraryModel(storage: .live))
     .environment(ReceiptRecognitionCenter(parsingClient: .standard, storage: .live))
+    .environment(ReadingAccess.unlimited())
 }
