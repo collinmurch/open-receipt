@@ -31,6 +31,48 @@ final class PaymentRequestDateFormatterTests: XCTestCase {
       "Tuesday 1:30pm")
   }
 
+  func testFormatsTodayWithTime() throws {
+    let calendar = testCalendar
+    let now = try date(2026, 9, 18, 16, 0, calendar: calendar)
+    let requestedAt = try date(2026, 9, 18, 13, 30, calendar: calendar)
+
+    XCTAssertEqual(
+      PaymentRequestDateFormatter.formatted(
+        requestedAt,
+        relativeTo: now,
+        calendar: calendar,
+        locale: testLocale),
+      "today 1:30pm")
+  }
+
+  func testFormatsYesterdayWithTime() throws {
+    let calendar = testCalendar
+    let now = try date(2026, 9, 18, 16, 0, calendar: calendar)
+    let requestedAt = try date(2026, 9, 17, 13, 0, calendar: calendar)
+
+    XCTAssertEqual(
+      PaymentRequestDateFormatter.formatted(
+        requestedAt,
+        relativeTo: now,
+        calendar: calendar,
+        locale: testLocale),
+      "yesterday 1pm")
+  }
+
+  func testFormatsYesterdayInPreviousWeek() throws {
+    let calendar = testCalendar
+    let now = try date(2026, 9, 20, 9, 0, calendar: calendar)
+    let requestedAt = try date(2026, 9, 19, 22, 0, calendar: calendar)
+
+    XCTAssertEqual(
+      PaymentRequestDateFormatter.formatted(
+        requestedAt,
+        relativeTo: now,
+        calendar: calendar,
+        locale: testLocale),
+      "yesterday 10pm")
+  }
+
   func testFormatsDateOutsideCurrentWeek() throws {
     let calendar = testCalendar
     let now = try date(2026, 9, 18, 16, 0, calendar: calendar)
