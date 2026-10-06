@@ -24,26 +24,24 @@
               exec /usr/bin/${name} "$@"
             '';
 
-          hostSwift =
-            pkgs.writeShellScriptBin "swift" ''
-              exec /usr/bin/xcrun swift "$@"
+          xcrunTool = name:
+            pkgs.writeShellScriptBin name ''
+              exec /usr/bin/xcrun ${name} "$@"
             '';
         in
         {
           default = pkgs.mkShellNoCC {
             packages = [
-              pkgs.curl
               pkgs.git
               pkgs.gnumake
               pkgs.ripgrep
-              (hostTool "fm")
               (hostTool "open")
               (hostTool "xcodebuild")
               (hostTool "xcrun")
-              hostSwift
+              (xcrunTool "swift")
+              (xcrunTool "swift-format")
               pkgs.xcbeautify
               pkgs.xcodegen
-              pkgs."swift-format"
             ];
 
             shellHook = ''
@@ -58,11 +56,6 @@
 
               if [ "$macos_major" -lt 27 ]; then
                 echo "error: macOS 27+ is required; found macOS $macos_major." >&2
-                missing_tools=1
-              fi
-
-              if [ ! -x /usr/bin/fm ]; then
-                echo "error: /usr/bin/fm is required by the receipt evaluation workflow." >&2
                 missing_tools=1
               fi
 
@@ -94,6 +87,11 @@
                   missing_tools=1
                 fi
 
+                if ! /usr/bin/xcrun --find swift-format >/dev/null 2>&1; then
+                  echo "error: swift-format from the active Xcode toolchain is not available." >&2
+                  missing_tools=1
+                fi
+
                 if ! /usr/bin/xcrun --find simctl >/dev/null 2>&1; then
                   echo "error: simctl is not available from the active Xcode install." >&2
                   missing_tools=1
@@ -112,9 +110,13 @@
 
               # xcrun always finds the metal stub, so run it to confirm the toolchain component exists.
               if ! /usr/bin/xcrun metal --version >/dev/null 2>&1; then
-                echo "error: the Metal Toolchain is required to compile the app's shaders." >&2
-                echo "Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
-                return 1
+                echo "Installing the Metal Toolchain, which the app's shaders need..." >&2
+                if ! /usr/bin/xcodebuild -downloadComponent MetalToolchain \
+                  || ! /usr/bin/xcrun metal --version >/dev/null 2>&1; then
+                  echo "error: the Metal Toolchain could not be installed." >&2
+                  echo "Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
+                  return 1
+                fi
               fi
             '';
           };

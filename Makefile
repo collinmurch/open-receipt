@@ -1,6 +1,6 @@
 # ─── Config ───────────────────────────────────────────────────────────────────
 SHELL         := /bin/bash
-DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
+DEVELOPER_DIR ?= $(shell xcode-select -p)
 export DEVELOPER_DIR
 SCHEME        = open-receipt
 PROJECT       = open-receipt.xcodeproj
@@ -227,7 +227,7 @@ check-device: gen ## Compile for iOS hardware without signing or installing
 archive: release-configuration gen ## Create a signed Release archive. Set build_number=N, or build_number=auto on upload.
 	@if [ ! -x "$(DEVELOPER_DIR)/usr/bin/xcodebuild" ]; then \
 		echo "No Xcode toolchain was found at $(DEVELOPER_DIR)." >&2; \
-		echo "Install the current Xcode release or set DEVELOPER_DIR to it." >&2; \
+		echo "Install the current Xcode release and select it with xcode-select." >&2; \
 		exit 69; \
 	fi
 	@if [ -z "$(RESOLVED_TEAM)" ]; then \
