@@ -23,16 +23,10 @@ struct ReceiptRowFocusView: View {
   let onDismiss: () -> Void
 
   var body: some View {
-    LiftedFocus(onDismiss: onDismiss) { state, proxy in
-      let source = proxy.localFrame(of: rowFrame)
-      let layout = LiftedRowLayout(size: proxy.size, rowHeight: source.height)
-
+    LiftedRowFocus(rowFrame: rowFrame, startsPressed: startsPressed, onDismiss: onDismiss) {
       row
-        .liftedCard(width: source.width, startsPressed: startsPressed, state: state)
-        .position(state.isInPlace ? layout.cardCenter : CGPoint(x: source.midX, y: source.midY))
-
+    } actions: { state in
       actions(state)
-        .liftedActions(in: proxy.size, top: layout.actionsTop, state: state)
     }
   }
 

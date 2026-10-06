@@ -7,22 +7,12 @@ enum PaymentRequestDateFormatter {
     calendar: Calendar = .current,
     locale: Locale = .current
   ) -> String {
+    let base = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
     if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
-      var weekdayStyle = Date.FormatStyle.dateTime.weekday(.wide)
-      weekdayStyle.calendar = calendar
-      weekdayStyle.timeZone = calendar.timeZone
-      weekdayStyle.locale = locale
-      let weekday = date.formatted(weekdayStyle)
-      var timeStyle =
-        calendar.component(.minute, from: date) == 0
-        ? Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .abbreviated))
-        : Date.FormatStyle.dateTime
-          .hour(.defaultDigits(amPM: .abbreviated))
-          .minute(.twoDigits)
-      timeStyle.calendar = calendar
-      timeStyle.timeZone = calendar.timeZone
-      timeStyle.locale = locale
-      var time = date.formatted(timeStyle)
+      let weekday = date.formatted(base.weekday(.wide))
+      let hour = base.hour(.defaultDigits(amPM: .abbreviated))
+      var time = date.formatted(
+        calendar.component(.minute, from: date) == 0 ? hour : hour.minute(.twoDigits))
       // "1pm" reads naturally in English; other languages keep their own time format.
       if locale.language.languageCode == .english {
         time = time.filter { !$0.isWhitespace }.lowercased(with: locale)
@@ -30,15 +20,8 @@ enum PaymentRequestDateFormatter {
       return "\(weekday) \(time)"
     }
 
-    var style = Date.FormatStyle.dateTime
-      .month(.abbreviated)
-      .day()
-    if !calendar.isDate(date, equalTo: now, toGranularity: .year) {
-      style = style.year()
-    }
-    style.calendar = calendar
-    style.timeZone = calendar.timeZone
-    style.locale = locale
-    return date.formatted(style)
+    let day = base.month(.abbreviated).day()
+    let isThisYear = calendar.isDate(date, equalTo: now, toGranularity: .year)
+    return date.formatted(isThisYear ? day : day.year())
   }
 }

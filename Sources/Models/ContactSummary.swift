@@ -64,7 +64,6 @@ struct ContactSummary: Identifiable, Sendable, Equatable {
   private static func isMobileLabel(_ label: String?) -> Bool {
     guard let label else { return false }
     return label.caseInsensitiveCompare("mobile") == .orderedSame
-      || label.caseInsensitiveCompare("iPhone") == .orderedSame
       || label.caseInsensitiveCompare(mobileLabel) == .orderedSame
   }
 

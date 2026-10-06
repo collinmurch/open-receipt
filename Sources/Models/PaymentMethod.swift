@@ -34,14 +34,21 @@ enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Senda
     }
   }
 
-  /// Whether requests through this method can be in `currency`. Venmo and Cash App only move USD.
-  func supports(currency: String) -> Bool {
+  /// The one currency requests through this method can be in, or `nil` when any will do. Venmo
+  /// and Cash App only move USD.
+  private var requiredCurrency: String? {
     switch self {
     case .venmo, .cashApp:
-      currency == "USD"
+      "USD"
     case .iMessage, .none:
-      true
+      nil
     }
+  }
+
+  /// Why requests through this method can't be in `currency`, or `nil` when they can.
+  func unsupportedCurrencyReason(_ currency: String) -> String? {
+    guard let requiredCurrency, requiredCurrency != currency else { return nil }
+    return "\(title) requests require a \(requiredCurrency) receipt."
   }
 }
 

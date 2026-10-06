@@ -1,5 +1,3 @@
-import Foundation
-
 public struct ReceiptItem: Sendable, Equatable {
   public let description: String
   public let quantity: Double

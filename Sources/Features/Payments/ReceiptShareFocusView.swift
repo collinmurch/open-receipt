@@ -23,16 +23,15 @@ struct ReceiptShareFocusView: View {
   @Namespace private var breakdownGlass
 
   var body: some View {
-    LiftedFocus(onDismiss: onDismiss, onLifted: prepareBreakdown) { state, proxy in
-      let source = proxy.localFrame(of: rowFrame)
-      let layout = LiftedRowLayout(size: proxy.size, rowHeight: source.height)
-
+    LiftedRowFocus(
+      rowFrame: rowFrame,
+      startsPressed: startsPressed,
+      onDismiss: onDismiss,
+      onLifted: prepareBreakdown
+    ) {
       content
-        .liftedCard(width: source.width, startsPressed: startsPressed, state: state)
-        .position(state.isInPlace ? layout.cardCenter : CGPoint(x: source.midX, y: source.midY))
-
+    } actions: { state in
       actions(state)
-        .liftedActions(in: proxy.size, top: layout.actionsTop, state: state)
     }
   }
 

@@ -37,4 +37,20 @@ final class ReceiptLocalDateTests: XCTestCase {
 
     XCTAssertEqual(ReceiptLocalDate.string(from: date), "2027-02-03")
   }
+
+  func testDayFollowsTimeZone() throws {
+    let lateEvening = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-01T03:00:00Z"))
+    let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+
+    XCTAssertEqual(
+      ReceiptLocalDate.day(of: lateEvening, in: losAngeles),
+      ReceiptLocalDate.date(from: "2026-02-28"))
+  }
+
+  func testDayIsStartOfDayInUTC() throws {
+    let afternoon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-11T15:30:00Z"))
+
+    XCTAssertEqual(
+      ReceiptLocalDate.day(of: afternoon, in: .gmt), ReceiptLocalDate.date(from: "2026-08-11"))
+  }
 }

@@ -89,10 +89,10 @@ struct ReceiptPeopleView: View {
         Task { await addResolvedContacts(identifiers) }
       }
       .task { await load() }
-      .onReceive(
-        NotificationCenter.default.publisher(for: .CNContactStoreDidChange)
-      ) { _ in
-        Task { await contactModel.reload() }
+      .task {
+        for await _ in NotificationCenter.default.notifications(named: .CNContactStoreDidChange) {
+          await contactModel.reload()
+        }
       }
     }
   }
@@ -216,9 +216,7 @@ struct ReceiptPeopleView: View {
 
   private var filteredSavedPeople: [Person] {
     let query = contactModel.searchQuery
-    let people = peopleModel.people.filter {
-      $0.contactIdentifier == nil || $0.contactIdentifier != ownerContactIdentifier
-    }
+    let people = peopleModel.people.filter { !$0.isContact(ownerContactIdentifier) }
     guard !query.isEmpty else { return people }
     return people.filter {
       $0.displayName.localizedCaseInsensitiveContains(query)

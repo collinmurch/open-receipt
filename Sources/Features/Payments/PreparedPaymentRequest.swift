@@ -21,10 +21,11 @@ struct PreparedPaymentRequest {
     note: String,
     isSplitComplete: Bool
   ) {
-    guard isSplitComplete,
-      !share.participant.source.isCurrentUser,
-      let destination,
-      destination.method.supports(currency: currency)
+    guard !share.participant.source.isCurrentUser,
+      Self.unavailableReason(
+        share: share, destination: destination, currency: currency,
+        isSplitComplete: isSplitComplete) == nil,
+      let destination
     else { return nil }
 
     let action: Action
@@ -47,6 +48,21 @@ struct PreparedPaymentRequest {
     self.amount = share.total
     self.currency = currency
     self.action = action
+  }
+
+  /// Why `share` can't be requested, or `nil` when it can or is the owner's own share.
+  static func unavailableReason(
+    share: ReceiptParticipantShare,
+    destination: PaymentDestination?,
+    currency: String,
+    isSplitComplete: Bool
+  ) -> String? {
+    guard !share.participant.source.isCurrentUser else { return nil }
+    guard isSplitComplete else { return "Assign every item before you send requests." }
+    guard let destination else {
+      return "Add a payment method to request from \(share.participant.displayName)."
+    }
+    return destination.method.unsupportedCurrencyReason(currency)
   }
 
   var title: String {

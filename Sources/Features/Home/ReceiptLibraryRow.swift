@@ -86,8 +86,7 @@ struct ReceiptLibraryRow: View {
     if let recognition { return recognition.preview.merchantName ?? "Reading Receipt" }
     if receipt.isUnavailable { return "Unavailable Receipt" }
     if receipt.recognitionStatus != .succeeded { return "Unread Receipt" }
-    let merchant = receipt.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return merchant.isEmpty ? "Receipt" : merchant
+    return receipt.merchantTitle
   }
 
   private var subtitle: String {

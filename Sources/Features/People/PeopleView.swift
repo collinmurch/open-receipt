@@ -24,7 +24,7 @@ struct PeopleView: View {
       }
     }
     .scrollContentBackground(.hidden)
-    .background { ReceiptLibraryBackground() }
+    .background { AppBackground() }
     .navigationTitle("People")
     .haptics(haptic)
     .task {
@@ -84,9 +84,7 @@ struct PeopleView: View {
   }
 
   private var savedPeople: [Person] {
-    model.people.filter {
-      $0.contactIdentifier == nil || $0.contactIdentifier != model.owner?.contactIdentifier
-    }
+    model.people.filter { !$0.isContact(model.owner?.contactIdentifier) }
   }
 
   @ViewBuilder

@@ -245,12 +245,12 @@ final class ReceiptDraftEditingTests: XCTestCase {
     let draft = makeDraft()
     draft.adjustments.add(.tax)
     draft.tax = 0.40
-    XCTAssertTrue(draft.totalNeedsCorrection)
+    XCTAssertEqual(draft.corrections.total ?? 0, 4.90, accuracy: 0.000_1)
 
     draft.fixTotal()
 
     XCTAssertEqual(draft.total, 4.90, accuracy: 0.000_1)
-    XCTAssertFalse(draft.totalNeedsCorrection)
+    XCTAssertNil(draft.corrections.total)
   }
 
   func testReceiptMutationAdvancesPersistenceRevision() {

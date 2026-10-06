@@ -1,12 +1,10 @@
 import SwiftUI
 
 /// A way to start a new receipt.
-enum NewReceiptSource: CaseIterable, Identifiable {
+enum NewReceiptSource {
   case scan
   case importPhotos
   case create
-
-  var id: Self { self }
 
   var title: String {
     switch self {
@@ -46,7 +44,7 @@ enum NewReceiptChooserPhase: Equatable {
 }
 
 /// Raises the ways to start a receipt from the bottom of the screen, over a backdrop that
-/// dismisses on tap. Read sits nearest the thumb and rises first. The owner sets `phase`; once
+/// dismisses on tap. Scan sits nearest the thumb and rises first. The owner sets `phase`; once
 /// the chooser has dropped or faded away, `onFinish` runs with the receipt to start, if any.
 struct NewReceiptChooser: View {
   private static let presentAnimation = Animation.spring(duration: 0.5, bounce: 0.22)
@@ -144,7 +142,7 @@ struct NewReceiptChooser: View {
   }
 }
 
-/// One way to start a receipt, as a wide glass button. Read is tinted as the main way in.
+/// One way to start a receipt, as a wide glass button. Scan is tinted as the main way in.
 private struct NewReceiptSourceButton: View {
   let source: NewReceiptSource
   let action: () -> Void

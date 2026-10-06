@@ -103,7 +103,7 @@ private final class PageTabBarController: UIViewController {
   private static let entranceProgress: TimeInterval = 0.6
 
   let tabBar = UITabBar()
-  private var pendingEntrance: DispatchWorkItem?
+  private var pendingEntrance: Task<Void, Never>?
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -148,9 +148,10 @@ private final class PageTabBarController: UIViewController {
 
   private func scheduleEntrance(after delay: TimeInterval) {
     pendingEntrance?.cancel()
-    let entrance = DispatchWorkItem { [weak self] in self?.attachTabBar(animated: true) }
-    pendingEntrance = entrance
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: entrance)
+    pendingEntrance = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+      self?.attachTabBar(animated: true)
+    }
   }
 
   /// Animating matches the switcher's entrance when Done turns into it.

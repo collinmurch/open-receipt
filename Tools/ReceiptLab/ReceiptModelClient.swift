@@ -35,13 +35,14 @@ enum ReceiptModelClient {
         wasCached: true)
     }
 
-    let started = Date()
+    let clock = ContinuousClock()
+    let started = clock.now
     let content = try await respond(pages)
     try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     try content.write(to: responseURL, options: .atomic)
     return ReceiptModelResponse(
       content: content,
-      durationSeconds: Date().timeIntervalSince(started),
+      durationSeconds: (clock.now - started) / .seconds(1),
       wasCached: false)
   }
 

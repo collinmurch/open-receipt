@@ -77,22 +77,60 @@ final class PreparedPaymentRequestTests: XCTestCase {
     XCTAssertEqual(PreparedPaymentRequest.note(merchantName: "  "), "Open Receipt split")
   }
 
+  func testRequestableShareHasNoUnavailableReason() {
+    XCTAssertNil(unavailableReason())
+  }
+
+  func testOwnerHasNoUnavailableReason() {
+    XCTAssertNil(unavailableReason(source: .currentUser(contactIdentifier: nil)))
+  }
+
+  func testIncompleteSplitAsksToAssignItems() {
+    XCTAssertEqual(
+      unavailableReason(isSplitComplete: false), "Assign every item before you send requests.")
+  }
+
+  func testMissingDestinationAsksForPaymentMethod() {
+    XCTAssertEqual(
+      unavailableReason(destination: nil), "Add a payment method to request from Sam.")
+  }
+
+  func testUnsupportedCurrencyNamesRequiredCurrency() {
+    XCTAssertEqual(unavailableReason(currency: "EUR"), "Venmo requests require a USD receipt.")
+  }
+
   private func prepare(
     destination: PaymentDestination? = .venmo(.init(kind: .username, value: "sam")),
     source: ReceiptParticipant.Source = .manual,
     currency: String = "USD",
     isSplitComplete: Bool = true
   ) -> PreparedPaymentRequest? {
-    let share = ReceiptParticipantShare(
-      participant: ReceiptParticipant(
-        id: UUID(), source: source, displayName: "Sam", avatarData: nil),
-      items: [ReceiptItemShare(itemID: UUID(), description: "Pizza", fraction: 1, amount: 12.5)],
-      adjustments: [])
-    return PreparedPaymentRequest(
-      share: share,
+    PreparedPaymentRequest(
+      share: share(source: source),
       destination: destination,
       currency: currency,
       note: "Open Receipt split for: Cafe",
       isSplitComplete: isSplitComplete)
+  }
+
+  private func unavailableReason(
+    destination: PaymentDestination? = .venmo(.init(kind: .username, value: "sam")),
+    source: ReceiptParticipant.Source = .manual,
+    currency: String = "USD",
+    isSplitComplete: Bool = true
+  ) -> String? {
+    PreparedPaymentRequest.unavailableReason(
+      share: share(source: source),
+      destination: destination,
+      currency: currency,
+      isSplitComplete: isSplitComplete)
+  }
+
+  private func share(source: ReceiptParticipant.Source) -> ReceiptParticipantShare {
+    ReceiptParticipantShare(
+      participant: ReceiptParticipant(
+        id: UUID(), source: source, displayName: "Sam", avatarData: nil),
+      items: [ReceiptItemShare(itemID: UUID(), description: "Pizza", fraction: 1, amount: 12.5)],
+      adjustments: [])
   }
 }

@@ -75,35 +75,39 @@ struct ReceiptLab {
 
   private static func parseFormat(_ raw: String?) -> ReportFormat {
     guard let raw, let format = ReportFormat(raw) else {
-      FileHandle.standardError.write(Data("Invalid/missing value for --format\n".utf8))
-      exit(64)
+      usageError("Invalid/missing value for --format")
     }
     return format
   }
 
   private static func parseReasoning(_ raw: String?) -> ReceiptParserConfiguration.ReasoningLevel {
     guard let raw, let level = ReceiptParserConfiguration.ReasoningLevel(rawValue: raw) else {
-      FileHandle.standardError.write(
-        Data("Invalid/missing value for --reasoning (light, moderate, deep)\n".utf8))
-      exit(64)
+      usageError("Invalid/missing value for --reasoning (\(reasoningLevels(separator: ", ")))")
     }
     return level
   }
 
   private static func parsePixels(_ raw: String?) -> Int {
     guard let raw, let pixels = Int(raw), pixels > 0 else {
-      FileHandle.standardError.write(Data("Invalid/missing value for --max-pixels\n".utf8))
-      exit(64)
+      usageError("Invalid/missing value for --max-pixels")
     }
     return pixels
   }
 
   private static func required(_ raw: String?, flag: String) -> String {
     guard let raw, !raw.isEmpty else {
-      FileHandle.standardError.write(Data("Missing value for \(flag)\n".utf8))
-      exit(64)
+      usageError("Missing value for \(flag)")
     }
     return raw
+  }
+
+  private static func reasoningLevels(separator: String) -> String {
+    ReceiptParserConfiguration.ReasoningLevel.allCases.map(\.rawValue).joined(separator: separator)
+  }
+
+  private static func usageError(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
+    exit(64)
   }
 
   private static func write(_ text: String) {
@@ -116,7 +120,7 @@ struct ReceiptLab {
 
       USAGE
         ReceiptLab run <path> [--format text|json|summary] [--cached] [--quiet]
-                       [--reasoning light|moderate|deep] [--max-pixels N]
+                       [--reasoning \(reasoningLevels(separator: "|"))] [--max-pixels N]
 
       Prefer `make receipts` over invoking this binary directly.
       """

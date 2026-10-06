@@ -1,5 +1,3 @@
-import Foundation
-
 /// Generation settings for a receipt request. `standard` is what the app ships; the harness can
 /// vary these to measure their effect on accuracy and latency.
 public struct ReceiptParserConfiguration: Sendable, Equatable {

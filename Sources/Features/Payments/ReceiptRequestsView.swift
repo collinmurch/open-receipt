@@ -247,22 +247,15 @@ struct ReceiptRequestsView: View {
       isSplitComplete: calculation.unassignedItemCount == 0)
   }
 
-  /// Why a person's share can't be requested, or nil for the owner's own share.
   private func unavailableRequestReason(
     for share: ReceiptParticipantShare,
     calculation: ReceiptSplitCalculation
   ) -> String? {
-    guard !share.participant.source.isCurrentUser else { return nil }
-    if calculation.unassignedItemCount > 0 {
-      return "Assign every item before you send requests."
-    }
-    guard let destination = paymentDestination(for: share) else {
-      return "Add a payment method to request from \(share.participant.displayName)."
-    }
-    if !destination.method.supports(currency: draft.displayCurrency) {
-      return "\(destination.method.title) requests require a USD receipt."
-    }
-    return nil
+    PreparedPaymentRequest.unavailableReason(
+      share: share,
+      destination: paymentDestination(for: share),
+      currency: draft.displayCurrency,
+      isSplitComplete: calculation.unassignedItemCount == 0)
   }
 
   private var requestNote: String {

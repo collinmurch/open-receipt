@@ -164,13 +164,10 @@ struct ReceiptParticipantBreakdownView: View {
         }
       }
 
-      if let paymentDestination, !paymentDestination.method.supports(currency: currency) {
+      if let reason = paymentDestination?.method.unsupportedCurrencyReason(currency) {
         Section {
-          Label(
-            "\(paymentDestination.method.title) requests require a USD receipt.",
-            systemImage: "dollarsign.circle"
-          )
-          .foregroundStyle(.secondary)
+          Label(reason, systemImage: "dollarsign.circle")
+            .foregroundStyle(.secondary)
         }
       }
     }

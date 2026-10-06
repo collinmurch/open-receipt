@@ -30,15 +30,19 @@ enum ReceiptLocalDate {
   /// The day `date` falls on in `timeZone`, as a zero-padded `yyyy-MM-dd`, which sorts
   /// chronologically as a string. The day is always written in the Gregorian calendar.
   static func string(from date: Date, in timeZone: TimeZone = .gmt) -> String {
-    var local = calendar
-    local.timeZone = timeZone
-    let components = local.dateComponents([.year, .month, .day], from: date)
+    let components = dayComponents(of: date, in: timeZone)
     return String(
       format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
   }
 
   /// The day `date` falls on in `timeZone`, as the start of that day in UTC, like `date(from:)`.
   static func day(of date: Date, in timeZone: TimeZone) -> Date {
-    Self.date(from: string(from: date, in: timeZone)) ?? date
+    calendar.date(from: dayComponents(of: date, in: timeZone)) ?? date
+  }
+
+  private static func dayComponents(of date: Date, in timeZone: TimeZone) -> DateComponents {
+    var local = calendar
+    local.timeZone = timeZone
+    return local.dateComponents([.year, .month, .day], from: date)
   }
 }

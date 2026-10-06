@@ -12,18 +12,10 @@ private struct BuildChannelSubtitleModifier: ViewModifier {
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    if access.channel.isTesting, !isCapturing {
+    if access.channel.isTesting, !ScreenshotHighlights.isCapturing {
       content.navigationSubtitle(access.channel.title)
     } else {
       content
     }
-  }
-
-  private var isCapturing: Bool {
-    #if DEBUG
-      return ScreenshotHighlights.isCapturing
-    #else
-      return false
-    #endif
   }
 }

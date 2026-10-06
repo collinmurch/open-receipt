@@ -119,22 +119,3 @@ extension GeometryProxy {
     return globalFrame.offsetBy(dx: -origin.x, dy: -origin.y)
   }
 }
-
-/// Where a lifted row settles: just above the middle of the screen, with its actions below the
-/// middle.
-struct LiftedRowLayout {
-  private static let spacing: CGFloat = 28
-
-  let size: CGSize
-  let rowHeight: CGFloat
-
-  var cardCenter: CGPoint {
-    CGPoint(x: size.width / 2, y: size.height / 2 - rowHeight / 2 - LiftedCard.padding.height)
-  }
-
-  var actionsTop: CGPoint {
-    CGPoint(
-      x: size.width / 2,
-      y: cardCenter.y + rowHeight / 2 + LiftedCard.padding.height + Self.spacing)
-  }
-}

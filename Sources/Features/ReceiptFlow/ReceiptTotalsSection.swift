@@ -22,9 +22,7 @@ struct ReceiptTotalsSection: View {
   @FocusState private var focusedField: TotalsField?
 
   var body: some View {
-    // Each correction sums every item, so it is worked out once per update.
-    let expectedSubtotal = draft.subtotalNeedsCorrection ? draft.expectedSubtotal : nil
-    let expectedTotal = draft.totalNeedsCorrection ? draft.expectedTotal : nil
+    let (expectedSubtotal, expectedTotal) = draft.corrections
     let showsSubtotal = !draft.adjustments.isEmpty || expectedSubtotal != nil
 
     Section {
@@ -40,7 +38,9 @@ struct ReceiptTotalsSection: View {
     } header: {
       header
     } footer: {
-      fixTotalButton
+      if isEditing, expectedTotal != nil {
+        fixTotalButton
+      }
     }
     .keyboardDoneButton(isVisible: focusedField != nil) {
       focusedField = nil
@@ -144,21 +144,18 @@ struct ReceiptTotalsSection: View {
     }
   }
 
-  @ViewBuilder
   private var fixTotalButton: some View {
-    if isEditing, draft.totalNeedsCorrection {
-      HStack {
-        Spacer()
-        Button("Fix Total", systemImage: "wand.and.sparkles") {
-          withAnimation(.settle) { draft.fixTotal() }
-          haptic.play(.success)
-        }
-        .buttonStyle(.bordered)
-        .tint(.orange)
-        Spacer()
+    HStack {
+      Spacer()
+      Button("Fix Total", systemImage: "wand.and.sparkles") {
+        withAnimation(.settle) { draft.fixTotal() }
+        haptic.play(.success)
       }
-      .padding(.top, 4)
+      .buttonStyle(.bordered)
+      .tint(.orange)
+      Spacer()
     }
+    .padding(.top, 4)
   }
 
   private func amountField(

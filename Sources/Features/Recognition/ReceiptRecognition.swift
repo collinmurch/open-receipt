@@ -30,8 +30,6 @@ final class ReceiptRecognition: Identifiable {
   /// The receipt identifier, which is also the scan identifier.
   let id: UUID
   let backgroundStyle: ReceiptBackgroundStyle
-  let capturedAt: Date
-  let pageCount: Int
   /// Whether someone started this read, so it may keep running with system progress UI after
   /// they leave the app.
   let isUserInitiated: Bool
@@ -61,9 +59,10 @@ final class ReceiptRecognition: Identifiable {
     self.backgroundStyle = backgroundStyle
     self.document = document
     self.parsedReceipt = parsedReceipt
-    capturedAt = scan.capturedAt
-    pageCount = scan.pages.count
   }
+
+  var capturedAt: Date { scan.capturedAt }
+  var pageCount: Int { scan.pages.count }
 
   /// Whether this recognition replaces the values of a receipt that was already read.
   var isRescan: Bool {

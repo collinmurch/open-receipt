@@ -44,7 +44,7 @@ struct UnlimitedReadingView: View {
           .padding(.horizontal, 24)
           .padding(.bottom, 12)
       }
-      .background { ReceiptLibraryBackground() }
+      .background { AppBackground() }
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button(role: .close) { dismiss() }

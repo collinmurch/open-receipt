@@ -63,23 +63,10 @@ struct ReceiptLabRunner {
     if !isDirectory.boolValue { return [fileFixture(at: url)] }
 
     if let samples = fixtureSamples(in: url) {
-      let expected = expectedReceipt(in: url)
-      return samples.map {
-        ResolvedFixture(
-          label: "\(url.lastPathComponent)/\($0.deletingPathExtension().lastPathComponent)",
-          sourceURL: $0,
-          expected: expected)
-      }
+      return resolve(samples, in: url)
     }
     if url.lastPathComponent == "fixtures", let samples = supportedChildren(in: url) {
-      let parent = url.deletingLastPathComponent()
-      let expected = expectedReceipt(in: parent)
-      return samples.map {
-        ResolvedFixture(
-          label: "\(parent.lastPathComponent)/\($0.deletingPathExtension().lastPathComponent)",
-          sourceURL: $0,
-          expected: expected)
-      }
+      return resolve(samples, in: url.deletingLastPathComponent())
     }
 
     let children = try FileManager.default.contentsOfDirectory(
@@ -105,12 +92,26 @@ struct ReceiptLabRunner {
     let parent = url.deletingLastPathComponent()
     if parent.lastPathComponent == "fixtures" {
       let group = parent.deletingLastPathComponent()
-      return ResolvedFixture(
-        label: "\(group.lastPathComponent)/\(url.deletingPathExtension().lastPathComponent)",
-        sourceURL: url,
-        expected: expectedReceipt(in: group))
+      return sample(url, in: group, expected: expectedReceipt(in: group))
     }
     return ResolvedFixture(label: url.lastPathComponent, sourceURL: url, expected: nil)
+  }
+
+  /// The samples of the fixture in `group`, which all share its `expected.json`.
+  private func resolve(_ samples: [URL], in group: URL) -> [ResolvedFixture] {
+    let expected = expectedReceipt(in: group)
+    return samples.map { sample($0, in: group, expected: expected) }
+  }
+
+  private func sample(
+    _ url: URL,
+    in group: URL,
+    expected: Result<ExpectedReceipt, any Error>?
+  ) -> ResolvedFixture {
+    ResolvedFixture(
+      label: "\(group.lastPathComponent)/\(url.deletingPathExtension().lastPathComponent)",
+      sourceURL: url,
+      expected: expected)
   }
 
   private func fixtureSamples(in folder: URL) -> [URL]? {

@@ -81,7 +81,7 @@ struct SettingsView: View {
       }
     }
     .scrollContentBackground(.hidden)
-    .background { ReceiptLibraryBackground() }
+    .background { AppBackground() }
     // Presented from the form rather than its sections, which the list can rebuild while
     // something they present is showing.
     .unlimitedReadingSheet(isPresented: $isUnlockPresented)
@@ -107,7 +107,7 @@ struct SettingsView: View {
   }
 }
 
-/// The purchase of unlimited reading, and tools for testing it in TestFlight and Debug builds.
+/// Unlocking unlimited reading, restoring the purchase, and the free reads left.
 private struct UnlimitedReadingSection: View {
   @Binding var isUnlockPresented: Bool
   @Binding var restoreMessage: String?

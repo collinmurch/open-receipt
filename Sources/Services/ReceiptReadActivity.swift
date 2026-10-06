@@ -1,4 +1,5 @@
 import BackgroundTasks
+import Synchronization
 import UIKit
 
 /// Keeps a receipt read running after the app moves to the background. A read someone started
@@ -36,15 +37,20 @@ final class ReceiptReadActivity {
   }
 }
 
-/// State is guarded by `lock`, because the system calls the launch and expiration handlers on its
+/// State sits behind a mutex, because the system calls the launch and expiration handlers on its
 /// own queues.
-private final class ContinuedProcessing: @unchecked Sendable {
+private final class ContinuedProcessing: Sendable {
   private static let totalUnitCount: Int64 = 100
-  private let lock = NSLock()
-  private var task: BGContinuedProcessingTask?
-  private var completedUnitCount: Int64 = 5
-  private var itemCount = 0
-  private var result: Bool?
+
+  private struct State {
+    /// Only touched under the mutex. The system hands the task over once, at launch.
+    nonisolated(unsafe) var task: BGContinuedProcessingTask?
+    var completedUnitCount: Int64 = 5
+    var itemCount = 0
+    var result: Bool?
+  }
+
+  private let state = Mutex(State())
   private let onExpiration: @MainActor @Sendable () -> Void
 
   private init(onExpiration: @escaping @MainActor @Sendable () -> Void) {
@@ -79,46 +85,46 @@ private final class ContinuedProcessing: @unchecked Sendable {
   }
 
   func update(itemCount: Int) {
-    lock.withLock {
-      guard result == nil, itemCount != self.itemCount else { return }
-      self.itemCount = itemCount
-      completedUnitCount = min(90, 10 + Int64(itemCount) * 4)
-      guard let task else { return }
-      task.progress.completedUnitCount = completedUnitCount
+    state.withLock { state in
+      guard state.result == nil, itemCount != state.itemCount else { return }
+      state.itemCount = itemCount
+      state.completedUnitCount = min(90, 10 + Int64(itemCount) * 4)
+      guard let task = state.task else { return }
+      task.progress.completedUnitCount = state.completedUnitCount
       task.updateTitle(task.title, subtitle: Self.subtitle(itemCount: itemCount))
     }
   }
 
   func finish(succeeded: Bool) {
-    lock.withLock {
-      guard result == nil else { return }
-      result = succeeded
-      guard let task else { return }
-      self.task = nil
+    state.withLock { state in
+      guard state.result == nil else { return }
+      state.result = succeeded
+      guard let task = state.task else { return }
+      state.task = nil
       task.progress.completedUnitCount = Self.totalUnitCount
       task.setTaskCompleted(success: succeeded)
     }
   }
 
   private func start(_ task: BGContinuedProcessingTask) {
-    lock.withLock {
-      if let result {
+    state.withLock { state in
+      if let result = state.result {
         task.setTaskCompleted(success: result)
         return
       }
-      self.task = task
       task.progress.totalUnitCount = Self.totalUnitCount
-      task.progress.completedUnitCount = completedUnitCount
+      task.progress.completedUnitCount = state.completedUnitCount
       task.expirationHandler = { [weak self] in self?.expire() }
+      state.task = task
     }
   }
 
   private func expire() {
-    let didExpire = lock.withLock {
-      guard result == nil else { return false }
-      result = false
-      task?.setTaskCompleted(success: false)
-      task = nil
+    let didExpire = state.withLock { state in
+      guard state.result == nil else { return false }
+      state.result = false
+      state.task?.setTaskCompleted(success: false)
+      state.task = nil
       return true
     }
     guard didExpire else { return }

@@ -172,7 +172,7 @@ enum PeopleStorageError: Error, LocalizedError, Equatable {
   }
 }
 
-struct PeopleDocument: Codable, Equatable, Sendable {
+private struct PeopleDocument: Codable {
   static let currentSchemaVersion = 3
 
   var schemaVersion = currentSchemaVersion

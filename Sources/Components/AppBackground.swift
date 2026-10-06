@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The library's still backdrop. It does not animate, so the idle home screen does no drawing.
-struct ReceiptLibraryBackground: View {
+/// The still backdrop behind screens outside a receipt, such as the library and Settings. It does
+/// not animate, so an idle screen does no drawing.
+struct AppBackground: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {

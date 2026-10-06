@@ -15,6 +15,12 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   /// When an unread receipt is read again on its own after the reading limit resets.
   var deferredUntil: Date?
 
+  /// The merchant's name, or "Receipt" when the receipt doesn't name one.
+  var merchantTitle: String {
+    let merchant = merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return merchant.isEmpty ? "Receipt" : merchant
+  }
+
   /// A receipt whose stored file couldn't be read, dated by `date`.
   static func unavailable(id: UUID, date: Date, error: any Error) -> ReceiptSummary {
     ReceiptSummary(

@@ -18,11 +18,7 @@ struct PersonDetailView: View {
   /// What was last saved, so leaving for a receipt and then leaving the screen saves only once.
   @State private var lastSavedPerson: Person
   @State private var person: Person
-  @State private var selectedVenmoRecipient: Person.Venmo.Recipient?
-  @State private var customVenmoUsername: String
-  @State private var cashAppCashtag: String
-  @State private var selectedIMessageRecipient: Person.IMessage.Recipient?
-  @State private var customIMessageRecipient: String
+  @State private var paymentMethods: PaymentMethodsDraft
   @State private var contact: ContactSummary?
   @State private var avatarData: Data?
   @State private var isDeleteConfirmationPresented = false
@@ -52,18 +48,7 @@ struct PersonDetailView: View {
     savedPerson = person
     _lastSavedPerson = State(initialValue: person)
     _person = State(initialValue: person)
-    let venmo = person.paymentMethods.venmo
-    _selectedVenmoRecipient = State(
-      initialValue: venmo?.recipient.kind == .username ? nil : venmo?.recipient)
-    _customVenmoUsername = State(
-      initialValue: venmo?.customUsername
-        ?? (venmo?.recipient.kind == .username ? venmo?.recipient.value : nil) ?? "")
-    _cashAppCashtag = State(initialValue: person.paymentMethods.cashApp?.cashtag ?? "")
-    let iMessage = person.paymentMethods.iMessage
-    _selectedIMessageRecipient = State(
-      initialValue: iMessage?.recipient.kind == .custom ? nil : iMessage?.recipient)
-    _customIMessageRecipient = State(
-      initialValue: iMessage?.recipient.kind == .custom ? iMessage?.recipient.value ?? "" : "")
+    _paymentMethods = State(initialValue: PaymentMethodsDraft(person.paymentMethods))
   }
 
   var body: some View {
@@ -101,10 +86,10 @@ struct PersonDetailView: View {
           if person.contactIdentifier != nil {
             ContactRecipientPicker(
               contact: contact,
-              selection: $selectedVenmoRecipient,
+              selection: $paymentMethods.venmoRecipient,
               customTitle: "Username")
           }
-          if person.contactIdentifier == nil || selectedVenmoRecipient == nil {
+          if person.contactIdentifier == nil || paymentMethods.venmoRecipient == nil {
             customUsernameField
           }
         } label: {
@@ -121,10 +106,10 @@ struct PersonDetailView: View {
           if person.contactIdentifier != nil {
             ContactRecipientPicker(
               contact: contact,
-              selection: $selectedIMessageRecipient,
+              selection: $paymentMethods.iMessageRecipient,
               customTitle: "Custom phone or email")
           }
-          if person.contactIdentifier == nil || selectedIMessageRecipient == nil {
+          if person.contactIdentifier == nil || paymentMethods.iMessageRecipient == nil {
             customIMessageField
           }
         } label: {
@@ -192,13 +177,14 @@ struct PersonDetailView: View {
 
   private var customUsernameField: some View {
     handleField(
-      "Username", prefix: "@", placeholder: "username", text: $customVenmoUsername,
+      "Username", prefix: "@", placeholder: "username", text: $paymentMethods.venmoUsername,
       field: .venmoUsername)
   }
 
   private var cashAppField: some View {
     handleField(
-      "Cashtag", prefix: "$", placeholder: "cashtag", text: $cashAppCashtag, field: .cashtag)
+      "Cashtag", prefix: "$", placeholder: "cashtag", text: $paymentMethods.cashtag,
+      field: .cashtag)
   }
 
   /// A username field that shows the service's `prefix` before what's typed.
@@ -227,7 +213,7 @@ struct PersonDetailView: View {
 
   private var customIMessageField: some View {
     LabeledContent("Phone or Email") {
-      FormTextField("Phone or email", text: $customIMessageRecipient)
+      FormTextField("Phone or email", text: $paymentMethods.customIMessageRecipient)
         .keyboardType(.emailAddress)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
@@ -306,18 +292,7 @@ struct PersonDetailView: View {
     guard let loadedContact = try? await contactClient.fetchContacts([identifier]).first
     else { return }
     contact = loadedContact
-    if person.paymentMethods.venmo == nil,
-      selectedVenmoRecipient == nil,
-      Person.Venmo.normalizedUsername(customVenmoUsername).isEmpty
-    {
-      selectedVenmoRecipient = loadedContact.defaultRecipient(Person.Venmo.Recipient.self)
-    }
-    if person.paymentMethods.iMessage == nil,
-      selectedIMessageRecipient == nil,
-      customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    {
-      selectedIMessageRecipient = loadedContact.defaultRecipient(Person.IMessage.Recipient.self)
-    }
+    paymentMethods.suggest(from: loadedContact, unlessSetIn: person.paymentMethods)
   }
 
   /// Reloads whenever the library does, so edits made in an opened receipt show on return.
@@ -349,90 +324,11 @@ struct PersonDetailView: View {
     var updatedPerson = person
     updatedPerson.displayName = person.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !updatedPerson.displayName.isEmpty else { return }
-    let username = Person.Venmo.normalizedUsername(customVenmoUsername)
-    if let selectedVenmoRecipient {
-      updatedPerson.paymentMethods.venmo = .init(
-        recipient: selectedVenmoRecipient,
-        customUsername: username.isEmpty ? nil : username)
-    } else {
-      updatedPerson.paymentMethods.venmo = username.isEmpty ? nil : .init(username: username)
-    }
-    let cashtag = Person.CashApp.normalizedCashtag(cashAppCashtag)
-    updatedPerson.paymentMethods.cashApp =
-      cashtag.isEmpty ? nil : .init(cashtag: cashtag)
-    if let selectedIMessageRecipient {
-      updatedPerson.paymentMethods.iMessage = .init(recipient: selectedIMessageRecipient)
-    } else {
-      let recipient = customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines)
-      updatedPerson.paymentMethods.iMessage =
-        recipient.isEmpty
-        ? nil
-        : .init(recipient: .init(kind: .custom, value: recipient))
-    }
+    paymentMethods.apply(to: &updatedPerson.paymentMethods)
     guard updatedPerson != lastSavedPerson else { return }
     lastSavedPerson = updatedPerson
     Task {
       await onSave(updatedPerson)
     }
-  }
-}
-
-/// Opens a receipt from a person's page. A link creates its destination along with the link, on
-/// every update of the page, so the receipt's model, which reads the whole receipt, is only made
-/// here once the link is followed.
-private struct PersonReceiptDestination: View {
-  let input: ReceiptFlowInput
-
-  var body: some View {
-    ReceiptFlowView(input: input)
-  }
-}
-
-/// A receipt on a person's page, with what they owe on it in place of the receipt's total.
-private struct PersonReceiptRow: View {
-  let receipt: PersonReceipt
-
-  var body: some View {
-    HStack(spacing: 12) {
-      ReceiptMonogramTile(
-        style: receipt.summary.backgroundStyle,
-        initials: receipt.summary.merchantName.flatMap(ReceiptMonogram.initials),
-        systemImage: "receipt")
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .lineLimit(1)
-        if let date {
-          Text(date)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-      Spacer(minLength: 8)
-      owedValue
-    }
-  }
-
-  @ViewBuilder
-  private var owedValue: some View {
-    if let owed = receipt.owed {
-      Text(owed, format: .currency(code: receipt.currency))
-        .font(.body.monospacedDigit())
-        .fontWeight(.semibold)
-        .foregroundStyle(abs(owed) < 0.005 ? Color.secondary : Color.orange)
-        .accessibilityLabel(
-          "Owes \(owed.formatted(.currency(code: receipt.currency)))")
-    } else {
-      ShareTotalText(amount: nil, currency: receipt.currency)
-    }
-  }
-
-  private var title: String {
-    let merchant =
-      receipt.summary.merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return merchant.isEmpty ? "Receipt" : merchant
-  }
-
-  private var date: String? {
-    receipt.summary.localDate.flatMap { ReceiptLibraryDateFormatter.formatted(localDate: $0) }
   }
 }

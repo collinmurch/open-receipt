@@ -74,7 +74,7 @@ struct ReceiptLibraryView: View {
     }
     .headerProminence(.increased)
     .scrollContentBackground(.hidden)
-    .background { ReceiptLibraryBackground() }
+    .background { AppBackground() }
     .overlay {
       if library.hasLoaded, sections.isEmpty {
         if query.isEmpty {
@@ -323,6 +323,7 @@ struct ReceiptLibraryView: View {
 
   /// New receipts being read that storage has not listed yet, newest first.
   private var readingReceipts: [ReceiptSummary] {
+    guard !recognitions.recognitions.isEmpty else { return [] }
     let storedIDs = Set(library.receipts.map(\.id))
     return recognitions.recognitions.values
       .filter { !$0.isRescan && !storedIDs.contains($0.id) }

@@ -32,7 +32,7 @@ struct ReceiptTrashView: View {
     }
     .environment(\.editMode, $editMode)
     .scrollContentBackground(.hidden)
-    .background { ReceiptLibraryBackground() }
+    .background { AppBackground() }
     .overlay {
       if library.deletedReceipts.isEmpty {
         ContentUnavailableView(

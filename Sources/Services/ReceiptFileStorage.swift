@@ -399,8 +399,7 @@ extension ReceiptFileStorage {
   }
 
   private func removeStagedReceipts() throws {
-    let stagingRoot = try receiptsRoot().appending(
-      path: Self.stagingDirectoryName, directoryHint: .isDirectory)
+    let stagingRoot = try stagingURL()
     guard fileManager.fileExists(atPath: stagingRoot.path) else { return }
     let stagedItems = try fileManager.contentsOfDirectory(
       at: stagingRoot,
@@ -584,10 +583,13 @@ extension ReceiptFileStorage {
   }
 
   private func stagingRoot() throws -> URL {
-    let staging = try receiptsRoot().appending(
-      path: Self.stagingDirectoryName, directoryHint: .isDirectory)
+    let staging = try stagingURL()
     try fileManager.createProtectedDirectory(at: staging)
     return staging
+  }
+
+  private func stagingURL() throws -> URL {
+    try receiptsRoot().appending(path: Self.stagingDirectoryName, directoryHint: .isDirectory)
   }
 
   private func modificationDate(of url: URL) -> Date? {

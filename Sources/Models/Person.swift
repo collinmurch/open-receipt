@@ -109,6 +109,11 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
     }
     return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
   }
+
+  /// Whether this person is the contact `identifier` names. A person without a contact never is.
+  func isContact(_ identifier: String?) -> Bool {
+    contactIdentifier != nil && contactIdentifier == identifier
+  }
 }
 
 extension Person.Venmo {

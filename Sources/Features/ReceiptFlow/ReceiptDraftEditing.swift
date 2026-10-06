@@ -20,15 +20,18 @@ extension ReceiptDraft {
   }
 
   var expectedTotal: Double {
-    expectedSubtotal + tax + tip - savings
+    total(fromSubtotal: expectedSubtotal)
   }
 
-  var subtotalNeedsCorrection: Bool {
-    (subtotal - expectedSubtotal).isNonzeroInCents
-  }
-
-  var totalNeedsCorrection: Bool {
-    (total - expectedTotal).isNonzeroInCents
+  /// The subtotal and total the items come to, each `nil` when the entered amount already
+  /// matches. Both come from a single pass over the items.
+  var corrections: (subtotal: Double?, total: Double?) {
+    let expectedSubtotal = expectedSubtotal
+    let expectedTotal = total(fromSubtotal: expectedSubtotal)
+    return (
+      subtotal: (subtotal - expectedSubtotal).isNonzeroInCents ? expectedSubtotal : nil,
+      total: (total - expectedTotal).isNonzeroInCents ? expectedTotal : nil
+    )
   }
 
   var savingsPercentage: Double {
@@ -87,6 +90,10 @@ extension ReceiptDraft {
 
   func fixTotal() {
     total = expectedTotal
+  }
+
+  private func total(fromSubtotal subtotal: Double) -> Double {
+    subtotal + tax + tip - savings
   }
 
   /// The amount `adjustment` adds to the total, negative for savings.
