@@ -82,7 +82,7 @@ struct ParticipantStrip: View {
       .contentShape(.rect)
       .opacity(showsClearButton ? 1 : 0)
       .buttonStyle(.plain)
-      .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+      .glassEffect(.regular.interactive(showsClearButton), in: .rect(cornerRadius: cornerRadius))
       .offset(x: showsClearButton ? clearButtonReach : 0)
       .allowsHitTesting(showsClearButton)
       .accessibilityHidden(!showsClearButton)

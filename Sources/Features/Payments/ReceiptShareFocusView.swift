@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Lifts one person's share out of the list with its two actions: requesting the share, and
-/// sending its breakdown.
+/// Lifts one person's share out of the list with its breakdown above it and its two actions
+/// below: requesting the share, and sending its breakdown.
 struct ReceiptShareFocusView: View {
   let content: ReceiptShareRowContent
   /// The list row being copied, in global coordinates.
@@ -20,25 +20,41 @@ struct ReceiptShareFocusView: View {
   let onDismiss: () -> Void
 
   @State private var isChoosingBreakdownDestination = false
+  @State private var breakdownImage: UIImage?
+  @State private var viewedBreakdown: ViewedBreakdown?
   @Namespace private var breakdownGlass
+  @Namespace private var breakdownTransition
 
   var body: some View {
     LiftedRowFocus(
       rowFrame: rowFrame,
       startsPressed: startsPressed,
       onDismiss: onDismiss,
-      onLifted: prepareBreakdown
-    ) {
-      content
-    } actions: { state in
-      actions(state)
-    }
+      onLifted: prepareBreakdown,
+      card: { content },
+      accessory: breakdownPreview,
+      actions: actions
+    )
+    .breakdownViewer($viewedBreakdown, in: breakdownTransition)
   }
 
-  /// Draws the breakdown once the lift settles, so sharing or messaging finds it ready without a
-  /// hitch.
+  /// Draws the breakdown once the lift settles, so it fades in without interrupting the lift and
+  /// sharing or messaging finds it ready.
   private func prepareBreakdown() {
-    if let breakdown { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
+    guard let breakdown else { return }
+    let image = ReceiptBreakdownRenderer.image(for: breakdown)
+    ReceiptBreakdownRenderer.preparePNG(for: breakdown, from: image)
+    withAnimation(.smooth(duration: 0.25)) { breakdownImage = image }
+  }
+
+  private var breakdownPreview: (() -> ReceiptBreakdownPreview)? {
+    guard let breakdown else { return nil }
+    return {
+      ReceiptBreakdownPreview(image: breakdownImage, transition: breakdownTransition) {
+        viewedBreakdown = ViewedBreakdown(
+          sourceID: ReceiptBreakdownPreview.sourceID, breakdown: breakdown, image: breakdownImage)
+      }
+    }
   }
 
   private func actions(_ state: LiftedFocusState) -> some View {
@@ -125,6 +141,32 @@ struct ReceiptShareFocusView: View {
 
   private var unavailableBreakdownReason: String? {
     breakdown == nil ? "Assign every item before you share the breakdown." : nil
+  }
+}
+
+/// The breakdown card shrunk to fit above the lifted row, which opens full screen when tapped.
+private struct ReceiptBreakdownPreview: View {
+  static let sourceID = "breakdown-preview"
+
+  let image: UIImage?
+  let transition: Namespace.ID
+  let onOpen: () -> Void
+
+  var body: some View {
+    ZStack {
+      if let image {
+        ReceiptBreakdownCardImage(
+          image: image, cornerRadius: 12, sourceID: Self.sourceID, transition: transition
+        )
+        .onTapGesture(perform: onOpen)
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+        .accessibilityElement()
+        .accessibilityLabel("Breakdown")
+        .accessibilityAddTraits([.isImage, .isButton])
+        .accessibilityHint("Opens the breakdown full screen")
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
   }
 }
 

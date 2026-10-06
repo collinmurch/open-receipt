@@ -18,6 +18,8 @@ struct ReceiptParticipantBreakdownView: View {
   @State private var requester = PaymentRequester()
   @State private var requestedAt: Date?
   @State private var haptic = HapticEvent()
+  @State private var viewedBreakdown: ViewedBreakdown?
+  @Namespace private var breakdownTransition
   @Environment(\.openURL) private var openURL
 
   var body: some View {
@@ -33,9 +35,8 @@ struct ReceiptParticipantBreakdownView: View {
             }
           }
         }
-        ToolbarItem(placement: .topBarTrailing) {
-          ReceiptBreakdownShareButton(breakdown: breakdown)
-        }
+        ReceiptBreakdownViewButton(
+          breakdown: breakdown, viewed: $viewedBreakdown, transition: breakdownTransition)
       }
       .scrollEdgeEffectHidden(true, for: .bottom)
       .receiptBottomBar {
@@ -64,6 +65,7 @@ struct ReceiptParticipantBreakdownView: View {
       }
       .haptics(haptic)
       .paymentRequestPresentation(requester)
+      .breakdownViewer($viewedBreakdown, in: breakdownTransition)
       .sheet(item: $selectedPerson) { selectedPerson in
         NavigationStack {
           PersonDetailView(

@@ -2,18 +2,33 @@ import SwiftUI
 
 /// A stack of breakdown cards handled like a real deck. Fanned out, dragging either way carries
 /// the top card off while the next one rises, and letting go tucks it under the stack. Otherwise
-/// only the first card shows, with the rest gathered out of sight behind it.
+/// only the first card shows, with the rest gathered out of sight behind it. Tapping the top card
+/// opens it, zooming out of the card registered under its index in `transition`.
 struct ReceiptBreakdownDeck: View {
   /// Settles quickly and keeps its velocity when a new drag or swipe interrupts it.
-  private static let settle = Animation.spring(duration: 0.3, bounce: 0.15)
+  private static let settle = Spring(duration: 0.19, bounce: 0.15)
+  /// Carries a thrown card on from the finger's speed until it is clear of the stack.
+  private static let carry = Spring(duration: 0.09, bounce: 0)
+  /// How far, as a share of the deck's width, the top card travels before it can go under.
+  private static let clearance: CGFloat = 0.55
+  /// How long, in seconds, a card thrown from already clear of the stack coasts at the finger's
+  /// speed before turning back under it.
+  private static let coast: CGFloat = 0.025
 
   /// Each card's image, or nil while it is still being drawn.
   let pages: [UIImage?]
   let pageNames: [String]
   let isFanned: Bool
   @Binding var currentIndex: Int
+  let transition: Namespace.ID
+  let onOpen: () -> Void
 
   @State private var dragOffset: CGFloat = 0
+  @State private var isTossing = false
+  /// How far the finger had already moved when the current drag took hold of the top card, or
+  /// nil while no drag has. A drag that starts mid-toss takes hold once the toss ends.
+  @State private var dragOrigin: CGFloat?
+  @GestureState private var isDragging = false
 
   var body: some View {
     GeometryReader { proxy in
@@ -25,18 +40,29 @@ struct ReceiptBreakdownDeck: View {
       }
       .frame(width: width, height: proxy.size.height)
       .contentShape(.rect)
+      // The swipe stays enabled through a toss and ignores it instead, since a gesture enabled
+      // partway through a touch can be cancelled without ever ending.
       .gesture(swipe(width: width), isEnabled: canSwipe)
+    }
+    // A drag the system cancels never ends, which would leave the top card wherever the finger
+    // last had it.
+    .onChange(of: isDragging) { _, isDragging in
+      guard !isDragging, dragOrigin != nil else { return }
+      dragOrigin = nil
+      withAnimation(.spring(Self.settle)) { dragOffset = 0 }
     }
     // Gathering the deck resets it to the first card, which the page picker already plays for.
     .sensoryFeedback(.selection, trigger: currentIndex) { _, _ in isFanned }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(pageNames.indices.contains(currentIndex) ? pageNames[currentIndex] : "")
     .accessibilityValue(canSwipe ? "Page \(currentIndex + 1) of \(pages.count)" : "")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { onOpen() }
     .accessibilityAdjustableAction { direction in
       guard canSwipe else { return }
       switch direction {
-      case .increment: withAnimation(Self.settle) { step(by: 1) }
-      case .decrement: withAnimation(Self.settle) { step(by: -1) }
+      case .increment: withAnimation(.spring(Self.settle)) { step(by: 1) }
+      case .decrement: withAnimation(.spring(Self.settle)) { step(by: -1) }
       @unknown default: break
       }
     }
@@ -45,19 +71,10 @@ struct ReceiptBreakdownDeck: View {
   @ViewBuilder
   private func card(at index: Int, width: CGFloat) -> some View {
     let placement = placement(of: index, width: width)
-    let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
     Group {
       if let image = pages[index] {
-        Image(uiImage: image)
-          .resizable()
-          .scaledToFit()
-          .clipShape(shape)
-          // A shape's shadow is drawn from its outline, which stays cheap while the card moves.
-          .background {
-            shape
-              .fill(.black)
-              .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
-          }
+        ReceiptBreakdownCardImage(
+          image: image, cornerRadius: 18, sourceID: index, transition: transition)
       }
     }
     .scaleEffect(placement.scale)
@@ -65,10 +82,14 @@ struct ReceiptBreakdownDeck: View {
     .offset(placement.offset)
     // A card arriving on top fades in faster than the one leaving fades out, so the stack never
     // shows through while they trade places.
-    .animation(placement.zIndex == 0 ? .easeOut(duration: 0.16) : .easeIn(duration: 0.32)) {
+    .animation(placement.zIndex == 0 ? .easeOut(duration: 0.09) : .easeIn(duration: 0.2)) {
       $0.opacity(placement.opacity)
     }
     .zIndex(placement.zIndex)
+    .onTapGesture {
+      if !isTossing { onOpen() }
+    }
+    .allowsHitTesting(placement.zIndex == 0)
   }
 
   private var canSwipe: Bool {
@@ -102,16 +123,68 @@ struct ReceiptBreakdownDeck: View {
 
   private func swipe(width: CGFloat) -> some Gesture {
     DragGesture(minimumDistance: 2)
+      .updating($isDragging) { _, isDragging, _ in isDragging = true }
       .onChanged { value in
-        dragOffset = value.translation.width
+        guard !isTossing else { return }
+        let origin = dragOrigin ?? value.translation.width
+        dragOrigin = origin
+        dragOffset = value.translation.width - origin
       }
       .onEnded { value in
-        let isThrown = abs(value.predictedEndTranslation.width) > width * 0.3
-        withAnimation(Self.settle) {
-          if isThrown { step(by: 1) }
-          dragOffset = 0
+        guard let origin = dragOrigin else { return }
+        dragOrigin = nil
+        let predicted = value.predictedEndTranslation.width - origin
+        let velocity = value.velocity.width
+        if abs(predicted) > width * 0.3 {
+          toss(toward: predicted < 0 ? -1 : 1, velocity: velocity, width: width)
+        } else {
+          let initialVelocity = relativeVelocity(velocity, toward: 0)
+          withAnimation(.interpolatingSpring(Self.settle, initialVelocity: initialVelocity)) {
+            dragOffset = 0
+          }
         }
       }
+  }
+
+  /// Sends the top card to the back of the deck. It carries on from the finger's speed until it
+  /// is clear of the stack, so it never appears to pass through the cards it tucks under, and
+  /// turns back under them before it stops, so it never pauses at the edge.
+  private func toss(toward direction: CGFloat, velocity: CGFloat, width: CGFloat) {
+    let distance = max(width * Self.clearance, abs(dragOffset) + abs(velocity) * Self.coast)
+    let target = direction * distance
+    // With nowhere left to carry it, no animation would run to call the completion.
+    guard abs(target - dragOffset) > 1 else {
+      tuck()
+      return
+    }
+    let initialVelocity = relativeVelocity(velocity, toward: target)
+    isTossing = true
+    withAnimation(
+      .interpolatingSpring(Self.carry, initialVelocity: initialVelocity),
+      completionCriteria: .logicallyComplete
+    ) {
+      dragOffset = target
+    } completion: {
+      tuck()
+    }
+  }
+
+  /// Interpolating springs add to one still running, so the card turns back from wherever its
+  /// carry has it, at the speed it has there.
+  private func tuck() {
+    withAnimation(.interpolatingSpring(Self.settle)) {
+      step(by: 1)
+      dragOffset = 0
+    }
+    isTossing = false
+  }
+
+  /// The finger's `velocity` as a share of the distance left to `target` each second, which is
+  /// how springs take their initial velocity.
+  private func relativeVelocity(_ velocity: CGFloat, toward target: CGFloat) -> Double {
+    let distance = target - dragOffset
+    guard abs(distance) > 1 else { return 0 }
+    return velocity / distance
   }
 
   private func step(by offset: Int) {

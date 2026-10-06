@@ -26,6 +26,8 @@ struct ReceiptGroupShareView: View {
   @State private var isDismissing = false
   @State private var pageImages: [UIImage?]
   @State private var currentPage = 0
+  @State private var isViewingPages = false
+  @Namespace private var pageTransition
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(
@@ -63,7 +65,10 @@ struct ReceiptGroupShareView: View {
               pages: pageImages,
               pageNames: pageNames,
               isFanned: includesEveryBreakdown,
-              currentIndex: $currentPage
+              currentIndex: $currentPage,
+              transition: pageTransition,
+              // Swiping in the viewer turns the deck along with it, so it closes onto the top card.
+              onOpen: { isViewingPages = true }
             )
             .frame(maxHeight: proxy.size.height * 0.48)
             .rising(isPresented, from: riseDistance, order: 0, reduceMotion: reduceMotion)
@@ -109,6 +114,13 @@ struct ReceiptGroupShareView: View {
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape, dismiss)
     .sensoryFeedback(.selection, trigger: includesEveryBreakdown)
+    .breakdownViewer(
+      isPresented: $isViewingPages,
+      breakdowns: selectedBreakdowns,
+      images: Array(pageImages.prefix(selectedBreakdowns.count)),
+      selection: $currentPage,
+      in: pageTransition
+    )
     .task {
       // The cards on screen are drawn before the deck rises so they travel up with it. The rest
       // are drawn once it settles, each after the previous one has faded in, so drawing never
