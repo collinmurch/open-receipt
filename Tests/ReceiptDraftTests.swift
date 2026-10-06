@@ -202,6 +202,38 @@ final class ReceiptDraftTests: XCTestCase {
     XCTAssertTrue(draft.items[0].participantIDs.isEmpty)
   }
 
+  func testClearAssignmentsRemovesEveryoneFromItem() throws {
+    let draft = makeDraft()
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    let participant = draft.addManualParticipant(named: "Jordan")
+    let itemID = try XCTUnwrap(draft.items.first?.id)
+    draft.items[0].participantIDs = [currentUserID, participant.id]
+
+    draft.clearAssignments(of: itemID)
+
+    XCTAssertTrue(draft.items[0].participantIDs.isEmpty)
+  }
+
+  func testClearAssignmentsLeavesOtherItemsAssigned() throws {
+    let draft = ReceiptDraft(
+      receipt: ParsedReceipt(
+        merchantName: "Cafe",
+        subtotal: 8.00,
+        total: 8.00,
+        items: [
+          ReceiptItem(description: "Coffee", quantity: 1, lineTotal: 4.50),
+          ReceiptItem(description: "Muffin", quantity: 1, lineTotal: 3.50),
+        ]))
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    let itemID = draft.items[0].id
+    draft.items[0].participantIDs = [currentUserID]
+    draft.items[1].participantIDs = [currentUserID]
+
+    draft.clearAssignments(of: itemID)
+
+    XCTAssertEqual(draft.items[1].participantIDs, [currentUserID])
+  }
+
   func testNewDraftIsNotCompleted() {
     let draft = makeDraft()
 

@@ -73,6 +73,10 @@ struct HomeView: View {
     case .receipt(let input, let source):
       ReceiptFlowView(input: input)
         .zoomTransition(from: source, in: libraryTransition)
+        // An interactive zoom back to the library only reshows a hidden toolbar once its spring
+        // settles, so the library's search and new receipt button lag. Keeping the empty bar up
+        // lets them swap in with the transition instead.
+        .toolbarVisibility(.visible, for: .bottomBar)
     case .people:
       PeopleView(storage: peopleStorage)
     case .settings:

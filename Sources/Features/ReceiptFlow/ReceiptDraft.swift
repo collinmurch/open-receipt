@@ -195,6 +195,13 @@ final class ReceiptDraft {
     }
   }
 
+  func clearAssignments(of itemID: ReceiptDraftItem.ID) {
+    guard let itemIndex = items.firstIndex(where: { $0.id == itemID }),
+      !items[itemIndex].participantIDs.isEmpty
+    else { return }
+    items[itemIndex].participantIDs = []
+  }
+
   /// Applies `sweep`'s assignments in one change, so the split recalculates once per step.
   func apply(_ sweep: ReceiptItemSweep) {
     let swept = sweep.applied(to: items)

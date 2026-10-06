@@ -166,6 +166,7 @@ struct ReceiptReviewView: View {
         selectedParticipantIDs: selectedParticipantIDs,
         onSelect: toggleParticipantSelection,
         onManagePeople: { isPeoplePresented = true },
+        onClearSelection: clearParticipantSelection,
         addTransition: isFocusingItem ? nil : peopleSheetTransition
       )
       .onGeometryChange(for: CGRect.self) { proxy in
@@ -268,13 +269,6 @@ struct ReceiptReviewView: View {
         Button("Done", systemImage: "checkmark", role: .confirm, action: finishEditing)
       }
     } else if !isFocusing {
-      if !selectedParticipantIDs.isEmpty && !showsPayments {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button(
-            "Clear Selection", systemImage: "person.2.slash", action: clearParticipantSelection)
-        }
-      }
-
       ToolbarTitleMenu {
         Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
       }
@@ -407,7 +401,9 @@ struct ReceiptReviewView: View {
   private func removeMissingParticipantSelections() {
     let participantIDs = Set(draft.participants.map(\.id))
     seededItemID = nil
-    selectedParticipantIDs.formIntersection(participantIDs)
+    withAnimation(.selectionChange) {
+      selectedParticipantIDs.formIntersection(participantIDs)
+    }
   }
 
   private func finishEditing() {

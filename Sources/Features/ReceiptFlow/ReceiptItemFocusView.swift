@@ -35,6 +35,7 @@ struct ReceiptItemFocusView: View {
           selectedParticipantIDs: state.isLifted ? item.participantIDs : stripSelection,
           onSelect: toggleAssignment,
           onManagePeople: onManagePeople,
+          onClearSelection: clearAssignments,
           addTransition: addTransition
         )
         .frame(width: strip.width)
@@ -67,6 +68,13 @@ struct ReceiptItemFocusView: View {
     .liftedCard(width: width, startsPressed: startsPressed, state: state)
     .fixedSize(horizontal: false, vertical: true)
     .frame(width: width, height: 0, alignment: .top)
+  }
+
+  private func clearAssignments() {
+    haptic.play(.selection)
+    withAnimation(.selectionChange) {
+      draft.clearAssignments(of: itemID)
+    }
   }
 
   private func toggleAssignment(_ participantID: ReceiptParticipant.ID) {
