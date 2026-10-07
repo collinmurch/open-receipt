@@ -226,6 +226,7 @@ struct ReceiptReviewView: View {
         haptic: $haptic,
         onManagePeople: { isPeoplePresented = true },
         addTransition: peopleSheetTransition,
+        onEdit: { editItem(focusedItemID) },
         onDismiss: endItemFocus
       )
       // The focus view animates its own arrival, starting over the views it copies.
@@ -339,6 +340,12 @@ struct ReceiptReviewView: View {
     withAnimation(.settle) {
       isEditing = true
     }
+  }
+
+  /// Opens the receipt's editor on one item, as if it had been tapped while editing.
+  private func editItem(_ id: ReceiptDraftItem.ID) {
+    beginEditing()
+    selectedItemID = id
   }
 
   private func focusItem(_ id: ReceiptDraftItem.ID, isPressed: Bool) {

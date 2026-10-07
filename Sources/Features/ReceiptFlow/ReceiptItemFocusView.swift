@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// Lifts one item and the people strip out of the receipt so people can be assigned to that item
-/// directly.
+/// directly, with a way to edit the item below it.
 struct ReceiptItemFocusView: View {
+  private static let actionSpacing: CGFloat = 28
+
   let draft: ReceiptDraft
   let itemID: ReceiptDraftItem.ID
   /// The list row and people strip being copied, in global coordinates.
@@ -16,6 +18,8 @@ struct ReceiptItemFocusView: View {
   @Binding var haptic: HapticEvent
   let onManagePeople: () -> Void
   let addTransition: (id: AnyHashable, namespace: Namespace.ID)
+  /// Runs once the item settles back into the receipt.
+  let onEdit: () -> Void
   let onDismiss: () -> Void
 
   var body: some View {
@@ -53,19 +57,34 @@ struct ReceiptItemFocusView: View {
     }
   }
 
-  /// The item, pinned by its top edge so it grows downward, away from the people, as they're
-  /// assigned.
+  /// The item and its edit action, pinned by the item's top edge so both move downward, away from
+  /// the people, as they're assigned.
   private func card(_ item: ReceiptDraftItem, width: CGFloat, state: LiftedFocusState)
     -> some View
   {
-    ReceiptItemRowContent(
-      item: item,
-      assignedParticipants: draft.participants(assignedTo: item),
-      isAssignedToSelection: false,
-      isEditing: false,
-      displayCurrency: draft.displayCurrency
-    )
-    .liftedCard(width: width, startsPressed: startsPressed, state: state)
+    VStack(spacing: LiftedCard.padding.height + Self.actionSpacing) {
+      ReceiptItemRowContent(
+        item: item,
+        assignedParticipants: draft.participants(assignedTo: item),
+        isAssignedToSelection: false,
+        isEditing: false,
+        displayCurrency: draft.displayCurrency
+      )
+      .liftedCard(width: width, startsPressed: startsPressed, state: state)
+
+      Button {
+        state.dismiss(then: onEdit)
+      } label: {
+        GlassActionLabel(title: "Edit", systemImage: "pencil")
+          .foregroundStyle(.tint)
+      }
+      .buttonStyle(.plain)
+      .glassEffect(.regular.interactive(), in: .capsule)
+      .accessibilityHint("Edit this item's name and price")
+      .opacity(state.isLifted ? 1 : 0)
+      .offset(y: state.isInPlace ? 0 : -12)
+      .allowsHitTesting(state.isLifted && !state.isDismissing)
+    }
     .fixedSize(horizontal: false, vertical: true)
     .frame(width: width, height: 0, alignment: .top)
   }
