@@ -96,9 +96,7 @@ struct ReceiptItemEditorView: View {
     .navigationTitle(isNew ? "New Item" : "Edit Item")
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
-    .keyboardDoneButton(isVisible: focusedField == .quantity || focusedField == .lineTotal) {
-      focusedField = nil
-    }
+    .dismissesKeyboardOnTap()
     .onAppear {
       if isNew { focusedField = .name }
     }

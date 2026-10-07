@@ -34,6 +34,8 @@ struct LiftedFocus<Content: View>: View {
       }
       .opacity(reduceMotion && !isLifted ? 0 : 1)
     }
+    // A bottom bar hiding for focus would otherwise resize the stage mid-lift, jumping the copies.
+    .ignoresSafeArea(.container, edges: .bottom)
     .accessibilityElement(children: .contain)
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape) { dismiss(then: nil) }

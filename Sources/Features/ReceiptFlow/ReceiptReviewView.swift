@@ -59,6 +59,7 @@ struct ReceiptReviewView: View {
       .navigationTitle(navigationTitle)
       .navigationBarTitleDisplayMode(.inline)
       .scrollDismissesKeyboard(.interactively)
+      .dismissesKeyboardOnTap()
       .toolbar { receiptToolbar }
       .navigationDestination(item: $selectedItemID) { id in
         itemDestination(id: id)

@@ -131,6 +131,7 @@ struct PersonDetailView: View {
     }
     .navigationTitle(person.displayName)
     .navigationBarTitleDisplayMode(.inline)
+    .dismissesKeyboardOnTap()
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button("Delete Person", systemImage: "trash", role: .destructive) {

@@ -42,9 +42,6 @@ struct ReceiptTotalsSection: View {
         fixTotalButton
       }
     }
-    .keyboardDoneButton(isVisible: focusedField != nil) {
-      focusedField = nil
-    }
   }
 
   @ViewBuilder
