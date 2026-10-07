@@ -68,6 +68,58 @@ final class ScreenshotCapture: XCTestCase {
       name: "01-library", scenario: "library", highlight: "library-row-Cru Food and Wine Bar")
   }
 
+  /// The receipt being read for the App Store search result, in the header's colors.
+  @MainActor
+  func testSearch() throws {
+    let rows = 8
+    try capture(
+      name: "search",
+      scenario: "reading",
+      highlight: "receipt-reading-status",
+      arguments: [
+        "-ScreenshotReadingRows", "\(rows)",
+        "-ScreenshotBackgroundStyle", Self.artworkStyle,
+      ]
+    ) { app in
+      let label = app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label CONTAINS %@", "\(rows) items")).firstMatch
+      XCTAssertTrue(label.waitForExistence(timeout: 10), "\(rows) items never appeared")
+    }
+  }
+
+  /// Everyone's breakdown slips for the App Store header, which the app draws itself. They are
+  /// written to `breakdowns` beside the appearance directories.
+  @MainActor
+  func testHeader() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let output = environment["SCREENSHOTS_OUTPUT"],
+      let receipt = environment["SCREENSHOTS_RECEIPT"]
+    else { throw XCTSkip("Run through make previews.") }
+
+    let directory = URL(filePath: output, directoryHint: .isDirectory)
+      .appending(path: "breakdowns", directoryHint: .isDirectory)
+    try? FileManager.default.removeItem(at: directory)
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "-ScreenshotScenario", "breakdowns",
+      "-ScreenshotReceipt", receipt,
+      "-ScreenshotBreakdowns", directory.path,
+      "-ScreenshotBackgroundStyle", Self.artworkStyle,
+    ]
+    app.launch()
+    defer { app.terminate() }
+
+    let manifest = directory.appending(path: "breakdowns.json")
+    let deadline = Date().addingTimeInterval(20)
+    while !FileManager.default.fileExists(atPath: manifest.path) {
+      guard Date() < deadline else { throw CaptureError.breakdownsNeverWritten }
+      settle(for: 0.25)
+    }
+  }
+
+  /// The receipt colors of the header and search artwork, which match the app icon.
+  private static let artworkStyle = "mint/blue"
+
   /// The in-app purchase's review screenshot, which App Review sees instead of customers.
   @MainActor
   func testPaywall() throws {
@@ -173,10 +225,12 @@ private enum Appearance: String, CaseIterable {
 
 private enum CaptureError: Error, CustomStringConvertible {
   case highlightNeverDrawn(String)
+  case breakdownsNeverWritten
 
   var description: String {
     switch self {
     case .highlightNeverDrawn(let name): "The app never drew \(name)."
+    case .breakdownsNeverWritten: "The app never wrote the breakdown slips."
     }
   }
 }

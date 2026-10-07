@@ -4,7 +4,8 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Renders App Store screenshots from the screens `ScreenshotCapture` wrote.
+/// Renders App Store screenshots, and the header and search result artwork, from the screens and
+/// slips `ScreenshotCapture` wrote.
 ///
 ///     ScreenshotComposer --captures <dir> --assets <dir> --output <dir> [--only <name>]
 @main
@@ -15,10 +16,12 @@ struct ScreenshotComposer {
       let options = try Options(CommandLine.arguments.dropFirst())
       var shots = StoreShot.all
       var reviewShots = StoreShot.reviewOnly
+      var artwork = Artwork.allCases
       if let name = options.only {
         shots = StoreShot.all.first { $0.name.contains(name) }.map { [$0] } ?? []
         reviewShots = StoreShot.reviewOnly.first { $0.contains(name) }.map { [$0] } ?? []
-        guard !shots.isEmpty || !reviewShots.isEmpty else {
+        artwork = Artwork.allCases.filter { $0.rawValue == name }
+        guard !shots.isEmpty || !reviewShots.isEmpty || !artwork.isEmpty else {
           throw ComposerError.unknownShot(name)
         }
       }
@@ -37,9 +40,17 @@ struct ScreenshotComposer {
             swatches: try (palette ?? capture).edgeSwatches(rows: 3),
             appearance: appearance)
           let url = output.appending(path: "\(shot.name).png")
-          try writeOpaquePNG(try render(frame, name: shot.name), to: url)
+          try writeOpaquePNG(try render(frame, size: StoreFrame.size, name: shot.name), to: url)
           print("Wrote \(url.path(percentEncoded: false))")
         }
+      }
+
+      let artworkOutput = options.output.appending(path: "artwork")
+      try FileManager.default.createDirectory(at: artworkOutput, withIntermediateDirectories: true)
+      for piece in artwork {
+        let url = artworkOutput.appending(path: "\(piece.rawValue).png")
+        try writeOpaquePNG(try piece.render(options), to: url)
+        print("Wrote \(url.path(percentEncoded: false))")
       }
 
       let review = options.output.appending(path: "review")
@@ -57,11 +68,11 @@ struct ScreenshotComposer {
   }
 
   @MainActor
-  private static func render(_ frame: StoreFrame, name: String) throws -> CGImage {
-    let renderer = ImageRenderer(content: frame)
+  static func render(_ view: some View, size: CGSize, name: String) throws -> CGImage {
+    let renderer = ImageRenderer(content: view)
     renderer.scale = 1
     renderer.isOpaque = true
-    renderer.proposedSize = ProposedViewSize(StoreFrame.size)
+    renderer.proposedSize = ProposedViewSize(size)
     guard let image = renderer.cgImage else { throw ComposerError.render(name) }
     return image
   }
@@ -84,6 +95,33 @@ struct ScreenshotComposer {
     CGImageDestinationAddImage(destination, opaque, nil)
     guard CGImageDestinationFinalize(destination) else {
       throw ComposerError.render(url.lastPathComponent)
+    }
+  }
+}
+
+/// Artwork for the App Store product page and search results, beside the screenshots.
+private enum Artwork: String, CaseIterable {
+  case header
+  case search
+
+  @MainActor
+  func render(_ options: Options) throws -> CGImage {
+    switch self {
+    case .header:
+      let directory = options.captures.appending(path: "breakdowns", directoryHint: .isDirectory)
+      let names = try JSONDecoder().decode(
+        [String].self, from: Data(contentsOf: directory.appending(path: "breakdowns.json")))
+      let people = try names.filter { $0 != "overview.png" }.map {
+        try loadImage(directory.appending(path: $0))
+      }
+      return try ScreenshotComposer.render(
+        HeaderArtwork(slips: people), size: HeaderArtwork.size, name: rawValue)
+    case .search:
+      let captures = options.captures.appending(path: StoreAppearance.light.rawValue)
+      let artwork = SearchArtwork(
+        capture: try Capture(directory: captures, name: "search"),
+        photo: try loadImage(options.assets.appending(path: "Receipts/example-receipt.jpg")))
+      return try ScreenshotComposer.render(artwork, size: SearchArtwork.size, name: rawValue)
     }
   }
 }

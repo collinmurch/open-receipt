@@ -3,57 +3,22 @@ import SwiftUI
 /// A breakdown drawn as a torn receipt slip over the receipt's colors, for sharing as an image.
 /// It is built from plain views because `ImageRenderer` can't draw lists, glass, or shaders.
 struct ReceiptBreakdownCard: View {
-  private static let paper = Color(red: 1, green: 0.995, blue: 0.984)
-
   let breakdown: ReceiptBreakdown
 
   var body: some View {
     VStack(spacing: 16) {
-      slip
+      ReceiptBreakdownSlip(breakdown: breakdown)
+        .background {
+          ReceiptSlipShape()
+            .fill(ReceiptBreakdownSlip.paper)
+            .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
+        }
       footer
     }
     .padding(.horizontal, 22)
     .padding(.top, 28)
     .padding(.bottom, 18)
     .background { backdrop }
-  }
-
-  private var slip: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      header
-      PerforationLine()
-      switch breakdown.content {
-      case .person(let share):
-        PersonBreakdown(share: share, breakdown: breakdown, accent: accent)
-      case .group(let shares):
-        GroupBreakdown(shares: shares, breakdown: breakdown, accent: accent)
-      }
-    }
-    .padding(.horizontal, 22)
-    .padding(.top, 24)
-    .padding(.bottom, 24 + ReceiptSlipShape.toothHeight)
-    .background {
-      ReceiptSlipShape()
-        .fill(Self.paper)
-        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
-    }
-  }
-
-  private var header: some View {
-    HStack(alignment: .firstTextBaseline) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text(breakdown.merchantTitle)
-          .font(.title2.weight(.bold))
-          .lineLimit(2)
-        Text(breakdown.purchaseDate, format: .dateTime.month(.wide).day().year())
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-      }
-      Spacer(minLength: 12)
-      Image(systemName: "receipt")
-        .font(.title3.weight(.semibold))
-        .foregroundStyle(accent)
-    }
   }
 
   private var footer: some View {
@@ -75,6 +40,54 @@ struct ReceiptBreakdownCard: View {
           startRadius: 0,
           endRadius: 420)
       }
+  }
+}
+
+/// The paper part of a breakdown card, on its own so it can be drawn without the card's colors.
+struct ReceiptBreakdownSlip: View {
+  static let paper = Color(red: 1, green: 0.995, blue: 0.984)
+
+  let breakdown: ReceiptBreakdown
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      header
+      PerforationLine()
+      switch breakdown.content {
+      case .person(let share):
+        PersonBreakdown(share: share, breakdown: breakdown, accent: accent)
+      case .group(let shares):
+        GroupBreakdown(shares: shares, breakdown: breakdown, accent: accent)
+      }
+    }
+    .padding(.horizontal, 22)
+    .padding(.top, 24)
+    .padding(.bottom, 24 + ReceiptSlipShape.toothHeight)
+    .background {
+      ReceiptSlipShape()
+        .fill(Self.paper)
+    }
+  }
+
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(breakdown.merchantTitle)
+          .font(.title2.weight(.bold))
+          .lineLimit(2)
+        // Purchase dates are the start of their day in UTC, so they're shown in UTC too. The
+        // string is formatted first because `Text(_:format:)` uses the environment's time zone.
+        Text(
+          breakdown.purchaseDate.formatted(
+            Date.FormatStyle(timeZone: .gmt).month(.wide).day().year()))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 12)
+      Image(systemName: "receipt")
+        .font(.title3.weight(.semibold))
+        .foregroundStyle(accent)
+    }
   }
 
   private var accent: Color {

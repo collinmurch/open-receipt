@@ -134,9 +134,9 @@ $(ASSETS)/Icons/open-receipt-iOS-%-1024@1x.png: $(ICON)/icon.json $(wildcard $(I
 		--platform iOS --rendition $* --width 1024 --height 1024 --scale 1 >/dev/null
 	@echo "Wrote $@"
 
-# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library|paywall limits both steps.
+# Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|breakdown|share|library|paywall|header|search limits both steps.
 .PHONY: previews
-previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots. cached=1 only composes.
+previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, header, and search artwork. cached=1 only composes.
 	@set -o pipefail; \
 	if [ -z "$(cached)" ]; then \
 		$(if $(of),,rm -rf "$(SCREENSHOT_CAPTURES)";) \

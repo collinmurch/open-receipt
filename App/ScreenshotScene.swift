@@ -72,7 +72,7 @@
     let total: Double
     /// A tip entered after the receipt is read.
     var addedTip: Double?
-    let backgroundStyle: ReceiptBackgroundStyle
+    var backgroundStyle: ReceiptBackgroundStyle
     let people: [Participant]
     let items: [Item]
     /// People and assignments for each scenario that splits the receipt, keyed by scenario.
@@ -110,5 +110,20 @@
     case unreadableImage(URL)
     case unreadReceipt
     case missingGroup(String)
+    case missingBreakdownsDirectory
+    case unassignedItems
+    case unrenderedBreakdown(String)
+    case invalidBackgroundStyle(String)
+  }
+
+  extension ReceiptBackgroundStyle {
+    /// A style written as `primary/secondary`, such as `mint/blue`.
+    init(screenshotArgument argument: String) throws {
+      let colors = argument.split(separator: "/").compactMap {
+        ReceiptThemeColor(rawValue: String($0))
+      }
+      guard colors.count == 2 else { throw ScreenshotSceneError.invalidBackgroundStyle(argument) }
+      self.init(primary: colors[0], secondary: colors[1])
+    }
   }
 #endif

@@ -13,6 +13,8 @@
       case requests
       /// A completed split, sharing everyone's breakdowns with the group.
       case share
+      /// A completed split whose breakdown slips are written as images for the App Store header.
+      case breakdowns
       /// The receipt library with a few months of receipts.
       case library
       /// The unlimited reading purchase over the library, after the free reads are used. It is
@@ -24,6 +26,8 @@
     let scene: ScreenshotScene
     /// How many rows the reading screen shows. The last one is still being written.
     let readingRowCount: Int
+    /// Where the breakdowns scenario writes its slips.
+    let breakdownsDirectory: URL?
 
     static let launched: ScreenshotScenario? = {
       let defaults = UserDefaults.standard
@@ -32,12 +36,18 @@
         let path = defaults.string(forKey: "ScreenshotReceipt")
       else { preconditionFailure("Unknown screenshot scenario \(rawKind).") }
       do {
-        let scene = try ScreenshotScene.load(from: URL(filePath: path))
+        var scene = try ScreenshotScene.load(from: URL(filePath: path))
+        if let style = defaults.string(forKey: "ScreenshotBackgroundStyle") {
+          scene.backgroundStyle = try ReceiptBackgroundStyle(screenshotArgument: style)
+        }
         let rows = defaults.integer(forKey: "ScreenshotReadingRows")
         return ScreenshotScenario(
           kind: kind,
           scene: scene,
-          readingRowCount: rows > 0 ? rows : 8)
+          readingRowCount: rows > 0 ? rows : 8,
+          breakdownsDirectory: defaults.string(forKey: "ScreenshotBreakdowns").map {
+            URL(filePath: $0, directoryHint: .isDirectory)
+          })
       } catch {
         preconditionFailure("Couldn't load the screenshot scene at \(path): \(error)")
       }
@@ -85,6 +95,15 @@
         return stage(
           [.receipt(.recognition(recognition))], parsing: reading, recognitions: readingCenter)
 
+      case .breakdowns:
+        let document = try await storeSplit(
+          scan, storage: storage, people: people, completes: true)
+        try writeBreakdowns(of: document)
+        return stage([
+          .receipt(
+            .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
+        ])
+
       case .split, .requests, .share:
         let document = try await storeSplit(
           scan, storage: storage, people: people, completes: kind != .split)
@@ -105,6 +124,42 @@
           access: ReadingAccess(client: .fixed(isEntitled: false), store: .memory(Set(usedReads))))
       }
     }
+
+    /// Writes the overview slip and each person's slip as transparent PNGs, then
+    /// `breakdowns.json` listing them in order, which tells the capture test they're done.
+    @MainActor
+    private func writeBreakdowns(of document: ReceiptDocument) throws {
+      guard let directory = breakdownsDirectory else {
+        throw ScreenshotSceneError.missingBreakdownsDirectory
+      }
+      guard let breakdowns = try ReceiptDraft(document: document).allBreakdowns(accentScheme: .light)
+      else { throw ScreenshotSceneError.unassignedItems }
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      var names: [String] = []
+      for breakdown in breakdowns {
+        let name =
+          switch breakdown.content {
+          case .group: "overview.png"
+          case .person(let share): "\(share.participant.displayName).png"
+          }
+        let renderer = ImageRenderer(
+          content: ReceiptBreakdownSlip(breakdown: breakdown)
+            .frame(width: Self.slipWidth)
+            .environment(\.colorScheme, .light)
+            .environment(\.dynamicTypeSize, .large))
+        renderer.proposedSize = ProposedViewSize(width: Self.slipWidth, height: nil)
+        renderer.scale = 4
+        guard let data = renderer.uiImage?.pngData() else {
+          throw ScreenshotSceneError.unrenderedBreakdown(name)
+        }
+        try data.write(to: directory.appending(path: name))
+        names.append(name)
+      }
+      try JSONEncoder().encode(names).write(to: directory.appending(path: "breakdowns.json"))
+    }
+
+    /// The slip's width inside a shared card.
+    @MainActor private static let slipWidth = ReceiptBreakdownRenderer.width - 44
 
     /// Reads the scene's receipt as today's, and its library entries on their own days.
     @MainActor
@@ -174,8 +229,14 @@
     ) async throws -> ReceiptDocument {
       let document = try await Self.storeRead(
         scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-      // Sharing splits the same receipt as the requests screen.
-      let groupName = kind == .share ? Kind.requests.rawValue : kind.rawValue
+      // Sharing splits the same receipt as the requests screen, and the header's slips the same
+      // as the split screen.
+      let groupName =
+        switch kind {
+        case .share: Kind.requests.rawValue
+        case .breakdowns: Kind.split.rawValue
+        default: kind.rawValue
+        }
       guard let group = scene.groups[groupName] else {
         throw ScreenshotSceneError.missingGroup(groupName)
       }

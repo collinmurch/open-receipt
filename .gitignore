@@ -27,6 +27,7 @@ project.local.yml
 /Assets/ScreenshotData/
 /Assets/Previews/*
 !/Assets/Previews/light/
+!/Assets/Previews/artwork/
 
 # AI
 .claude/settings.local.json
