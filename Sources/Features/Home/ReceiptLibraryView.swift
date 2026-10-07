@@ -13,6 +13,8 @@ struct ReceiptLibraryView: View {
   /// for it, so it turns back while search hides it rather than as search covers it.
   @State private var holdsCloseUnderSearch = false
   @State private var chooserPhase = NewReceiptChooserPhase.hidden
+  /// Follows `showsClose` in its own transaction, so only the button's symbol animates with it.
+  @State private var showsCloseSymbol = false
   @State private var importedItems: [PhotosPickerItem] = []
   @State private var isPhotoPickerPresented = false
   @State private var isImporting = false
@@ -168,17 +170,36 @@ struct ReceiptLibraryView: View {
         ProgressView()
           .transition(.opacity)
       } else {
-        Label(showsClose ? "Close" : "New Receipt", systemImage: "plus")
-          .rotationEffect(.degrees(showsClose ? 45 : 0))
-          // Without a chooser, the button only turns back as search hides it, so without a spin.
-          .animation(chooserPhase == .hidden ? nil : .choiceToggle, value: showsClose)
-          .transition(.opacity)
+        // Both symbols stay in a stack the toolbar hosts as is. It redraws a plain label as an
+        // image, which drops symbol transitions and transforms.
+        ZStack {
+          Image(systemName: "plus")
+            .rotationEffect(.degrees(showsCloseSymbol ? 90 : 0))
+            .scaleEffect(showsCloseSymbol ? 0.5 : 1)
+            .opacity(showsCloseSymbol ? 0 : 1)
+          Image(systemName: "xmark")
+            .rotationEffect(.degrees(showsCloseSymbol ? 0 : -90))
+            .scaleEffect(showsCloseSymbol ? 1 : 0.5)
+            .opacity(showsCloseSymbol ? 1 : 0)
+        }
+        .foregroundStyle(.white)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(showsCloseSymbol ? "Close" : "New Receipt")
+        .transition(.opacity)
       }
     }
     .buttonStyle(.glassProminent)
     .sensoryFeedback(.rise, trigger: riseCount)
     .disabled(isImporting || isFocusing)
     .animation(.smooth(duration: 0.2), value: isImporting)
+    .onChange(of: showsClose) { _, showsClose in
+      // Without a chooser, the button only turns back as search hides it, so without a morph.
+      guard chooserPhase != .hidden else {
+        showsCloseSymbol = showsClose
+        return
+      }
+      withAnimation(.choiceToggle) { showsCloseSymbol = showsClose }
+    }
   }
 
   @ViewBuilder
