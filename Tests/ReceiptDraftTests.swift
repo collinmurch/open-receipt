@@ -282,30 +282,29 @@ final class ReceiptDraftTests: XCTestCase {
     XCTAssertEqual(draft.persistenceRevision, revision)
   }
 
-  func testWarningsUpdateAfterCurrencyIsFixed() {
+  func testIssuesUpdateAfterCurrencyIsFixed() {
     let receipt = ParsedReceipt(
       merchantName: "Cafe",
       subtotal: 4.50,
       total: 4.50,
-      currency: "US",
-      warnings: ["Currency is not a three-letter ISO code."])
+      currency: "US")
     let draft = ReceiptDraft(receipt: receipt)
 
     draft.currency = "USD"
 
-    XCTAssertFalse(draft.warnings.contains("Currency is not a three-letter ISO code."))
+    XCTAssertFalse(draft.issues.contains(.invalidCurrency))
   }
 
-  func testWarningsRefreshAfterEditFollowingRead() {
+  func testIssuesRefreshAfterEditFollowingRead() {
     let draft = ReceiptDraft(receipt: ParsedReceipt(merchantName: "Cafe", total: 4.50))
-    XCTAssertFalse(draft.warnings.contains("Currency is not a three-letter ISO code."))
+    XCTAssertFalse(draft.issues.contains(.invalidCurrency))
 
     draft.currency = "US"
 
-    XCTAssertTrue(draft.warnings.contains("Currency is not a three-letter ISO code."))
+    XCTAssertTrue(draft.issues.contains(.invalidCurrency))
   }
 
-  func testWarningsLeaveOutTotalReconciliation() {
+  func testTotalsThatDontAddUpAreNotAnIssue() {
     let receipt = ParsedReceipt(
       merchantName: "Cafe",
       subtotal: 10,
@@ -313,7 +312,7 @@ final class ReceiptDraftTests: XCTestCase {
       total: 20)
     let draft = ReceiptDraft(receipt: receipt)
 
-    XCTAssertFalse(draft.warnings.contains(ReceiptValidator.totalReconciliationWarning))
+    XCTAssertTrue(draft.issues.isEmpty)
   }
 
   func testRescanKeepsParticipants() {
@@ -409,6 +408,38 @@ final class ReceiptDraftTests: XCTestCase {
         ReceiptItem(description: "Tea", quantity: 1, lineTotal: 4),
         ReceiptItem(description: "Scone", quantity: 1, lineTotal: 5),
       ])
+  }
+
+  func testFirstUnassignedItemIsTheFirstNoOneShares() {
+    let draft = ReceiptDraft(
+      receipt: ParsedReceipt(
+        merchantName: "Cafe",
+        items: [
+          ReceiptItem(description: "Coffee", quantity: 1, lineTotal: 4.50),
+          ReceiptItem(description: "Bagel", quantity: 1, lineTotal: 3),
+        ]))
+    let userID = draft.participants[0].id
+    draft.toggleAssignment(of: [userID], to: draft.items[0].id)
+
+    XCTAssertEqual(draft.firstUnassignedItemID, draft.items[1].id)
+  }
+
+  func testFirstUnassignedItemIsNilWhenEveryItemIsShared() {
+    let draft = makeDraft()
+    draft.toggleAssignment(of: [draft.participants[0].id], to: draft.items[0].id)
+
+    XCTAssertNil(draft.firstUnassignedItemID)
+  }
+
+  func testItemSharedOnlyByARemovedPersonIsUnassigned() {
+    let draft = makeDraft()
+    draft.addManualParticipant(named: "Sam")
+    let samID = draft.participants[1].id
+    draft.toggleAssignment(of: [samID], to: draft.items[0].id)
+
+    draft.removeParticipant(id: samID)
+
+    XCTAssertEqual(draft.firstUnassignedItemID, draft.items[0].id)
   }
 
   private func makeDraft() -> ReceiptDraft {

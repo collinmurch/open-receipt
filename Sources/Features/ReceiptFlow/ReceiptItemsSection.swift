@@ -217,6 +217,7 @@ struct ReceiptItemRowContent: View {
               .foregroundStyle(.secondary)
           }
         }
+        .receiptIssues(item.issues)
         Spacer()
         Text(item.lineTotal, format: .currency(code: displayCurrency))
           .font(.body.monospacedDigit())

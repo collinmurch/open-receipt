@@ -33,10 +33,10 @@ struct ReceiptItemEditorView: View {
   }
 
   var body: some View {
-    let issues = item.validationIssues
+    let issues = item.issues
 
     Form {
-      Section("Item") {
+      Section {
         TextField("Name", text: $item.description, axis: .vertical)
           .lineLimit(1...3)
           .focused($focusedField, equals: .name)
@@ -58,14 +58,16 @@ struct ReceiptItemEditorView: View {
             .accessibilityLabel("Line total")
         }
         .focusesOnTap($focusedField, equals: .lineTotal)
-      }
-
-      if !issues.isEmpty {
-        Section("Fix Before Saving") {
-          ForEach(issues) { issue in
-            Label(issue.itemMessage, systemImage: "exclamationmark.circle")
-              .foregroundStyle(.red)
+      } header: {
+        Text("Item")
+      } footer: {
+        if !issues.isEmpty {
+          VStack(alignment: .leading, spacing: 4) {
+            ForEach(issues) { issue in
+              Text(issue.message)
+            }
           }
+          .foregroundStyle(.orange)
         }
       }
 
@@ -171,16 +173,5 @@ private struct ReceiptItemSplitSheet: View {
       }
     }
     .presentationDetents([.medium])
-  }
-}
-
-extension ReceiptEditorValidationIssue {
-  fileprivate var itemMessage: String {
-    switch self {
-    case .missingItemDescription: "Enter an item name."
-    case .invalidItemQuantity: "Quantity must be greater than zero."
-    case .invalidItemTotal: "Enter a valid line total."
-    default: message
-    }
   }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum ReceiptValidator {
-  static let totalReconciliationWarning =
+  private static let totalReconciliationWarning =
     "Subtotal, tax, tip, and savings do not reconcile with the final total."
 
   /// Whether `code` has the shape of an ISO 4217 code: three letters.

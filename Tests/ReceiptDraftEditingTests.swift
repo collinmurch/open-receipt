@@ -177,20 +177,20 @@ final class ReceiptDraftEditingTests: XCTestCase {
     draft.items[0].description = "  "
 
     XCTAssertTrue(
-      draft.validationIssues.contains(.missingItemDescription(draft.items[0].id)))
+      draft.issues.contains(.missingItemDescription(draft.items[0].id)))
   }
 
   func testNonPositiveQuantityProducesValidationIssue() {
     let draft = makeDraft()
     draft.items[0].quantity = 0
 
-    XCTAssertTrue(draft.validationIssues.contains(.invalidItemQuantity(draft.items[0].id)))
+    XCTAssertTrue(draft.issues.contains(.invalidItemQuantity(draft.items[0].id)))
   }
 
   func testValidItemHasNoValidationIssues() {
     let draft = makeDraft()
 
-    XCTAssertTrue(draft.items[0].validationIssues.isEmpty)
+    XCTAssertTrue(draft.items[0].issues.isEmpty)
   }
 
   func testItemReportsEachInvalidField() {
@@ -200,7 +200,7 @@ final class ReceiptDraftEditingTests: XCTestCase {
     item.lineTotal = .nan
 
     XCTAssertEqual(
-      item.validationIssues,
+      item.issues,
       [
         .missingItemDescription(item.id), .invalidItemQuantity(item.id),
         .invalidItemTotal(item.id),
@@ -211,7 +211,59 @@ final class ReceiptDraftEditingTests: XCTestCase {
     let draft = makeDraft()
     draft.currency = "US"
 
-    XCTAssertTrue(draft.validationIssues.contains(.invalidCurrency))
+    XCTAssertTrue(draft.issues.contains(.invalidCurrency))
+  }
+
+  func testItemIssuesAreShownBesideTheirItem() {
+    let draft = makeDraft()
+    draft.items[0].description = ""
+    let id = draft.items[0].id
+
+    XCTAssertEqual(draft.issues(at: .item(id)), [.missingItemDescription(id)])
+  }
+
+  func testItemIssuesStayOffOtherRows() {
+    let draft = makeDraft()
+    draft.items[0].description = ""
+
+    XCTAssertTrue(draft.issues(at: .amount(.total)).isEmpty)
+  }
+
+  func testInvalidSubtotalIsShownBesideSubtotal() {
+    let draft = makeDraft()
+    draft.subtotal = .nan
+
+    XCTAssertEqual(draft.issues(at: .amount(.subtotal)), [.invalidAmount(.subtotal)])
+  }
+
+  func testNegativeTaxIsShownBesideTax() {
+    let draft = makeDraft()
+    draft.tax = -1
+
+    XCTAssertEqual(
+      draft.issues(at: .amount(.adjustment(.tax))), [.negativeAmount(.adjustment(.tax))])
+  }
+
+  func testRemovedAdjustmentHasNoIssues() {
+    let draft = makeDraft()
+    draft.tip = -1
+    draft.adjustments.remove(.tip)
+
+    XCTAssertTrue(draft.issues(at: .amount(.adjustment(.tip))).isEmpty)
+  }
+
+  func testZeroTotalIsShownBesideTotal() {
+    let draft = makeDraft()
+    draft.total = 0
+
+    XCTAssertEqual(draft.issues(at: .amount(.total)), [.zeroTotal])
+  }
+
+  func testInvalidCurrencyIsShownBesideCurrency() {
+    let draft = makeDraft()
+    draft.currency = "US"
+
+    XCTAssertEqual(draft.issues(at: .currency), [.invalidCurrency])
   }
 
   func testExpectedTotalUsesItemsAndSubtractsSavings() {

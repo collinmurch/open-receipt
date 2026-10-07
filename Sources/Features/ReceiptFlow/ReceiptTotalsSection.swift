@@ -7,19 +7,13 @@ private enum AdjustmentInputMode: CaseIterable, Identifiable {
   var id: Self { self }
 }
 
-private enum TotalsField: Hashable {
-  case subtotal
-  case adjustment(ReceiptTotalAdjustment)
-  case total
-}
-
 struct ReceiptTotalsSection: View {
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
   @Binding var haptic: HapticEvent
   @State private var tipInputMode = AdjustmentInputMode.amount
   @State private var savingsInputMode = AdjustmentInputMode.amount
-  @FocusState private var focusedField: TotalsField?
+  @FocusState private var focusedField: ReceiptAmountField?
 
   var body: some View {
     let (expectedSubtotal, expectedTotal) = draft.corrections
@@ -86,12 +80,15 @@ struct ReceiptTotalsSection: View {
     expectedTotal: Double?
   ) -> some View {
     if showsSubtotal {
-      totalRow("Subtotal", value: draft.subtotal, expectedValue: expectedSubtotal)
+      totalRow(
+        "Subtotal", field: .subtotal, value: draft.subtotal, expectedValue: expectedSubtotal)
     }
     ForEach(ReceiptTotalAdjustment.allCases.filter(draft.adjustments.contains)) { kind in
-      totalRow(kind.title, value: draft.signedAmount(of: kind))
+      totalRow(kind.title, field: .adjustment(kind), value: draft.signedAmount(of: kind))
     }
-    totalRow("Total", value: draft.total, isEmphasized: true, expectedValue: expectedTotal)
+    totalRow(
+      "Total", field: .total, value: draft.total, isEmphasized: true,
+      expectedValue: expectedTotal)
   }
 
   private var header: some View {
@@ -121,6 +118,7 @@ struct ReceiptTotalsSection: View {
 
   private func totalRow(
     _ label: String,
+    field: ReceiptAmountField,
     value: Double,
     isEmphasized: Bool = false,
     expectedValue: Double? = nil
@@ -129,6 +127,7 @@ struct ReceiptTotalsSection: View {
       Text(label)
         .foregroundStyle(isEmphasized ? .primary : .secondary)
         .fontWeight(isEmphasized ? .semibold : .regular)
+        .receiptIssues(draft.issues(at: .amount(field)))
       Spacer()
       VStack(alignment: .trailing, spacing: 2) {
         Text(value, format: .currency(code: displayCurrency))
@@ -157,7 +156,7 @@ struct ReceiptTotalsSection: View {
 
   private func amountField(
     _ title: String,
-    field: TotalsField,
+    field: ReceiptAmountField,
     value: Binding<Double>,
     isEmphasized: Bool = false,
     expectedValue: Double? = nil
@@ -177,6 +176,7 @@ struct ReceiptTotalsSection: View {
     } label: {
       Text(title)
         .fontWeight(isEmphasized ? .semibold : .regular)
+        .receiptIssues(draft.issues(at: .amount(field)))
     }
     .focusesOnTap($focusedField, equals: field)
   }
@@ -263,6 +263,7 @@ struct ReceiptTotalsSection: View {
       .buttonStyle(.borderless)
       .foregroundStyle(.red)
       Text(adjustment.title)
+        .receiptIssues(draft.issues(at: .amount(.adjustment(adjustment))))
     }
   }
 

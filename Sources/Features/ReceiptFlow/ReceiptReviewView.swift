@@ -8,6 +8,9 @@ struct ReceiptReviewView: View {
   /// How far the bottom bar slides to leave the screen while editing. It only slides: fading glass
   /// renders it against the page background, which covers the rows behind it.
   private static let bottomBarExitDistance: CGFloat = 300
+  /// How long the receipt shows after switching to it before an item is revealed, so the switch
+  /// reads as its own step.
+  private static let revealPause = Duration.milliseconds(450)
 
   @Bindable var draft: ReceiptDraft
   let showsSampleNotice: Bool
@@ -20,6 +23,8 @@ struct ReceiptReviewView: View {
   @State private var sweep: ReceiptItemSweep?
   @State private var itemRowFrames = ReceiptItemRowFrames()
   @State private var focusedItemID: ReceiptDraftItem.ID?
+  /// An item the list scrolls to and then lifts into focus, once the receipt has shown.
+  @State private var revealedItemID: ReceiptDraftItem.ID?
   @State private var paymentsFocus: ReceiptPaymentsFocus?
   @State private var focusedRowFrame: CGRect?
   @State private var isFocusedItemPressed = false
@@ -95,7 +100,8 @@ struct ReceiptReviewView: View {
           draft: draft,
           peopleStorage: peopleStorage,
           focus: $paymentsFocus,
-          onFlush: onFlush
+          onFlush: onFlush,
+          onAssignItems: revealFirstUnassignedItem
         )
         .pageVisibility(showsPayments)
       }
@@ -107,6 +113,26 @@ struct ReceiptReviewView: View {
   }
 
   private var receiptList: some View {
+    ScrollViewReader { proxy in
+      itemsList
+        .task(id: revealedItemID) {
+          guard let id = revealedItemID else { return }
+          do { try await Task.sleep(for: Self.revealPause) } catch { return }
+          guard selectedPage == .receipt, !isEditing, focusedItemID == nil else {
+            revealedItemID = nil
+            return
+          }
+          withAnimation(.settle) {
+            proxy.scrollTo(id, anchor: .center)
+          } completion: {
+            revealedItemID = nil
+            focusItem(id, isPressed: false)
+          }
+        }
+    }
+  }
+
+  private var itemsList: some View {
     List {
       if showsSampleNotice {
         Section {
@@ -137,12 +163,6 @@ struct ReceiptReviewView: View {
         isEditing: isEditing,
         haptic: $haptic
       )
-
-      if isEditing {
-        ReceiptEditorValidationSection(issues: draft.validationIssues)
-      } else {
-        ReceiptWarningsSection(warnings: draft.warnings)
-      }
     }
     .scrollContentBackground(.hidden)
     // Attached before the people bar, so a sweep starts only over the list.
@@ -300,7 +320,12 @@ struct ReceiptReviewView: View {
           selection: $draft.currency,
           backgroundStyle: draft.backgroundStyle)
       } label: {
-        LabeledContent("Currency", value: draft.normalizedCurrency)
+        LabeledContent {
+          Text(draft.normalizedCurrency)
+        } label: {
+          Text("Currency")
+            .receiptIssues(draft.issues(at: .currency))
+        }
       }
     }
   }
@@ -346,6 +371,13 @@ struct ReceiptReviewView: View {
   private func editItem(_ id: ReceiptDraftItem.ID) {
     beginEditing()
     selectedItemID = id
+  }
+
+  /// Switches to the receipt and lifts the first item no one shares, ready to assign.
+  private func revealFirstUnassignedItem() {
+    guard let id = draft.firstUnassignedItemID else { return }
+    selectedPage = .receipt
+    revealedItemID = id
   }
 
   private func focusItem(_ id: ReceiptDraftItem.ID, isPressed: Bool) {

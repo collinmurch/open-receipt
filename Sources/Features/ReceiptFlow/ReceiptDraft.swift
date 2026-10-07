@@ -22,7 +22,7 @@ final class ReceiptDraft {
   private(set) var persistenceRevision = 0
   @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
   private var splitCalculationRevision = 0
-  @ObservationIgnored private var warningsCache: (revision: Int, warnings: [String])?
+  @ObservationIgnored private var issuesCache: (revision: Int, issues: [ReceiptIssue])?
 
   init(
     receipt: ParsedReceipt,
@@ -92,18 +92,16 @@ final class ReceiptDraft {
     set { adjustments[.savings] = newValue }
   }
 
-  /// Validation warnings for the current values. The totals check is left out because the
-  /// totals section shows its own correction.
-  var warnings: [String] {
+  /// What needs fixing in the current values. Totals that don't add up aren't an issue, because
+  /// the totals section shows its own correction.
+  var issues: [ReceiptIssue] {
     let revision = persistenceRevision
-    if let warningsCache, warningsCache.revision == revision {
-      return warningsCache.warnings
+    if let issuesCache, issuesCache.revision == revision {
+      return issuesCache.issues
     }
-    let warnings = ReceiptValidator.warnings(for: parsedReceipt)
-      .filter { $0 != ReceiptValidator.totalReconciliationWarning }
-      .sorted()
-    warningsCache = (revision, warnings)
-    return warnings
+    let issues = uncachedIssues()
+    issuesCache = (revision, issues)
+    return issues
   }
 
   var splitCalculation: ReceiptSplitCalculation {
@@ -114,22 +112,6 @@ final class ReceiptDraft {
       adjustmentMethod: adjustmentSplitMethod)
     splitCalculationCache = calculation
     return calculation
-  }
-
-  private var parsedReceipt: ParsedReceipt {
-    ParsedReceipt(
-      merchantName: merchantName,
-      date: date,
-      subtotal: subtotal,
-      tax: tax,
-      tip: tip,
-      savings: savings,
-      total: total,
-      currency: currency,
-      payment: payment,
-      items: items.map {
-        ReceiptItem(description: $0.description, quantity: $0.quantity, lineTotal: $0.lineTotal)
-      })
   }
 
   @discardableResult
@@ -210,6 +192,11 @@ final class ReceiptDraft {
 
   func participants(assignedTo item: ReceiptDraftItem) -> [ReceiptParticipant] {
     participants.filter { item.participantIDs.contains($0.id) }
+  }
+
+  /// The first item no one on the receipt shares, which the split can't place yet.
+  var firstUnassignedItemID: ReceiptDraftItem.ID? {
+    items.first { participants(assignedTo: $0).isEmpty }?.id
   }
 
   func participant(forContactIdentifier identifier: String) -> ReceiptParticipant? {

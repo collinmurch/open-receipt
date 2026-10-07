@@ -11,6 +11,8 @@ enum ReceiptPaymentsFocus: Hashable {
 struct ReceiptRequestsView: View {
   let draft: ReceiptDraft
   let onFlush: () async -> Void
+  /// Takes the person back to the receipt to assign the items no one shares yet.
+  let onAssignItems: () -> Void
   @Binding var focus: ReceiptPaymentsFocus?
   @State private var people: SavedPeopleModel
   /// The participants the saved people were last loaded for.
@@ -33,10 +35,12 @@ struct ReceiptRequestsView: View {
     draft: ReceiptDraft,
     peopleStorage: PeopleStorageClient,
     focus: Binding<ReceiptPaymentsFocus?>,
-    onFlush: @escaping () async -> Void
+    onFlush: @escaping () async -> Void,
+    onAssignItems: @escaping () -> Void
   ) {
     self.draft = draft
     self.onFlush = onFlush
+    self.onAssignItems = onAssignItems
     _focus = focus
     _people = State(initialValue: SavedPeopleModel(storage: peopleStorage))
   }
@@ -71,12 +75,21 @@ struct ReceiptRequestsView: View {
 
       if calculation.unassignedItemCount > 0 {
         Section {
-          Label {
-            Text("Assign \(unassignedDescription(calculation)) before you send requests.")
-          } icon: {
-            Image(systemName: "exclamationmark.triangle")
+          Button(action: onAssignItems) {
+            HStack {
+              Label(
+                "Assign all items before sending requests.",
+                systemImage: "exclamationmark.triangle"
+              )
+              .foregroundStyle(.orange)
+              Spacer()
+              Image(systemName: "chevron.forward")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            }
+            .contentShape(.rect)
           }
-          .foregroundStyle(.orange)
+          .accessibilityHint("Show the first item no one is assigned to")
         }
       }
     }
@@ -260,13 +273,6 @@ struct ReceiptRequestsView: View {
 
   private var requestNote: String {
     PreparedPaymentRequest.note(merchantName: draft.merchantName)
-  }
-
-  private func unassignedDescription(_ calculation: ReceiptSplitCalculation) -> String {
-    let count = calculation.unassignedItemCount
-    let items = String(inflecting: "^[\(count) item](inflect: true)")
-    let amount = calculation.unassignedItemTotal.formatted(.currency(code: draft.displayCurrency))
-    return "\(items) (\(amount))"
   }
 
   private var focusedShareID: ReceiptParticipant.ID? {

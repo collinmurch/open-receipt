@@ -49,7 +49,6 @@ struct ReceiptSplitCalculation {
   /// Each participant's share total, by participant.
   let amountsOwed: [ReceiptParticipant.ID: Double]
   let unassignedItemCount: Int
-  let unassignedItemTotal: Double
 }
 
 enum ReceiptSplitCalculator {
@@ -63,13 +62,11 @@ enum ReceiptSplitCalculator {
     var itemShares: [ReceiptParticipant.ID: [ReceiptItemShare]] = [:]
     var itemSubtotals: [ReceiptParticipant.ID: Double] = [:]
     var unassignedItemCount = 0
-    var unassignedItemTotal = 0.0
 
     for item in draft.items {
       let assignedIDs = participantIDs.filter { item.participantIDs.contains($0) }
       guard !assignedIDs.isEmpty else {
         unassignedItemCount += 1
-        unassignedItemTotal += item.lineTotal
         continue
       }
 
@@ -117,8 +114,7 @@ enum ReceiptSplitCalculator {
     return ReceiptSplitCalculation(
       participantShares: shares,
       amountsOwed: Dictionary(uniqueKeysWithValues: shares.map { ($0.id, $0.total) }),
-      unassignedItemCount: unassignedItemCount,
-      unassignedItemTotal: unassignedItemTotal)
+      unassignedItemCount: unassignedItemCount)
   }
 
   private typealias Weight = (id: ReceiptParticipant.ID, weight: Double)

@@ -77,7 +77,6 @@ final class ReceiptSplitCalculatorTests: XCTestCase {
       draft: draft, adjustmentMethod: .proportional)
 
     XCTAssertEqual(calculation.unassignedItemCount, 1)
-    XCTAssertEqual(calculation.unassignedItemTotal, 10)
   }
 
   func testDraftSplitCalculationUpdatesAfterItemAssignmentChanges() throws {
