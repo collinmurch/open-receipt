@@ -293,6 +293,61 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.tipPercentage, 20, accuracy: 0.000_1)
   }
 
+  func testTipPercentageRoundsTipToCents() {
+    let draft = makeDraft()
+
+    draft.tipPercentage = 18.5
+
+    XCTAssertEqual(draft.tip, 0.83)
+  }
+
+  func testSavingsPercentageRoundsSavingsToCents() {
+    let draft = makeDraft()
+
+    draft.savingsPercentage = 18.5
+
+    XCTAssertEqual(draft.savings, 0.83)
+  }
+
+  func testTipPercentageRoundsTipToWholeYen() {
+    let draft = makeDraft()
+    draft.currency = "JPY"
+    draft.items[0].lineTotal = 1000
+
+    draft.tipPercentage = 18.25
+
+    XCTAssertEqual(draft.tip, 183)
+  }
+
+  func testSplitItemInYenUsesWholeYen() {
+    let draft = makeDraft()
+    draft.currency = "JPY"
+    draft.items[0].lineTotal = 1000
+
+    draft.splitItem(id: draft.items[0].id, into: 3)
+
+    XCTAssertEqual(draft.items.map(\.lineTotal), [334, 333, 333])
+  }
+
+  func testFixTotalRoundsToCents() {
+    let draft = makeDraft()
+    draft.adjustments.add(.tip)
+    draft.tip = 0.8125
+
+    draft.fixTotal()
+
+    XCTAssertEqual(draft.total, 5.31)
+  }
+
+  func testTotalWithinHalfACentNeedsNoCorrection() {
+    let draft = makeDraft()
+    draft.adjustments.add(.tip)
+    draft.tip = 0.8125
+    draft.total = 5.31
+
+    XCTAssertNil(draft.corrections.total)
+  }
+
   func testFixTotalMatchesExpectedTotal() {
     let draft = makeDraft()
     draft.adjustments.add(.tax)

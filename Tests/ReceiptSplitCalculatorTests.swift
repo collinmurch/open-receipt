@@ -55,6 +55,126 @@ final class ReceiptSplitCalculatorTests: XCTestCase {
     XCTAssertEqual(assignedTotal, 11, accuracy: 0.000_1)
   }
 
+  func testEvenlySharedReceiptKeepsTotalsWithinOneCent() throws {
+    let draft = makeDraft(
+      items: [
+        ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10),
+        ReceiptItem(description: "Salad", quantity: 1, lineTotal: 10),
+      ],
+      total: 23.50)
+    draft.tax = 1
+    draft.tip = 2.50
+    let everyone = try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    let totals = calculation.participantShares.map(\.total)
+    XCTAssertEqual(everyone.count, 3)
+    XCTAssertEqual(totals.max()! - totals.min()!, 0.01, accuracy: 0.000_1)
+  }
+
+  func testLeftoverCentsRotateAcrossItems() throws {
+    let draft = makeDraft(
+      items: [
+        ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10),
+        ReceiptItem(description: "Salad", quantity: 1, lineTotal: 10),
+      ],
+      total: 20)
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    XCTAssertEqual(calculation.participantShares.map { $0.items[0].amount }, [3.34, 3.33, 3.33])
+    XCTAssertEqual(calculation.participantShares.map { $0.items[1].amount }, [3.33, 3.34, 3.33])
+  }
+
+  func testEvenSplitOfEvenTotalIsExactlyEqual() throws {
+    let draft = makeDraft(
+      items: [
+        ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10),
+        ReceiptItem(description: "Salad", quantity: 1, lineTotal: 10),
+      ],
+      total: 22.50)
+    draft.tax = 2.50
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .even)
+
+    XCTAssertEqual(calculation.participantShares.map(\.total), [7.50, 7.50, 7.50])
+  }
+
+  func testSharesAddUpToTotalWithFractionalCentTip() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 47.37)], total: 56)
+    draft.tip = 8.5266
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    let assignedTotal = calculation.participantShares.reduce(0) { $0 + $1.total }
+    XCTAssertEqual(assignedTotal, 56, accuracy: 0.000_1)
+  }
+
+  func testEveryShareIsWholeCents() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 47.37)], total: 56)
+    draft.tip = 8.5266
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    for share in calculation.participantShares {
+      for amount in share.items.map(\.amount) + share.adjustments.map(\.amount) {
+        XCTAssertEqual(amount * 100, (amount * 100).rounded(), accuracy: 0.000_1)
+      }
+    }
+  }
+
+  func testProportionalSplitWithoutItemValueSharesAdjustmentsEvenly() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Cover", quantity: 1, lineTotal: 0)], total: 6)
+    draft.tax = 6
+    let secondPerson = draft.addManualParticipant(named: "Sam")
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID, secondPerson.id]
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    XCTAssertEqual(calculation.participantShares.map(\.total), [3, 3])
+  }
+
+  func testSplitUsesWholeYen() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Ramen", quantity: 1, lineTotal: 1000)],
+      total: 1000,
+      currency: "JPY")
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    XCTAssertEqual(calculation.participantShares.map(\.total), [334, 333, 333])
+  }
+
+  func testSplitUsesThreeDecimalDinars() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Tea", quantity: 1, lineTotal: 1)],
+      total: 1,
+      currency: "KWD")
+    try assignEveryItemToThreePeople(draft)
+
+    let calculation = ReceiptSplitCalculator.calculate(
+      draft: draft, adjustmentMethod: .proportional)
+
+    XCTAssertEqual(calculation.participantShares.map(\.total), [0.334, 0.333, 0.333])
+  }
+
   func testSavingsReduceParticipantTotals() throws {
     let draft = makeDraft(
       items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)], total: 8)
@@ -118,12 +238,31 @@ final class ReceiptSplitCalculatorTests: XCTestCase {
     return draft
   }
 
-  private func makeDraft(items: [ReceiptItem], total: Double) -> ReceiptDraft {
+  @discardableResult
+  private func assignEveryItemToThreePeople(
+    _ draft: ReceiptDraft
+  ) throws -> Set<ReceiptParticipant.ID> {
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    let sam = draft.addManualParticipant(named: "Sam")
+    let alex = draft.addManualParticipant(named: "Alex")
+    let everyone: Set = [currentUserID, sam.id, alex.id]
+    for index in draft.items.indices {
+      draft.items[index].participantIDs = everyone
+    }
+    return everyone
+  }
+
+  private func makeDraft(
+    items: [ReceiptItem],
+    total: Double,
+    currency: String = "USD"
+  ) -> ReceiptDraft {
     ReceiptDraft(
       receipt: ParsedReceipt(
         merchantName: "Cafe",
         subtotal: items.reduce(0) { $0 + $1.lineTotal },
         total: total,
+        currency: currency,
         items: items))
   }
 }

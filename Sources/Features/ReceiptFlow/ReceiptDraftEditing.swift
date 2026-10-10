@@ -26,11 +26,11 @@ extension ReceiptDraft {
   /// The subtotal and total the items come to, each `nil` when the entered amount already
   /// matches. Both come from a single pass over the items.
   var corrections: (subtotal: Double?, total: Double?) {
-    let expectedSubtotal = expectedSubtotal
-    let expectedTotal = total(fromSubtotal: expectedSubtotal)
+    let expectedSubtotal = rounded(expectedSubtotal)
+    let expectedTotal = rounded(total(fromSubtotal: expectedSubtotal))
     return (
-      subtotal: (subtotal - expectedSubtotal).isNonzeroInCents ? expectedSubtotal : nil,
-      total: (total - expectedTotal).isNonzeroInCents ? expectedTotal : nil
+      subtotal: rounded(subtotal) != expectedSubtotal ? expectedSubtotal : nil,
+      total: rounded(total) != expectedTotal ? expectedTotal : nil
     )
   }
 
@@ -40,7 +40,7 @@ extension ReceiptDraft {
       return savings / expectedSubtotal * 100
     }
     set {
-      savings = max(0, expectedSubtotal * newValue / 100)
+      savings = rounded(max(0, expectedSubtotal * newValue / 100))
     }
   }
 
@@ -50,7 +50,7 @@ extension ReceiptDraft {
       return tip / expectedSubtotal * 100
     }
     set {
-      tip = max(0, expectedSubtotal * newValue / 100)
+      tip = rounded(max(0, expectedSubtotal * newValue / 100))
     }
   }
 
@@ -66,22 +66,23 @@ extension ReceiptDraft {
   }
 
   /// Replaces an item with `count` items named "Name (n/count)" whose line totals sum to the
-  /// original, with any leftover cents assigned to the first items.
+  /// original, with any leftover units of the currency assigned to the first items.
   @discardableResult
   func splitItem(id: ReceiptDraftItem.ID, into count: Int) -> [ReceiptDraftItem.ID] {
     guard count > 1, let index = items.firstIndex(where: { $0.id == id }) else { return [] }
     let item = items[index]
-    let totalCents = Int((item.lineTotal * 100).rounded())
-    let baseCents = totalCents / count
-    let remainderCents = totalCents - baseCents * count
+    let currency = displayCurrency
+    let totalUnits = ReceiptCurrency.minorUnits(item.lineTotal, code: currency)
+    let baseUnits = totalUnits / count
+    let remainderUnits = totalUnits - baseUnits * count
     let name = item.description.trimmingCharacters(in: .whitespacesAndNewlines)
     let splitItems = (0..<count).map { offset in
-      let extraCents = offset < abs(remainderCents) ? remainderCents.signum() : 0
+      let extraUnits = offset < abs(remainderUnits) ? remainderUnits.signum() : 0
       return ReceiptDraftItem(
         id: UUID(),
         description: "\(name) (\(offset + 1)/\(count))",
         quantity: item.quantity / Double(count),
-        lineTotal: Double(baseCents + extraCents) / 100,
+        lineTotal: ReceiptCurrency.amount(minorUnits: baseUnits + extraUnits, code: currency),
         participantIDs: item.participantIDs)
     }
     items.replaceSubrange(index...index, with: splitItems)
@@ -89,7 +90,12 @@ extension ReceiptDraft {
   }
 
   func fixTotal() {
-    total = expectedTotal
+    total = rounded(expectedTotal)
+  }
+
+  /// `amount` rounded to the smallest unit of the receipt's currency.
+  private func rounded(_ amount: Double) -> Double {
+    ReceiptCurrency.rounded(amount, code: displayCurrency)
   }
 
   private func total(fromSubtotal subtotal: Double) -> Double {

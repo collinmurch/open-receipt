@@ -42,6 +42,28 @@ enum ReceiptCurrency {
     formatDetails(code).fractionDigits
   }
 
+  /// `amount` counted in `code`'s smallest unit, such as cents for USD or yen for JPY, or zero
+  /// when it isn't a countable amount.
+  static func minorUnits(_ amount: Double, code: String) -> Int {
+    let units = (amount * minorUnitScale(code)).rounded()
+    return units.isFinite ? Int(exactly: units) ?? 0 : 0
+  }
+
+  /// The amount that `units` of `code`'s smallest unit make, such as 1.25 for 125 USD cents.
+  static func amount(minorUnits units: Int, code: String) -> Double {
+    Double(units) / minorUnitScale(code)
+  }
+
+  /// `amount` rounded to `code`'s smallest unit, such as the nearest cent for USD.
+  static func rounded(_ amount: Double, code: String) -> Double {
+    guard amount.isFinite else { return amount }
+    return Self.amount(minorUnits: minorUnits(amount, code: code), code: code)
+  }
+
+  private static func minorUnitScale(_ code: String) -> Double {
+    pow(10, Double(fractionDigits(code)))
+  }
+
   private struct FormatDetails {
     let fractionDigits: Int
     let symbol: String
@@ -103,11 +125,4 @@ enum ReceiptCurrency {
     "TWD": "dollarsign", "UAH": "hryvniasign", "USD": "dollarsign", "UYU": "dollarsign",
     "VND": "dongsign",
   ]
-}
-
-extension Double {
-  /// Whether the amount is still at least a cent, either way, once rounded to cents.
-  var isNonzeroInCents: Bool {
-    abs(self) >= 0.005
-  }
 }

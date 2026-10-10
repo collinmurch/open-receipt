@@ -52,13 +52,17 @@ struct ReceiptSplitCalculation {
 }
 
 enum ReceiptSplitCalculator {
+  /// Splits `draft` in whole units of its currency, so every share is an amount that can be paid
+  /// and the shares add up to exactly what was split.
   @MainActor
   static func calculate(
     draft: ReceiptDraft,
     adjustmentMethod: ReceiptAdjustmentSplitMethod
   ) -> ReceiptSplitCalculation {
+    let currency = draft.displayCurrency
     let participants = draft.participants
     let participantIDs = participants.map(\.id)
+    var ledger = Ledger()
     var itemShares: [ReceiptParticipant.ID: [ReceiptItemShare]] = [:]
     var itemSubtotals: [ReceiptParticipant.ID: Double] = [:]
     var unassignedItemCount = 0
@@ -70,16 +74,18 @@ enum ReceiptSplitCalculator {
         continue
       }
 
-      let amounts = allocate(item.lineTotal, weights: assignedIDs.map { (id: $0, weight: 1) })
+      let lineUnits = ReceiptCurrency.minorUnits(item.lineTotal, code: currency)
+      let allocation = ledger.allocate(
+        lineUnits, weights: assignedIDs.map { (id: $0, weight: 1) })
       for participantID in assignedIDs {
-        let amount = amounts[participantID, default: 0]
+        let units = allocation[participantID, default: 0]
         itemShares[participantID, default: []].append(
           ReceiptItemShare(
             itemID: item.id,
             description: item.description,
             fraction: 1 / Double(assignedIDs.count),
-            amount: amount))
-        itemSubtotals[participantID, default: 0] += amount
+            amount: ReceiptCurrency.amount(minorUnits: units, code: currency)))
+        itemSubtotals[participantID, default: 0] += Double(lineUnits) / Double(assignedIDs.count)
       }
     }
 
@@ -91,17 +97,17 @@ enum ReceiptSplitCalculator {
     let totalWeight = weights.reduce(0) { $0 + $1.weight }
     var adjustmentShares: [ReceiptParticipant.ID: [ReceiptAdjustmentShare]] = [:]
 
-    for component in adjustmentComponents(draft: draft) {
-      let amounts = allocate(component.amount, weights: weights)
+    for component in adjustmentComponents(draft: draft, currency: currency) {
+      let allocation = ledger.allocate(component.units, weights: weights)
       for participantID in participantIDs {
-        guard let amount = amounts[participantID] else { continue }
+        guard let units = allocation[participantID] else { continue }
         let weight = weightsByID[participantID, default: 0]
         adjustmentShares[participantID, default: []].append(
           ReceiptAdjustmentShare(
             id: component.id,
             title: component.title,
             fraction: totalWeight > 0 ? weight / totalWeight : 0,
-            amount: amount))
+            amount: ReceiptCurrency.amount(minorUnits: units, code: currency)))
       }
     }
 
@@ -119,86 +125,111 @@ enum ReceiptSplitCalculator {
 
   private typealias Weight = (id: ReceiptParticipant.ID, weight: Double)
 
+  /// How the shared amounts are weighted. A proportional split with no positive item subtotals
+  /// to follow is even, so the shared amounts are still paid.
   private static func adjustmentWeights(
     participantIDs: [ReceiptParticipant.ID],
     itemSubtotals: [ReceiptParticipant.ID: Double],
     method: ReceiptAdjustmentSplitMethod
   ) -> [Weight] {
+    let even = participantIDs.map { (id: $0, weight: 1.0) }
     switch method {
     case .proportional:
-      participantIDs.map { (id: $0, weight: max(0, itemSubtotals[$0, default: 0])) }
+      let proportional = participantIDs.map {
+        (id: $0, weight: max(0, itemSubtotals[$0, default: 0]))
+      }
+      return proportional.contains { $0.weight > 0 } ? proportional : even
     case .even:
-      participantIDs.map { (id: $0, weight: 1) }
+      return even
     }
   }
 
   /// The amounts between the item subtotal and the total that everyone shares: a printed
   /// subtotal that differs from the items, each adjustment, and anything else the total
-  /// includes.
+  /// includes. They are counted in whole units, so together with the items they add up to
+  /// exactly the total.
   @MainActor
-  private static func adjustmentComponents(draft: ReceiptDraft) -> [AdjustmentComponent] {
+  private static func adjustmentComponents(
+    draft: ReceiptDraft,
+    currency: String
+  ) -> [AdjustmentComponent] {
+    func units(_ amount: Double) -> Int {
+      ReceiptCurrency.minorUnits(amount, code: currency)
+    }
     var components: [AdjustmentComponent] = []
-    let subtotalDifference = draft.subtotal - draft.expectedSubtotal
-    if subtotalDifference.isNonzeroInCents {
+    let subtotalUnits = units(draft.subtotal)
+    let itemUnits = draft.items.reduce(0) { $0 + units($1.lineTotal) }
+    if subtotalUnits != itemUnits {
       components.append(
         AdjustmentComponent(
           id: "subtotal-adjustment",
           title: "Subtotal adjustment",
-          amount: subtotalDifference))
-    }
-    for adjustment in ReceiptTotalAdjustment.allCases {
-      let amount = draft.signedAmount(of: adjustment)
-      guard amount.isNonzeroInCents else { continue }
-      components.append(
-        AdjustmentComponent(id: adjustment.rawValue, title: adjustment.title, amount: amount))
+          units: subtotalUnits - itemUnits))
     }
 
-    let knownTotal = draft.subtotal + draft.tax + draft.tip - draft.savings
-    let otherDifference = draft.total - knownTotal
-    if otherDifference.isNonzeroInCents {
+    var knownUnits = subtotalUnits
+    for adjustment in ReceiptTotalAdjustment.allCases {
+      let adjustmentUnits = units(draft.signedAmount(of: adjustment))
+      knownUnits += adjustmentUnits
+      guard adjustmentUnits != 0 else { continue }
       components.append(
-        AdjustmentComponent(id: "other", title: "Other", amount: otherDifference))
+        AdjustmentComponent(id: adjustment.rawValue, title: adjustment.title, units: adjustmentUnits))
+    }
+
+    let otherUnits = units(draft.total) - knownUnits
+    if otherUnits != 0 {
+      components.append(AdjustmentComponent(id: "other", title: "Other", units: otherUnits))
     }
     return components
   }
 
-  /// Splits `amount` into whole cents by weight. Leftover cents go to the largest remainders,
-  /// and ties go to whoever comes first.
-  private static func allocate(
-    _ amount: Double,
-    weights: [Weight]
-  ) -> [ReceiptParticipant.ID: Double] {
-    let positiveWeights = weights.filter { $0.weight > 0 }
-    let totalWeight = positiveWeights.reduce(0) { $0 + $1.weight }
-    guard totalWeight > 0 else { return [:] }
+  /// Splits amounts in whole units across a receipt, tracking how far each participant's
+  /// allocation is from their exact share. Each amount's leftover units go to whoever is furthest
+  /// behind, with ties going to whoever comes first, so rounding evens out over the receipt
+  /// instead of landing on the same person every time.
+  private struct Ledger {
+    /// Each participant's exact share minus what they've been allocated, in units.
+    private var balances: [ReceiptParticipant.ID: Double] = [:]
 
-    let sign = amount < 0 ? -1 : 1
-    let totalCents = Int((abs(amount) * 100).rounded())
-    var cents: [ReceiptParticipant.ID: Int] = [:]
-    var remainders: [(order: Int, id: ReceiptParticipant.ID, fraction: Double)] = []
-    var allocatedCents = 0
+    mutating func allocate(_ units: Int, weights: [Weight]) -> [ReceiptParticipant.ID: Int] {
+      let positiveWeights = weights.filter { $0.weight > 0 }
+      let totalWeight = positiveWeights.reduce(0) { $0 + $1.weight }
+      guard totalWeight > 0 else { return [:] }
 
-    for (order, entry) in positiveWeights.enumerated() {
-      let exactCents = Double(totalCents) * entry.weight / totalWeight
-      let baseCents = Int(exactCents.rounded(.down))
-      cents[entry.id] = baseCents
-      allocatedCents += baseCents
-      remainders.append((order: order, id: entry.id, fraction: exactCents - Double(baseCents)))
+      let sign = units < 0 ? -1 : 1
+      let magnitude = abs(units)
+      var allocation: [ReceiptParticipant.ID: Int] = [:]
+      var candidates: [(order: Int, id: ReceiptParticipant.ID, shortfall: Double)] = []
+      var allocatedUnits = 0
+
+      for (order, entry) in positiveWeights.enumerated() {
+        let exact = Double(magnitude) * entry.weight / totalWeight
+        let base = Int(exact.rounded(.down))
+        let remainder = exact - Double(base)
+        allocation[entry.id] = base
+        allocatedUnits += base
+        let balance = balances[entry.id, default: 0]
+        candidates.append(
+          (order: order, id: entry.id, shortfall: Double(sign) * balance + remainder))
+        balances[entry.id] = balance + Double(sign) * remainder
+      }
+
+      candidates.sort {
+        abs($0.shortfall - $1.shortfall) < 1e-9
+          ? $0.order < $1.order : $0.shortfall > $1.shortfall
+      }
+      for candidate in candidates.prefix(magnitude - allocatedUnits) {
+        allocation[candidate.id, default: 0] += 1
+        balances[candidate.id, default: 0] -= Double(sign)
+      }
+
+      return allocation.mapValues { $0 * sign }
     }
-
-    remainders.sort {
-      $0.fraction == $1.fraction ? $0.order < $1.order : $0.fraction > $1.fraction
-    }
-    for remainder in remainders.prefix(totalCents - allocatedCents) {
-      cents[remainder.id, default: 0] += 1
-    }
-
-    return cents.mapValues { Double($0 * sign) / 100 }
   }
 
   private struct AdjustmentComponent {
     let id: String
     let title: String
-    let amount: Double
+    let units: Int
   }
 }
