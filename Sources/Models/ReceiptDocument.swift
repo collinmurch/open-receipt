@@ -110,6 +110,17 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
     var adjustmentMethod: ReceiptAdjustmentSplitMethod
     var participants: [Participant]
     var itemAssignments: [ItemAssignment]
+
+    /// The saved people on the receipt.
+    var personIDs: Set<UUID> {
+      Set(participants.compactMap(\.personID))
+    }
+
+    /// Whether anyone besides the owner was added without a saved person, as receipts split before
+    /// people were saved were.
+    var hasUnlinkedPeople: Bool {
+      participants.contains { $0.personID == nil && $0.source.type != .currentUser }
+    }
   }
 
   struct Participant: Codable, Equatable, Identifiable, Sendable {

@@ -85,7 +85,6 @@ struct ReceiptReviewView: View {
       .sensoryFeedback(.success, trigger: draft.isCompleted) { wasCompleted, isCompleted in
         !wasCompleted && isCompleted
       }
-      .task { await refreshContactAvatars() }
       .task { await ReceiptCurrencyPicker.prepareCatalog() }
   }
 
@@ -190,8 +189,10 @@ struct ReceiptReviewView: View {
         onClearSelection: clearParticipantSelection,
         addTransition: isFocusingItem ? nil : peopleSheetTransition
       )
-      .onGeometryChange(for: CGRect.self) { proxy in
-        proxy.frame(in: .global)
+      // Only a focused item needs the strip's frame, so it isn't tracked through every animation
+      // that moves the strip, such as editing collapsing it.
+      .onGeometryChange(for: CGRect?.self) { [isFocusingItem] proxy in
+        isFocusingItem ? proxy.frame(in: .global) : nil
       } action: { frame in
         participantStripFrame = frame
       }
@@ -458,22 +459,6 @@ struct ReceiptReviewView: View {
   private func finishManagingPeople() {
     removeMissingParticipantSelections()
     Task { await onFlush() }
-  }
-
-  private func refreshContactAvatars() async {
-    let fetchAvatar = contactClient.fetchAvatar
-    let identifiers = Set(draft.participants.compactMap(\.source.contactIdentifier))
-    await withTaskGroup(of: (String, Data)?.self) { group in
-      for identifier in identifiers {
-        group.addTask {
-          guard let avatar = try? await fetchAvatar(identifier) else { return nil }
-          return (identifier, avatar)
-        }
-      }
-      for await case (let identifier, let avatar)? in group {
-        draft.updateAvatar(avatar, forContactIdentifier: identifier)
-      }
-    }
   }
 }
 

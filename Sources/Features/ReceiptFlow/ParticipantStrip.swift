@@ -105,9 +105,9 @@ struct ParticipantStrip: View {
       onSelect(participant.id)
     } label: {
       VStack(spacing: 4) {
-        PersonAvatarView(
+        ContactAvatarView(
           name: participant.displayName,
-          imageData: participant.avatarData,
+          contactIdentifier: participant.source.contactIdentifier,
           size: avatarSize
         )
         .overlay {

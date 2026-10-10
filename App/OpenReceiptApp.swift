@@ -5,6 +5,7 @@ struct OpenReceiptApp: App {
   @State private var library = ReceiptLibraryModel(storage: .live)
   @State private var access: ReadingAccess
   @State private var recognitions: ReceiptRecognitionCenter
+  @State private var photos = ContactPhotos(client: .live)
 
   init() {
     let access = ReadingAccess(client: .standard, store: .live)
@@ -36,6 +37,7 @@ struct OpenReceiptApp: App {
       .environment(library)
       .environment(recognitions)
       .environment(access)
+      .environment(photos)
       .task { await access.start() }
   }
 }

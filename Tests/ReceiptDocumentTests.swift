@@ -112,18 +112,6 @@ final class ReceiptDocumentTests: XCTestCase {
     XCTAssertEqual(savings.amount.value, "-2.0")
   }
 
-  func testAvatarDataIsNotStored() throws {
-    let draft = makeDraft()
-    let person = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
-    draft.addPerson(person, avatarData: Data([1, 2, 3]))
-
-    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
-    let data = try encoder.encode(document)
-    let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-
-    XCTAssertFalse(json.contains("avatar"))
-  }
-
   func testDecimalStringEncodesAsJSONString() throws {
     let data = try JSONEncoder().encode(DecimalString(7.23))
 

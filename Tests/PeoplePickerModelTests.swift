@@ -107,25 +107,6 @@ final class PeoplePickerModelTests: XCTestCase {
     XCTAssertEqual(model.contacts.map(\.displayName), ["Morgan"])
   }
 
-  func testMissingAvatarIsFetchedOnce() async {
-    let fetches = CallCounter()
-    let client = ContactClient(
-      authorizationStatus: { .authorized },
-      requestAccess: { .authorized },
-      fetchContacts: { _ in [] },
-      fetchAvatar: { _ in
-        await fetches.increment()
-        return nil
-      })
-    let model = PeoplePickerModel(client: client)
-
-    _ = await model.avatar(for: "1")
-    _ = await model.avatar(for: "1")
-
-    let count = await fetches.value
-    XCTAssertEqual(count, 1)
-  }
-
   private func makeClient(
     status: ContactAuthorization,
     requestedStatus: ContactAuthorization? = nil,

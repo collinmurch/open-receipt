@@ -129,7 +129,7 @@ final class PreparedPaymentRequestTests: XCTestCase {
   private func share(source: ReceiptParticipant.Source) -> ReceiptParticipantShare {
     ReceiptParticipantShare(
       participant: ReceiptParticipant(
-        id: UUID(), source: source, displayName: "Sam", avatarData: nil),
+        id: UUID(), source: source, displayName: "Sam"),
       items: [ReceiptItemShare(itemID: UUID(), description: "Pizza", fraction: 1, amount: 12.5)],
       adjustments: [])
   }

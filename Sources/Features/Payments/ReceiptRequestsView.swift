@@ -30,6 +30,7 @@ struct ReceiptRequestsView: View {
   @Environment(\.contactClient) private var contactClient
   @Environment(\.openURL) private var openURL
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(ContactPhotos.self) private var photos: ContactPhotos?
 
   init(
     draft: ReceiptDraft,
@@ -142,13 +143,24 @@ struct ReceiptRequestsView: View {
     if let focusedShareID, let focusedRowFrame,
       let share = calculation.participantShares.first(where: { $0.id == focusedShareID })
     {
-      let breakdown = draft.breakdown(for: share, accentScheme: colorScheme)
+      let breakdown = draft.breakdown(for: share, accentScheme: colorScheme, photos: photos)
+      let content = rowContent(share, calculation: calculation)
+      let isSplitComplete = calculation.unassignedItemCount == 0
       ReceiptShareFocusView(
-        content: rowContent(share, calculation: calculation),
+        content: content,
         rowFrame: focusedRowFrame,
         startsPressed: isFocusedRowPressed,
-        request: preparedRequest(for: share, calculation: calculation),
-        unavailableRequestReason: unavailableRequestReason(for: share, calculation: calculation),
+        request: PreparedPaymentRequest(
+          share: share,
+          destination: content.paymentDestination,
+          currency: draft.displayCurrency,
+          note: requestNote,
+          isSplitComplete: isSplitComplete),
+        unavailableRequestReason: PreparedPaymentRequest.unavailableReason(
+          share: share,
+          destination: content.paymentDestination,
+          currency: draft.displayCurrency,
+          isSplitComplete: isSplitComplete),
         breakdown: breakdown,
         messageRecipient: messageRecipients[share.id],
         onRequest: { request in
@@ -192,7 +204,9 @@ struct ReceiptRequestsView: View {
 
   @ViewBuilder
   private var groupShare: some View {
-    if focus == .group, let breakdowns = draft.allBreakdowns(accentScheme: colorScheme) {
+    if focus == .group,
+      let breakdowns = draft.allBreakdowns(accentScheme: colorScheme, photos: photos)
+    {
       let others = draft.participants.filter { !$0.source.isCurrentUser }
       ReceiptGroupShareView(
         breakdowns: breakdowns,
@@ -226,7 +240,7 @@ struct ReceiptRequestsView: View {
         requestNote: requestNote,
         globalDefault: defaultPaymentMethod,
         isSplitComplete: calculation.unassignedItemCount == 0,
-        breakdown: draft.breakdown(for: share, accentScheme: colorScheme),
+        breakdown: draft.breakdown(for: share, accentScheme: colorScheme, photos: photos),
         onRequest: {
           draft.recordRequest(for: share.participant.id, at: $0)
           Task { await onFlush() }
@@ -246,29 +260,6 @@ struct ReceiptRequestsView: View {
 
   private func paymentDestination(for share: ReceiptParticipantShare) -> PaymentDestination? {
     person(for: share)?.paymentMethods.destination(globalDefault: defaultPaymentMethod)
-  }
-
-  private func preparedRequest(
-    for share: ReceiptParticipantShare,
-    calculation: ReceiptSplitCalculation
-  ) -> PreparedPaymentRequest? {
-    PreparedPaymentRequest(
-      share: share,
-      destination: paymentDestination(for: share),
-      currency: draft.displayCurrency,
-      note: requestNote,
-      isSplitComplete: calculation.unassignedItemCount == 0)
-  }
-
-  private func unavailableRequestReason(
-    for share: ReceiptParticipantShare,
-    calculation: ReceiptSplitCalculation
-  ) -> String? {
-    PreparedPaymentRequest.unavailableReason(
-      share: share,
-      destination: paymentDestination(for: share),
-      currency: draft.displayCurrency,
-      isSplitComplete: calculation.unassignedItemCount == 0)
   }
 
   private var requestNote: String {

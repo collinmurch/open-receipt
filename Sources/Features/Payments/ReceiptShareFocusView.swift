@@ -43,7 +43,6 @@ struct ReceiptShareFocusView: View {
   private func prepareBreakdown() {
     guard let breakdown else { return }
     let image = ReceiptBreakdownRenderer.image(for: breakdown)
-    ReceiptBreakdownRenderer.preparePNG(for: breakdown, from: image)
     withAnimation(.smooth(duration: 0.25)) { breakdownImage = image }
   }
 

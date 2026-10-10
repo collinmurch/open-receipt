@@ -378,16 +378,6 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.persistenceRevision, revision)
   }
 
-  func testAvatarMutationDoesNotAdvancePersistenceRevision() {
-    let draft = makeDraft()
-    draft.addPerson(.fixture(name: "Sam", contactIdentifier: "contact-1"))
-    let revision = draft.persistenceRevision
-
-    draft.updateAvatar(Data([1, 2, 3]), forContactIdentifier: "contact-1")
-
-    XCTAssertEqual(draft.persistenceRevision, revision)
-  }
-
   private func makeDraft() -> ReceiptDraft {
     ReceiptDraft(
       receipt: ParsedReceipt(

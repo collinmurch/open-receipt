@@ -148,11 +148,8 @@ struct ReceiptGroupShareView: View {
     }
   }
 
-  /// Draws the page at full scale so the same drawing is encoded for sharing and messaging.
   private func renderPage(_ index: Int) -> UIImage? {
-    let image = ReceiptBreakdownRenderer.image(for: breakdowns[index])
-    ReceiptBreakdownRenderer.preparePNG(for: breakdowns[index], from: image)
-    return image
+    ReceiptBreakdownRenderer.image(for: breakdowns[index])
   }
 
   /// Fans the deck out or gathers it back onto the overview in one animation, so the overview

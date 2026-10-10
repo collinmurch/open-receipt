@@ -59,7 +59,6 @@ struct ReceiptDraftPersistenceState {
         personID: participant.personID,
         source: ReceiptParticipant.Source(participant.source),
         displayName: participant.displayName,
-        avatarData: nil,
         lastRequestedAt: participant.lastRequestedAt)
     }
   }
@@ -147,5 +146,19 @@ extension ReceiptDocument {
           participantIDs: $0.participantIDs.sorted { $0.uuidString < $1.uuidString })
       })
     return document
+  }
+}
+
+extension ReceiptDraftPersistenceState {
+  /// The values the stored split is worked out from.
+  var splitInput: ReceiptSplitInput {
+    ReceiptSplitInput(
+      items: items,
+      participants: participants,
+      subtotal: subtotal,
+      adjustments: adjustments,
+      total: total,
+      currency: ReceiptCurrency.displayCode(ReceiptCurrency.normalized(currency)),
+      adjustmentMethod: adjustmentSplitMethod)
   }
 }

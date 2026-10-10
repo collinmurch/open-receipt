@@ -2,12 +2,24 @@ import Foundation
 
 extension ReceiptDraft {
   var normalizedCurrency: String {
-    currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    ReceiptCurrency.normalized(currency)
   }
 
   /// The currency code amounts are formatted with while the entered code may be incomplete.
   var displayCurrency: String {
     ReceiptCurrency.displayCode(normalizedCurrency)
+  }
+
+  /// The values the split is worked out from.
+  var splitInput: ReceiptSplitInput {
+    ReceiptSplitInput(
+      items: items,
+      participants: participants,
+      subtotal: subtotal,
+      adjustments: adjustments,
+      total: total,
+      currency: displayCurrency,
+      adjustmentMethod: adjustmentSplitMethod)
   }
 
   var purchaseDate: Date {
@@ -100,11 +112,5 @@ extension ReceiptDraft {
 
   private func total(fromSubtotal subtotal: Double) -> Double {
     subtotal + tax + tip - savings
-  }
-
-  /// The amount `adjustment` adds to the total, negative for savings.
-  func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
-    let amount = adjustments[adjustment] ?? 0
-    return amount == 0 ? 0 : amount * adjustment.sign
   }
 }

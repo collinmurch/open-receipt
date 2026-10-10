@@ -9,8 +9,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
       id: UUID(),
       personID: person.id,
       source: .manual,
-      displayName: "Old name",
-      avatarData: nil)
+      displayName: "Old name")
 
     XCTAssertEqual(ReceiptPersonResolver.person(for: participant, in: [person]), person)
   }
@@ -20,8 +19,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
       id: UUID(),
       personID: UUID(),
       source: .manual,
-      displayName: "Sam",
-      avatarData: nil)
+      displayName: "Sam")
 
     XCTAssertNil(
       ReceiptPersonResolver.person(for: participant, in: [Person.fixture(name: "Sam")]))
@@ -32,8 +30,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
     let participant = ReceiptParticipant(
       id: UUID(),
       source: .contact(identifier: "contact-1"),
-      displayName: "Old name",
-      avatarData: nil)
+      displayName: "Old name")
 
     XCTAssertEqual(ReceiptPersonResolver.person(for: participant, in: [person]), person)
   }
@@ -43,8 +40,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
     let participant = ReceiptParticipant(
       id: UUID(),
       source: .manual,
-      displayName: "sam",
-      avatarData: nil)
+      displayName: "sam")
 
     XCTAssertEqual(ReceiptPersonResolver.person(for: participant, in: [person]), person)
   }
@@ -53,8 +49,7 @@ final class ReceiptPersonResolverTests: XCTestCase {
     let participant = ReceiptParticipant(
       id: UUID(),
       source: .manual,
-      displayName: "Sam",
-      avatarData: nil)
+      displayName: "Sam")
 
     XCTAssertNil(
       ReceiptPersonResolver.person(

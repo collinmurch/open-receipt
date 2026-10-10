@@ -14,11 +14,20 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   let unavailableDescription: String?
   /// When an unread receipt is read again on its own after the reading limit resets.
   var deferredUntil: Date?
+  /// The saved people on the receipt.
+  var personIDs: Set<UUID> = []
+  /// Whether anyone besides the owner was added without a saved person, and so may be one.
+  var hasUnlinkedPeople = false
 
   /// The merchant's name, or "Receipt" when the receipt doesn't name one.
   var merchantTitle: String {
     let merchant = merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return merchant.isEmpty ? "Receipt" : merchant
+  }
+
+  /// Whether `person` may be on the receipt, which only its split can confirm.
+  func mayInclude(_ person: Person) -> Bool {
+    hasUnlinkedPeople || personIDs.contains(person.id)
   }
 
   /// A receipt whose stored file couldn't be read, dated by `date`.
@@ -74,7 +83,9 @@ extension ReceiptSummary {
       isUnavailable: false,
       unavailableDescription: nil,
       deferredUntil: document.recognition.status == .succeeded
-        ? nil : document.recognition.deferredUntil)
+        ? nil : document.recognition.deferredUntil,
+      personIDs: document.split?.personIDs ?? [],
+      hasUnlinkedPeople: document.split?.hasUnlinkedPeople ?? false)
   }
 }
 

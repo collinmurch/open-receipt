@@ -92,6 +92,6 @@ final class ParticipantShortNamesTests: XCTestCase {
   }
 
   private func participant(_ name: String) -> ReceiptParticipant {
-    ReceiptParticipant(id: UUID(), source: .manual, displayName: name, avatarData: nil)
+    ReceiptParticipant(id: UUID(), source: .manual, displayName: name)
   }
 }

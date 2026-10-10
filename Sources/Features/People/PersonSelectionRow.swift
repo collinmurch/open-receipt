@@ -3,12 +3,12 @@ import SwiftUI
 /// A person or contact in a list the user picks from, checked when selected.
 struct PersonSelectionRow: View {
   let name: String
-  let avatarData: Data?
+  let contactIdentifier: String?
   let isSelected: Bool
 
   var body: some View {
     HStack(spacing: 12) {
-      PersonAvatarView(name: name, imageData: avatarData)
+      ContactAvatarView(name: name, contactIdentifier: contactIdentifier)
       Text(name)
         .foregroundStyle(.primary)
       Spacer()

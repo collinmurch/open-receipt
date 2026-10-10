@@ -75,16 +75,6 @@ final class ReceiptDraftTests: XCTestCase {
     XCTAssertNil(draft.participant(forContactIdentifier: "me"))
   }
 
-  func testOwnerAvatarUpdatesByContactIdentifier() {
-    let draft = makeDraft()
-    draft.setOwner(ReceiptOwner(contactIdentifier: "me", displayName: "Alex"))
-    let avatar = Data([1, 2, 3])
-
-    draft.updateAvatar(avatar, forContactIdentifier: "me")
-
-    XCTAssertEqual(draft.currentUser?.avatarData, avatar)
-  }
-
   func testNewDraftConvertsReceiptItems() {
     let draft = makeDraft()
 

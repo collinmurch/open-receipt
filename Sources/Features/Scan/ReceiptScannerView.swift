@@ -45,13 +45,22 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
       _ controller: VNDocumentCameraViewController,
       didFinishWith scan: VNDocumentCameraScan
     ) {
-      let pages = (0..<scan.pageCount).compactMap { index -> ReceiptPage? in
-        let image = scan.imageOfPage(at: index)
-        guard let cgImage = image.cgImage else { return nil }
-        return ReceiptPage(
-          image: cgImage, orientation: CGImagePropertyOrientation(image.imageOrientation))
+      Task {
+        let pages = await Self.pages(of: scan)
+        onCapture(ReceiptScan(pages: pages, source: .documentCamera))
       }
-      onCapture(ReceiptScan(pages: pages, source: .documentCamera))
+    }
+
+    /// Pages are full-resolution images, so they are read off the main actor.
+    private static func pages(of scan: VNDocumentCameraScan) async -> [ReceiptPage] {
+      await Task.detached(priority: .userInitiated) {
+        (0..<scan.pageCount).compactMap { index -> ReceiptPage? in
+          let image = scan.imageOfPage(at: index)
+          guard let cgImage = image.cgImage else { return nil }
+          return ReceiptPage(
+            image: cgImage, orientation: CGImagePropertyOrientation(image.imageOrientation))
+        }
+      }.value
     }
 
     func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {

@@ -11,7 +11,7 @@ final class ReceiptDraft {
   var subtotal: Double { didSet { markDurableChange() } }
   var adjustments: ReceiptTotalAdjustments { didSet { markDurableChange() } }
   var total: Double { didSet { markDurableChange() } }
-  var currency: String { didSet { markPersistedChange() } }
+  var currency: String { didSet { markDurableChange() } }
   var payment: ReceiptPayment? { didSet { markPersistedChange() } }
   var items: [ReceiptDraftItem] { didSet { markDurableChange() } }
   var adjustmentSplitMethod: ReceiptAdjustmentSplitMethod {
@@ -107,23 +107,18 @@ final class ReceiptDraft {
   var splitCalculation: ReceiptSplitCalculation {
     _ = splitCalculationRevision
     if let splitCalculationCache { return splitCalculationCache }
-    let calculation = ReceiptSplitCalculator.calculate(
-      draft: self,
-      adjustmentMethod: adjustmentSplitMethod)
+    let calculation = ReceiptSplitCalculator.calculate(splitInput)
     splitCalculationCache = calculation
     return calculation
   }
 
   @discardableResult
-  func addPerson(_ person: Person, avatarData: Data? = nil) -> ReceiptParticipant {
+  func addPerson(_ person: Person) -> ReceiptParticipant {
     if let index = participants.firstIndex(where: { $0.personID == person.id }) {
-      let nameChanged = participants[index].displayName != person.displayName
-      participants[index].displayName = person.displayName
-      if let avatarData {
-        participants[index].avatarData = avatarData
-        invalidateSplitCalculation()
+      if participants[index].displayName != person.displayName {
+        participants[index].displayName = person.displayName
+        markDurableChange()
       }
-      if nameChanged { markDurableChange() }
       return participants[index]
     }
 
@@ -132,8 +127,7 @@ final class ReceiptDraft {
       id: UUID(),
       personID: person.id,
       source: source,
-      displayName: person.displayName,
-      avatarData: avatarData)
+      displayName: person.displayName)
     participants.append(participant)
     markDurableChange()
     return participant
@@ -208,24 +202,12 @@ final class ReceiptDraft {
   }
 
   /// Makes `owner` the person using the app on this receipt, or restores the default name.
-  func setOwner(_ owner: ReceiptOwner?, avatarData: Data? = nil) {
+  func setOwner(_ owner: ReceiptOwner?) {
     guard let index = participants.firstIndex(where: { $0.source.isCurrentUser }) else { return }
     participants[index].source = .currentUser(contactIdentifier: owner?.contactIdentifier)
     participants[index].displayName =
       owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName
-    participants[index].avatarData = avatarData
     markDurableChange()
-  }
-
-  func updateAvatar(_ avatarData: Data?, forContactIdentifier identifier: String) {
-    guard
-      let index = participants.firstIndex(where: {
-        $0.source.contactIdentifier == identifier
-      })
-    else { return }
-    guard participants[index].avatarData != avatarData else { return }
-    participants[index].avatarData = avatarData
-    invalidateSplitCalculation()
   }
 
   /// Trims what was typed, assigning only fields that change so an untouched receipt isn't saved.
@@ -252,17 +234,13 @@ final class ReceiptDraft {
 
   /// A change to what the split is calculated from, which also needs saving.
   private func markDurableChange() {
-    invalidateSplitCalculation()
+    splitCalculationCache = nil
+    splitCalculationRevision &+= 1
     markPersistedChange()
   }
 
   /// A change that needs saving but leaves the split as it was.
   private func markPersistedChange() {
     persistenceRevision &+= 1
-  }
-
-  private func invalidateSplitCalculation() {
-    splitCalculationCache = nil
-    splitCalculationRevision &+= 1
   }
 }

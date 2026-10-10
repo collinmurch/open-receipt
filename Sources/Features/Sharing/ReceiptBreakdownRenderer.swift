@@ -7,25 +7,27 @@ enum ReceiptBreakdownRenderer {
   static let width: CGFloat = 390
   static let scale: CGFloat = 3
 
-  /// Recent PNG encodings, newest last. A breakdown is a snapshot of everything its card shows,
-  /// so an equal breakdown always encodes to the same image.
-  private static var pngs: [(breakdown: ReceiptBreakdown, data: Task<Data?, Never>)] = []
-  private static let pngLimit = 16
+  /// Recently drawn cards, newest last. A breakdown is a snapshot of everything its card shows,
+  /// so an equal breakdown always draws the same image.
+  private static var drawings: [Drawing] = []
+  private static let drawingLimit = 16
 
-  /// The breakdown's PNG, drawn and encoded once and reused for later shares and messages.
-  static func pngData(for breakdown: ReceiptBreakdown) async -> Data? {
-    await pngTask(for: breakdown, image: nil).value
+  private struct Drawing {
+    let breakdown: ReceiptBreakdown
+    let image: UIImage?
+    let png: Task<Data?, Never>
   }
 
-  /// Starts encoding the breakdown's PNG ahead of a share, from `image` when it is already drawn.
-  static func preparePNG(for breakdown: ReceiptBreakdown, from image: UIImage? = nil) {
-    _ = pngTask(for: breakdown, image: image)
-  }
-
+  /// The breakdown's card, drawn once and reused. Drawing it also starts encoding its PNG, so a
+  /// share or message that follows finds it ready.
+  @discardableResult
   static func image(for breakdown: ReceiptBreakdown) -> UIImage? {
-    let renderer = renderer(for: breakdown)
-    renderer.scale = scale
-    return renderer.uiImage
+    drawing(for: breakdown).image
+  }
+
+  /// The breakdown's card encoded as a PNG.
+  static func pngData(for breakdown: ReceiptBreakdown) async -> Data? {
+    await drawing(for: breakdown).png.value
   }
 
   static func pdfData(for breakdown: ReceiptBreakdown) -> Data? {
@@ -44,18 +46,20 @@ enum ReceiptBreakdownRenderer {
   }
 
   /// Drawing has to happen on the main actor, but encoding doesn't, so it runs detached.
-  private static func pngTask(
-    for breakdown: ReceiptBreakdown,
-    image: UIImage?
-  ) -> Task<Data?, Never> {
-    if let cached = pngs.first(where: { $0.breakdown == breakdown }) {
-      return cached.data
+  private static func drawing(for breakdown: ReceiptBreakdown) -> Drawing {
+    if let cached = drawings.first(where: { $0.breakdown == breakdown }) {
+      return cached
     }
-    let image = image ?? self.image(for: breakdown)
-    let task = Task.detached(priority: .userInitiated) { image?.pngData() }
-    pngs.append((breakdown, task))
-    if pngs.count > pngLimit { pngs.removeFirst() }
-    return task
+    let renderer = renderer(for: breakdown)
+    renderer.scale = scale
+    let image = renderer.uiImage
+    let drawing = Drawing(
+      breakdown: breakdown,
+      image: image,
+      png: Task.detached(priority: .userInitiated) { image?.pngData() })
+    drawings.append(drawing)
+    if drawings.count > drawingLimit { drawings.removeFirst() }
+    return drawing
   }
 
   private static func renderer(for breakdown: ReceiptBreakdown) -> ImageRenderer<some View> {

@@ -28,7 +28,7 @@ struct OwnerContactPicker: View {
         } label: {
           PersonSelectionRow(
             name: ReceiptParticipant.defaultCurrentUserName,
-            avatarData: nil,
+            contactIdentifier: nil,
             isSelected: selectedIdentifier == nil)
         }
         .buttonStyle(.plain)
@@ -73,13 +73,10 @@ struct OwnerContactPicker: View {
           } label: {
             PersonSelectionRow(
               name: contact.displayName,
-              avatarData: model.avatars[contact.identifier],
+              contactIdentifier: contact.identifier,
               isSelected: contact.identifier == selectedIdentifier)
           }
           .buttonStyle(.plain)
-          .task(id: contact.identifier) {
-            _ = await model.avatar(for: contact.identifier)
-          }
         }
       }
     }

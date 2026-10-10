@@ -11,7 +11,6 @@ final class PeoplePickerModel {
   var searchText = ""
   var errorDescription: String?
   var isContactAccessPickerPresented = false
-  let avatars = ContactAvatars()
 
   private let client: ContactClient
   @ObservationIgnored private var hasLoaded = false
@@ -84,10 +83,6 @@ final class PeoplePickerModel {
       errorDescription = error.localizedDescription
       return []
     }
-  }
-
-  func avatar(for identifier: String) async -> Data? {
-    await avatars.avatar(for: identifier, using: client)
   }
 
   private func merge(_ newContacts: [ContactSummary]) {

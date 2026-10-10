@@ -20,7 +20,6 @@ struct PersonDetailView: View {
   @State private var person: Person
   @State private var paymentMethods: PaymentMethodsDraft
   @State private var contact: ContactSummary?
-  @State private var avatarData: Data?
   @State private var isDeleteConfirmationPresented = false
   @State private var isDeleting = false
   @State private var isAppleContactPresented = false
@@ -34,6 +33,7 @@ struct PersonDetailView: View {
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
+  @Environment(ContactPhotos.self) private var photos: ContactPhotos?
   @Environment(\.dismiss) private var dismiss
 
   init(
@@ -53,10 +53,10 @@ struct PersonDetailView: View {
 
   var body: some View {
     Form {
-      if let avatarData {
+      if let photo = photos?[person.contactIdentifier] {
         HStack {
           Spacer()
-          PersonAvatarView(name: person.displayName, imageData: avatarData, size: 112)
+          PersonAvatarView(name: person.displayName, imageData: photo, size: 112)
           Spacer()
         }
         .listRowBackground(Color.clear)
@@ -289,7 +289,7 @@ struct PersonDetailView: View {
     guard let identifier = person.contactIdentifier,
       contactClient.authorizationStatus().canReadContacts
     else { return }
-    avatarData = try? await contactClient.fetchAvatar(identifier)
+    await photos?.load(identifier)
     guard let loadedContact = try? await contactClient.fetchContacts([identifier]).first
     else { return }
     contact = loadedContact

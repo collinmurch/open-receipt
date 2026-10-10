@@ -11,6 +11,11 @@ enum ReceiptCurrency {
     return code
   }
 
+  /// An entered code without surrounding whitespace, in capitals.
+  static func normalized(_ code: String) -> String {
+    code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+  }
+
   /// The localized name of `code`, such as "US Dollar" for USD.
   static func localizedName(_ code: String) -> String {
     Locale.current.localizedString(forCurrencyCode: code) ?? code

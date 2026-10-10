@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReceiptTotalAdjustments: Equatable {
+struct ReceiptTotalAdjustments: Equatable, Sendable {
   private var amounts: [ReceiptTotalAdjustment: Double]
 
   init(tax: Double = 0, tip: Double = 0, savings: Double = 0) {
@@ -36,9 +36,15 @@ struct ReceiptTotalAdjustments: Equatable {
   mutating func remove(_ adjustment: ReceiptTotalAdjustment) {
     amounts[adjustment] = nil
   }
+
+  /// The amount `adjustment` adds to the total, negative for savings.
+  func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
+    let amount = amounts[adjustment] ?? 0
+    return amount == 0 ? 0 : amount * adjustment.sign
+  }
 }
 
-struct ReceiptDraftItem: Identifiable, Equatable {
+struct ReceiptDraftItem: Identifiable, Equatable, Sendable {
   let id: UUID
   var description: String
   var quantity: Double
@@ -68,8 +74,8 @@ struct ReceiptDraftItem: Identifiable, Equatable {
   }
 }
 
-struct ReceiptParticipant: Identifiable, Equatable {
-  enum Source: Equatable {
+struct ReceiptParticipant: Identifiable, Equatable, Sendable {
+  enum Source: Equatable, Sendable {
     case currentUser(contactIdentifier: String?)
     case contact(identifier: String)
     case manual
@@ -92,7 +98,6 @@ struct ReceiptParticipant: Identifiable, Equatable {
   let personID: UUID?
   var source: Source
   var displayName: String
-  var avatarData: Data?
   var lastRequestedAt: Date?
 
   init(
@@ -100,14 +105,12 @@ struct ReceiptParticipant: Identifiable, Equatable {
     personID: UUID? = nil,
     source: Source,
     displayName: String,
-    avatarData: Data?,
     lastRequestedAt: Date? = nil
   ) {
     self.id = id
     self.personID = personID
     self.source = source
     self.displayName = displayName
-    self.avatarData = avatarData
     self.lastRequestedAt = lastRequestedAt
   }
 
@@ -117,7 +120,6 @@ struct ReceiptParticipant: Identifiable, Equatable {
     ReceiptParticipant(
       id: UUID(),
       source: .currentUser(contactIdentifier: owner?.contactIdentifier),
-      displayName: owner?.displayName ?? defaultCurrentUserName,
-      avatarData: nil)
+      displayName: owner?.displayName ?? defaultCurrentUserName)
   }
 }

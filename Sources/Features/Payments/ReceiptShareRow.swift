@@ -45,9 +45,9 @@ struct ReceiptShareRowContent: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      PersonAvatarView(
+      ContactAvatarView(
         name: share.participant.displayName,
-        imageData: share.participant.avatarData)
+        contactIdentifier: share.participant.source.contactIdentifier)
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
         if showsPaymentDestination {

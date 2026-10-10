@@ -15,8 +15,11 @@ actor ReceiptFileStorage {
   private let rootOverride: URL?
   private var cachedRoot: URL?
   private var documentCache: [UUID: CachedDocument] = [:]
+  /// Summaries of receipts in Recently Deleted, which don't change while they're there.
+  private var deletedSummaries: [UUID: DeletedReceiptSummary] = [:]
   private var index: ReceiptLibraryIndex?
   private var isIndexChanged = false
+  private var hasRemovedStagedReceipts = false
 
   init(rootURL: URL? = nil) {
     rootOverride = rootURL
@@ -84,7 +87,10 @@ actor ReceiptFileStorage {
   }
 
   func list() throws -> [ReceiptSummary] {
-    try removeStagedReceipts()
+    if !hasRemovedStagedReceipts {
+      try removeStagedReceipts()
+      hasRemovedStagedReceipts = true
+    }
     return try libraryEntries().map(\.summary)
       .sorted {
         if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
@@ -138,7 +144,6 @@ actor ReceiptFileStorage {
       let document = try makeDocument(stagingURL)
       try write(document, in: stagingURL)
       try fileManager.moveItem(at: stagingURL, to: receiptURL)
-      try fileManager.protectItem(at: receiptURL)
       return document
     } catch {
       try? fileManager.removeItem(at: stagingURL)
@@ -159,8 +164,7 @@ actor ReceiptFileStorage {
   private func write(_ document: ReceiptDocument, in directory: URL) throws {
     let data = try Self.encoder.encode(document)
     let url = directory.appending(path: Self.documentFileName)
-    try data.write(to: url, options: .atomic)
-    try fileManager.protectItem(at: url)
+    try data.writeProtected(to: url)
     remember(document, writtenTo: url)
   }
 
@@ -207,7 +211,7 @@ actor ReceiptFileStorage {
 
   /// Summaries of stored receipts, keyed by the modification date of each receipt's file.
   private struct ReceiptLibraryIndex: Codable {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     struct Entry: Codable {
       let modifiedAt: Date
@@ -316,8 +320,7 @@ extension ReceiptFileStorage {
         let id = UUID()
         let filename = "\(id.uuidString.lowercased()).heic"
         let url = pagesURL.appending(path: filename)
-        try Self.writeHEIC(page, to: url)
-        try fileManager.protectItem(at: url)
+        try Self.heicData(for: page).writeProtected(to: url)
         written.append(
           ReceiptDocument.Page(id: id, file: "pages/\(filename)", mediaType: "image/heic"))
       }
@@ -330,19 +333,18 @@ extension ReceiptFileStorage {
     return written
   }
 
-  private static func writeHEIC(_ page: ReceiptPage, to url: URL) throws {
+  private static func heicData(for page: ReceiptPage) throws -> Data {
+    let data = NSMutableData()
     guard let image = ReceiptImageNormalizer.normalized(page.image, orientation: page.orientation),
-      let destination = CGImageDestinationCreateWithURL(
-        url as CFURL,
-        UTType.heic.identifier as CFString,
-        1,
-        nil)
+      let destination = CGImageDestinationCreateWithData(
+        data, UTType.heic.identifier as CFString, 1, nil)
     else { throw ReceiptStorageError.cannotEncodePage }
     let properties = [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary
     CGImageDestinationAddImage(destination, image, properties)
     guard CGImageDestinationFinalize(destination) else {
       throw ReceiptStorageError.cannotEncodePage
     }
+    return data as Data
   }
 }
 
@@ -421,8 +423,7 @@ extension ReceiptFileStorage {
 
   private func saveIndex(_ index: ReceiptLibraryIndex) throws {
     let url = try indexURL()
-    try Self.indexEncoder.encode(index).write(to: url, options: .atomic)
-    try fileManager.protectItem(at: url)
+    try Self.indexEncoder.encode(index).writeProtected(to: url)
     isIndexChanged = false
   }
 
@@ -477,28 +478,35 @@ extension ReceiptFileStorage {
     }
   }
 
+  /// Summaries of receipts in Recently Deleted. Each is decoded only the first time it's listed.
   func listDeleted() throws -> [DeletedReceiptSummary] {
     let contents = try fileManager.contentsOfDirectory(
       at: try trashRoot(),
-      includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+      includingPropertiesForKeys: nil,
       options: [.skipsHiddenFiles])
-    return contents.compactMap { url in
-      guard let id = UUID(uuidString: url.lastPathComponent) else { return nil }
-      let deletedAt = deletionDate(in: url)
-      let receipt: ReceiptSummary
-      do {
-        receipt = try ReceiptSummary(
-          decodeDocument(id: id, at: url.appending(path: Self.documentFileName)))
-      } catch {
-        receipt = .unavailable(
-          id: id, date: modificationDate(of: url) ?? deletedAt, error: error)
-      }
-      return DeletedReceiptSummary(receipt: receipt, deletedAt: deletedAt)
+    var summaries: [UUID: DeletedReceiptSummary] = [:]
+    for url in contents {
+      guard let id = UUID(uuidString: url.lastPathComponent) else { continue }
+      summaries[id] = deletedSummaries[id] ?? deletedSummary(id: id, in: url)
     }
-    .sorted {
+    deletedSummaries = summaries
+    return summaries.values.sorted {
       if $0.deletedAt != $1.deletedAt { return $0.deletedAt > $1.deletedAt }
       return $0.id.uuidString > $1.id.uuidString
     }
+  }
+
+  private func deletedSummary(id: UUID, in directory: URL) -> DeletedReceiptSummary {
+    let deletedAt = deletionDate(in: directory)
+    let receipt: ReceiptSummary
+    do {
+      receipt = try ReceiptSummary(
+        decodeDocument(id: id, at: directory.appending(path: Self.documentFileName)))
+    } catch {
+      receipt = .unavailable(
+        id: id, date: modificationDate(of: directory) ?? deletedAt, error: error)
+    }
+    return DeletedReceiptSummary(receipt: receipt, deletedAt: deletedAt)
   }
 
   func restore(id: UUID) throws {
@@ -509,6 +517,7 @@ extension ReceiptFileStorage {
       throw ReceiptStorageError.receiptAlreadyExists(id)
     }
     try fileManager.moveItem(at: deletedDirectory, to: directory)
+    deletedSummaries[id] = nil
     try? fileManager.removeItem(at: directory.appending(path: Self.deletionRecordFileName))
   }
 
@@ -553,9 +562,7 @@ extension ReceiptFileStorage {
 
   private func writeDeletionRecord(_ record: DeletionRecord, in directory: URL) throws {
     let url = directory.appending(path: Self.deletionRecordFileName)
-    let data = try Self.encoder.encode(record)
-    try data.write(to: url, options: .atomic)
-    try fileManager.protectItem(at: url)
+    try Self.encoder.encode(record).writeProtected(to: url)
   }
 
   private func deletionDate(in directory: URL) -> Date {

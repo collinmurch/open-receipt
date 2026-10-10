@@ -133,9 +133,9 @@ struct ReceiptPeopleView: View {
     @ViewBuilder accessory: () -> some View
   ) -> some View {
     HStack(spacing: 12) {
-      PersonAvatarView(
+      ContactAvatarView(
         name: participant.displayName,
-        imageData: participant.avatarData)
+        contactIdentifier: participant.source.contactIdentifier)
       Text(participant.displayName)
       Spacer()
       accessory()
@@ -156,11 +156,8 @@ struct ReceiptPeopleView: View {
       return
     }
     let owner = ReceiptOwner(contact)
-    Task {
-      let avatar = await contactModel.avatar(for: contact.identifier)
-      setDraftOwner(owner, avatarData: avatar)
-      await peopleModel.adoptOwner(owner)
-    }
+    setDraftOwner(owner)
+    Task { await peopleModel.adoptOwner(owner) }
   }
 
   private func savedPeopleSection(_ people: [Person]) -> some View {
@@ -175,20 +172,16 @@ struct ReceiptPeopleView: View {
           } else {
             Task {
               guard let included = await peopleModel.include(person) else { return }
-              let avatar = await avatar(for: included.contactIdentifier)
-              addToDraft(included, avatarData: avatar)
+              addToDraft(included)
             }
           }
         } label: {
           PersonSelectionRow(
             name: person.displayName,
-            avatarData: person.contactIdentifier.flatMap { contactModel.avatars[$0] },
+            contactIdentifier: person.contactIdentifier,
             isSelected: participant != nil)
         }
         .buttonStyle(.plain)
-        .task(id: person.contactIdentifier) {
-          _ = await avatar(for: person.contactIdentifier)
-        }
       }
     }
   }
@@ -225,33 +218,27 @@ struct ReceiptPeopleView: View {
 
   private func contactRow(_ contact: ContactSummary) -> some View {
     let participant = draft.participant(forContactIdentifier: contact.identifier)
-    let avatarData = participant?.avatarData ?? contactModel.avatars[contact.identifier]
-
     return Button {
       if let participant {
         removeParticipant(participant.id)
       } else {
         Task {
           guard let person = await peopleModel.include(contact) else { return }
-          let avatar = await contactModel.avatar(for: contact.identifier)
-          addToDraft(person, avatarData: avatar)
+          addToDraft(person)
         }
       }
     } label: {
       PersonSelectionRow(
         name: contact.displayName,
-        avatarData: avatarData,
+        contactIdentifier: contact.identifier,
         isSelected: participant != nil)
     }
     .buttonStyle(.plain)
-    .task(id: contact.identifier) {
-      _ = await contactModel.avatar(for: contact.identifier)
-    }
   }
 
-  private func addToDraft(_ person: Person, avatarData: Data? = nil) {
+  private func addToDraft(_ person: Person) {
     withAnimation(.selectionChange) {
-      _ = draft.addPerson(person, avatarData: avatarData)
+      _ = draft.addPerson(person)
     }
   }
 
@@ -261,9 +248,9 @@ struct ReceiptPeopleView: View {
     }
   }
 
-  private func setDraftOwner(_ owner: ReceiptOwner?, avatarData: Data? = nil) {
+  private func setDraftOwner(_ owner: ReceiptOwner?) {
     withAnimation(.selectionChange) {
-      draft.setOwner(owner, avatarData: avatarData)
+      draft.setOwner(owner)
     }
   }
 
@@ -273,17 +260,11 @@ struct ReceiptPeopleView: View {
     _ = await (contacts, people)
   }
 
-  private func avatar(for identifier: String?) async -> Data? {
-    guard let identifier else { return nil }
-    return await contactModel.avatar(for: identifier)
-  }
-
   private func addResolvedContacts(_ identifiers: [String]) async {
     let contacts = await contactModel.resolveContacts(identifiers: identifiers)
     for contact in contacts {
       guard let person = await peopleModel.include(contact) else { continue }
-      let avatar = await contactModel.avatar(for: contact.identifier)
-      addToDraft(person, avatarData: avatar)
+      addToDraft(person)
     }
   }
 }

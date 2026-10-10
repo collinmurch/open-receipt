@@ -79,9 +79,10 @@ struct ReceiptBreakdownSlip: View {
         // string is formatted first because `Text(_:format:)` uses the environment's time zone.
         Text(
           breakdown.purchaseDate.formatted(
-            Date.FormatStyle(timeZone: .gmt).month(.wide).day().year()))
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
+            Date.FormatStyle(timeZone: .gmt).month(.wide).day().year())
+        )
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
       }
       Spacer(minLength: 12)
       Image(systemName: "receipt")
@@ -104,7 +105,7 @@ private struct PersonBreakdown: View {
     HStack(spacing: 12) {
       PersonAvatarView(
         name: share.participant.displayName,
-        imageData: share.participant.avatarData,
+        imageData: breakdown.photos[share.id],
         size: 42)
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
@@ -176,7 +177,7 @@ private struct GroupBreakdown: View {
     HStack(spacing: 12) {
       PersonAvatarView(
         name: share.participant.displayName,
-        imageData: share.participant.avatarData,
+        imageData: breakdown.photos[share.id],
         size: 34
       )
       .overlay(alignment: .bottomTrailing) {

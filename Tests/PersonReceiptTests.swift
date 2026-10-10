@@ -66,9 +66,9 @@ final class PersonReceiptTests: XCTestCase {
     draft.addPerson(sam)
     let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
     let summaries = [
-      makeSummary(id: UUID(), status: .pending),
-      makeSummary(id: UUID(), isUnavailable: true),
-      makeSummary(id: draft.id),
+      makeSummary(id: UUID(), status: .pending, personIDs: [sam.id]),
+      makeSummary(id: UUID(), isUnavailable: true, personIDs: [sam.id]),
+      makeSummary(id: draft.id, personIDs: [sam.id]),
     ]
 
     let receipts = await PersonReceipt.load(
@@ -85,11 +85,55 @@ final class PersonReceiptTests: XCTestCase {
 
     let receipts = await PersonReceipt.load(
       for: sam,
-      in: [makeSummary(id: UUID())],
+      in: [makeSummary(id: UUID(), personIDs: [sam.id])],
       people: [sam],
       storage: makeStorage { _ in throw TestError.failed })
 
     XCTAssertTrue(receipts.isEmpty)
+  }
+
+  func testLoadSkipsReceiptsWithoutThePersonUnloaded() async {
+    let sam = Person.fixture(name: "Sam")
+    let loads = CallCounter()
+
+    let receipts = await PersonReceipt.load(
+      for: sam,
+      in: [makeSummary(id: UUID(), personIDs: [UUID()])],
+      people: [sam],
+      storage: makeStorage { _ in
+        await loads.increment()
+        throw TestError.failed
+      })
+
+    let count = await loads.value
+    XCTAssertTrue(receipts.isEmpty)
+    XCTAssertEqual(count, 0)
+  }
+
+  func testSummaryMayIncludeSavedPersonOnReceipt() throws {
+    let sam = Person.fixture(name: "Sam")
+    let draft = makeDraft()
+    draft.addPerson(sam)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    XCTAssertTrue(try ReceiptSummary(document).mayInclude(sam))
+  }
+
+  func testSummaryExcludesSavedPersonNotOnReceipt() throws {
+    let draft = makeDraft()
+    draft.addPerson(.fixture(name: "Alex"))
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    XCTAssertFalse(try ReceiptSummary(document).mayInclude(.fixture(name: "Sam")))
+  }
+
+  func testSummaryMayIncludeAnyoneWithUnlinkedParticipant() throws {
+    let draft = makeDraft()
+    draft.addManualParticipant(named: "Sam")
+    var document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+    document.split?.participants[1].personID = nil
+
+    XCTAssertTrue(try ReceiptSummary(document).mayInclude(.fixture(name: "Sam")))
   }
 
   private func make(_ draft: ReceiptDraft, person: Person, people: [Person]) -> PersonReceipt? {
@@ -119,7 +163,8 @@ final class PersonReceiptTests: XCTestCase {
   private func makeSummary(
     id: UUID,
     status: ReceiptDocument.Recognition.Status = .succeeded,
-    isUnavailable: Bool = false
+    isUnavailable: Bool = false,
+    personIDs: Set<UUID> = []
   ) -> ReceiptSummary {
     ReceiptSummary(
       id: id,
@@ -132,7 +177,8 @@ final class PersonReceiptTests: XCTestCase {
       total: 11,
       currency: "USD",
       isUnavailable: isUnavailable,
-      unavailableDescription: nil)
+      unavailableDescription: nil,
+      personIDs: personIDs)
   }
 
   private func makeStorage(

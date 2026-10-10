@@ -6,6 +6,8 @@ actor PeopleFileStorage {
   private let fileManager = FileManager.default
   private let rootOverride: URL?
   private var cachedDocumentURL: URL?
+  /// The stored document, kept after its first read because only this actor writes it.
+  private var cachedDocument: PeopleDocument?
 
   init(rootURL: URL? = nil) {
     rootOverride = rootURL
@@ -115,6 +117,7 @@ actor PeopleFileStorage {
   }
 
   private func load() throws -> PeopleDocument {
+    if let cachedDocument { return cachedDocument }
     let url = try documentURL()
     guard fileManager.fileExists(atPath: url.path) else { return PeopleDocument() }
     let data = try Data(contentsOf: url)
@@ -122,14 +125,13 @@ actor PeopleFileStorage {
     guard document.schemaVersion == PeopleDocument.currentSchemaVersion else {
       throw PeopleStorageError.unsupportedSchemaVersion(document.schemaVersion)
     }
+    cachedDocument = document
     return document
   }
 
   private func write(_ document: PeopleDocument) throws {
-    let data = try Self.encoder.encode(document)
-    let url = try documentURL()
-    try data.write(to: url, options: .atomic)
-    try fileManager.protectItem(at: url)
+    try Self.encoder.encode(document).writeProtected(to: try documentURL())
+    cachedDocument = document
   }
 
   private func documentURL() throws -> URL {

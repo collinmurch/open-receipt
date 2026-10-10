@@ -2,7 +2,6 @@ import SwiftUI
 
 struct PeopleView: View {
   @State private var model: SavedPeopleModel
-  @State private var avatars = ContactAvatars()
   @State private var haptic = HapticEvent()
   @State private var pendingDeletion: Person?
   @State private var hasAdoptedContactDefaults = false
@@ -64,18 +63,13 @@ struct PeopleView: View {
       } label: {
         let ownerName = model.owner?.displayName ?? ReceiptParticipant.defaultCurrentUserName
         HStack(spacing: 12) {
-          PersonAvatarView(
-            name: ownerName,
-            imageData: model.owner.flatMap { avatars[$0.contactIdentifier] })
+          ContactAvatarView(name: ownerName, contactIdentifier: model.owner?.contactIdentifier)
           VStack(alignment: .leading, spacing: 3) {
             Text(ownerName)
             Text(model.owner == nil ? "Choose your contact" : "You")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
-        }
-        .task(id: model.owner?.contactIdentifier) {
-          await loadAvatar(for: model.owner?.contactIdentifier)
         }
       }
     } footer: {
@@ -121,23 +115,13 @@ struct PeopleView: View {
 
   private func personRow(_ person: Person) -> some View {
     HStack(spacing: 12) {
-      PersonAvatarView(
-        name: person.displayName,
-        imageData: person.contactIdentifier.flatMap { avatars[$0] })
+      ContactAvatarView(name: person.displayName, contactIdentifier: person.contactIdentifier)
       VStack(alignment: .leading, spacing: 3) {
         Text(person.displayName)
         PaymentDestinationCaption(
           destination: person.paymentMethods.destination(globalDefault: defaultPaymentMethod))
       }
     }
-    .task(id: person.contactIdentifier) {
-      await loadAvatar(for: person.contactIdentifier)
-    }
-  }
-
-  private func loadAvatar(for identifier: String?) async {
-    guard let identifier else { return }
-    _ = await avatars.avatar(for: identifier, using: contactClient)
   }
 
   @discardableResult

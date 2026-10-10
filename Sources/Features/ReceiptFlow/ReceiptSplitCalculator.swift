@@ -44,7 +44,19 @@ extension Double {
   }
 }
 
-struct ReceiptSplitCalculation {
+/// The values a receipt's split is worked out from.
+struct ReceiptSplitInput: Sendable {
+  var items: [ReceiptDraftItem]
+  var participants: [ReceiptParticipant]
+  var subtotal: Double
+  var adjustments: ReceiptTotalAdjustments
+  var total: Double
+  /// The currency whose smallest unit amounts are split in.
+  var currency: String
+  var adjustmentMethod: ReceiptAdjustmentSplitMethod
+}
+
+struct ReceiptSplitCalculation: Sendable {
   let participantShares: [ReceiptParticipantShare]
   /// Each participant's share total, by participant.
   let amountsOwed: [ReceiptParticipant.ID: Double]
@@ -52,22 +64,18 @@ struct ReceiptSplitCalculation {
 }
 
 enum ReceiptSplitCalculator {
-  /// Splits `draft` in whole units of its currency, so every share is an amount that can be paid
+  /// Splits `input` in whole units of its currency, so every share is an amount that can be paid
   /// and the shares add up to exactly what was split.
-  @MainActor
-  static func calculate(
-    draft: ReceiptDraft,
-    adjustmentMethod: ReceiptAdjustmentSplitMethod
-  ) -> ReceiptSplitCalculation {
-    let currency = draft.displayCurrency
-    let participants = draft.participants
+  static func calculate(_ input: ReceiptSplitInput) -> ReceiptSplitCalculation {
+    let currency = input.currency
+    let participants = input.participants
     let participantIDs = participants.map(\.id)
     var ledger = Ledger()
     var itemShares: [ReceiptParticipant.ID: [ReceiptItemShare]] = [:]
     var itemSubtotals: [ReceiptParticipant.ID: Double] = [:]
     var unassignedItemCount = 0
 
-    for item in draft.items {
+    for item in input.items {
       let assignedIDs = participantIDs.filter { item.participantIDs.contains($0) }
       guard !assignedIDs.isEmpty else {
         unassignedItemCount += 1
@@ -92,12 +100,12 @@ enum ReceiptSplitCalculator {
     let weights = adjustmentWeights(
       participantIDs: participantIDs,
       itemSubtotals: itemSubtotals,
-      method: adjustmentMethod)
+      method: input.adjustmentMethod)
     let weightsByID = Dictionary(uniqueKeysWithValues: weights.map { ($0.id, $0.weight) })
     let totalWeight = weights.reduce(0) { $0 + $1.weight }
     var adjustmentShares: [ReceiptParticipant.ID: [ReceiptAdjustmentShare]] = [:]
 
-    for component in adjustmentComponents(draft: draft, currency: currency) {
+    for component in adjustmentComponents(of: input) {
       let allocation = ledger.allocate(component.units, weights: weights)
       for participantID in participantIDs {
         guard let units = allocation[participantID] else { continue }
@@ -148,17 +156,13 @@ enum ReceiptSplitCalculator {
   /// subtotal that differs from the items, each adjustment, and anything else the total
   /// includes. They are counted in whole units, so together with the items they add up to
   /// exactly the total.
-  @MainActor
-  private static func adjustmentComponents(
-    draft: ReceiptDraft,
-    currency: String
-  ) -> [AdjustmentComponent] {
+  private static func adjustmentComponents(of input: ReceiptSplitInput) -> [AdjustmentComponent] {
     func units(_ amount: Double) -> Int {
-      ReceiptCurrency.minorUnits(amount, code: currency)
+      ReceiptCurrency.minorUnits(amount, code: input.currency)
     }
     var components: [AdjustmentComponent] = []
-    let subtotalUnits = units(draft.subtotal)
-    let itemUnits = draft.items.reduce(0) { $0 + units($1.lineTotal) }
+    let subtotalUnits = units(input.subtotal)
+    let itemUnits = input.items.reduce(0) { $0 + units($1.lineTotal) }
     if subtotalUnits != itemUnits {
       components.append(
         AdjustmentComponent(
@@ -169,14 +173,15 @@ enum ReceiptSplitCalculator {
 
     var knownUnits = subtotalUnits
     for adjustment in ReceiptTotalAdjustment.allCases {
-      let adjustmentUnits = units(draft.signedAmount(of: adjustment))
+      let adjustmentUnits = units(input.adjustments.signedAmount(of: adjustment))
       knownUnits += adjustmentUnits
       guard adjustmentUnits != 0 else { continue }
       components.append(
-        AdjustmentComponent(id: adjustment.rawValue, title: adjustment.title, units: adjustmentUnits))
+        AdjustmentComponent(
+          id: adjustment.rawValue, title: adjustment.title, units: adjustmentUnits))
     }
 
-    let otherUnits = units(draft.total) - knownUnits
+    let otherUnits = units(input.total) - knownUnits
     if otherUnits != 0 {
       components.append(AdjustmentComponent(id: "other", title: "Other", units: otherUnits))
     }

@@ -58,7 +58,6 @@ struct ReceiptBreakdownViewer: View {
   private func draw(_ index: Int) {
     guard images[index] == nil, drawnImages[index] == nil else { return }
     let image = ReceiptBreakdownRenderer.image(for: breakdowns[index])
-    ReceiptBreakdownRenderer.preparePNG(for: breakdowns[index], from: image)
     withAnimation(.smooth(duration: 0.25)) { drawnImages[index] = image }
   }
 }

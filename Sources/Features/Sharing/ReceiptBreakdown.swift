@@ -18,6 +18,8 @@ struct ReceiptBreakdown: Equatable, Sendable {
   /// The appearance the sender sees the receipt in, so the card's accent matches their tint.
   let accentScheme: ColorScheme
   let content: Content
+  /// The contact photos of the people it shows, captured because the card is drawn at once.
+  var photos: [ReceiptParticipant.ID: Data] = [:]
 
   var merchantTitle: String {
     let merchant = merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,11 +52,13 @@ struct ReceiptBreakdown: Equatable, Sendable {
   }
 
   var total: Double {
+    shares.reduce(0) { $0 + $1.total }
+  }
+
+  var shares: [ReceiptParticipantShare] {
     switch content {
-    case .person(let share):
-      share.total
-    case .group(let shares):
-      shares.reduce(0) { $0 + $1.total }
+    case .person(let share): [share]
+    case .group(let shares): shares
     }
   }
 }
@@ -63,31 +67,42 @@ extension ReceiptDraft {
   /// The breakdown of one person's share, once every item is assigned.
   func breakdown(
     for share: ReceiptParticipantShare,
-    accentScheme: ColorScheme
+    accentScheme: ColorScheme,
+    photos: ContactPhotos? = nil
   ) -> ReceiptBreakdown? {
-    breakdown(.person(share), accentScheme: accentScheme)
+    breakdown(.person(share), accentScheme: accentScheme, photos: photos)
   }
 
   /// The breakdown of everyone's shares, once every item is assigned.
-  func groupBreakdown(accentScheme: ColorScheme) -> ReceiptBreakdown? {
-    breakdown(.group(splitCalculation.participantShares), accentScheme: accentScheme)
+  func groupBreakdown(
+    accentScheme: ColorScheme,
+    photos: ContactPhotos? = nil
+  ) -> ReceiptBreakdown? {
+    breakdown(
+      .group(splitCalculation.participantShares), accentScheme: accentScheme, photos: photos)
   }
 
   /// The overview followed by each person's breakdown, once every item is assigned.
-  func allBreakdowns(accentScheme: ColorScheme) -> [ReceiptBreakdown]? {
-    guard let overview = groupBreakdown(accentScheme: accentScheme) else { return nil }
+  func allBreakdowns(
+    accentScheme: ColorScheme,
+    photos: ContactPhotos? = nil
+  ) -> [ReceiptBreakdown]? {
+    guard let overview = groupBreakdown(accentScheme: accentScheme, photos: photos) else {
+      return nil
+    }
     let people = splitCalculation.participantShares.compactMap {
-      breakdown(for: $0, accentScheme: accentScheme)
+      breakdown(for: $0, accentScheme: accentScheme, photos: photos)
     }
     return [overview] + people
   }
 
   private func breakdown(
     _ content: ReceiptBreakdown.Content,
-    accentScheme: ColorScheme
+    accentScheme: ColorScheme,
+    photos: ContactPhotos?
   ) -> ReceiptBreakdown? {
     guard splitCalculation.unassignedItemCount == 0 else { return nil }
-    return ReceiptBreakdown(
+    var breakdown = ReceiptBreakdown(
       merchantName: merchantName,
       purchaseDate: purchaseDate,
       currency: displayCurrency,
@@ -95,6 +110,12 @@ extension ReceiptDraft {
       style: backgroundStyle,
       accentScheme: accentScheme,
       content: content)
+    if let photos {
+      for share in breakdown.shares {
+        breakdown.photos[share.id] = photos[share.participant.source.contactIdentifier]
+      }
+    }
+    return breakdown
   }
 }
 

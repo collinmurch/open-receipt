@@ -84,7 +84,8 @@ struct ReceiptTotalsSection: View {
         "Subtotal", field: .subtotal, value: draft.subtotal, expectedValue: expectedSubtotal)
     }
     ForEach(ReceiptTotalAdjustment.allCases.filter(draft.adjustments.contains)) { kind in
-      totalRow(kind.title, field: .adjustment(kind), value: draft.signedAmount(of: kind))
+      totalRow(
+        kind.title, field: .adjustment(kind), value: draft.adjustments.signedAmount(of: kind))
     }
     totalRow(
       "Total", field: .total, value: draft.total, isEmphasized: true,

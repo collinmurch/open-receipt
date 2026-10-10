@@ -11,7 +11,7 @@ struct ReceiptBreakdownViewButton: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .topBarTrailing) {
-      Button("View Breakdown", systemImage: "photo") {
+      Button("View Breakdown", systemImage: "receipt") {
         if let breakdown { open(breakdown) }
       }
       .disabled(breakdown == nil)
@@ -23,8 +23,8 @@ struct ReceiptBreakdownViewButton: ToolbarContent {
   /// Draws the card before presenting, so the viewer zooms in with it rather than drawing
   /// mid-transition.
   private func open(_ breakdown: ReceiptBreakdown) {
-    let image = ReceiptBreakdownRenderer.image(for: breakdown)
-    ReceiptBreakdownRenderer.preparePNG(for: breakdown, from: image)
-    viewed = ViewedBreakdown(sourceID: Self.sourceID, breakdown: breakdown, image: image)
+    viewed = ViewedBreakdown(
+      sourceID: Self.sourceID, breakdown: breakdown,
+      image: ReceiptBreakdownRenderer.image(for: breakdown))
   }
 }

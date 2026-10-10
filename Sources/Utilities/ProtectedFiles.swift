@@ -17,11 +17,11 @@ extension FileManager {
       withIntermediateDirectories: true,
       attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
   }
+}
 
-  /// Makes the item at `url` readable once the device is first unlocked.
-  func protectItem(at url: URL) throws {
-    try setAttributes(
-      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-      ofItemAtPath: url.path)
+extension Data {
+  /// Writes atomically to `url`, readable once the device is first unlocked.
+  func writeProtected(to url: URL) throws {
+    try write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
 }

@@ -78,7 +78,7 @@ final class PaymentRequester {
   private func attachments(for breakdowns: [ReceiptBreakdown]) async -> [IMessageAttachment] {
     guard MFMessageComposeViewController.canSendAttachments() else { return [] }
     // Every card is drawn up front so their encodes run side by side.
-    for breakdown in breakdowns { ReceiptBreakdownRenderer.preparePNG(for: breakdown) }
+    for breakdown in breakdowns { ReceiptBreakdownRenderer.image(for: breakdown) }
     var attachments: [IMessageAttachment] = []
     for breakdown in breakdowns {
       if let attachment = await IMessageAttachment(breakdown: breakdown) {

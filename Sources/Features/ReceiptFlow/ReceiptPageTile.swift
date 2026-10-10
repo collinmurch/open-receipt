@@ -47,8 +47,16 @@ struct ReceiptPageThumbnail: View {
       }
   }
 
+  /// Page files never change once written, so a thumbnail stays good for as long as it's kept.
+  private static let thumbnails: NSCache<NSURL, CGImage> = {
+    let cache = NSCache<NSURL, CGImage>()
+    cache.countLimit = 40
+    return cache
+  }()
+
   private static func thumbnail(for url: URL) async -> CGImage? {
-    await Task.detached(priority: .userInitiated) {
+    if let cached = thumbnails.object(forKey: url as NSURL) { return cached }
+    let thumbnail = await Task.detached(priority: .userInitiated) { () -> CGImage? in
       guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
       let options =
         [
@@ -58,5 +66,7 @@ struct ReceiptPageThumbnail: View {
         ] as CFDictionary
       return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
     }.value
+    if let thumbnail { thumbnails.setObject(thumbnail, forKey: url as NSURL) }
+    return thumbnail
   }
 }

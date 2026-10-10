@@ -308,6 +308,21 @@ final class ReceiptFileStorageTests: XCTestCase {
     XCTAssertEqual(pages.count, 1)
   }
 
+  func testDeletingAgainListsChangesMadeAfterRestoring() async throws {
+    var document = try await storage.createBlank(id: UUID())
+    try await storage.delete(id: document.id)
+    _ = try await storage.listDeleted()
+    try await storage.restore(id: document.id)
+    document.receipt?.merchant.name = "Juniper Market"
+    document.updatedAt = Date()
+    try await storage.save(document)
+
+    try await storage.delete(id: document.id)
+
+    let deletedReceipts = try await storage.listDeleted()
+    XCTAssertEqual(deletedReceipts.map(\.receipt.merchantName), ["Juniper Market"])
+  }
+
   func testPermanentDeleteRemovesDeletedReceipt() async throws {
     let document = try await storage.create(scan: makeScan())
     try await storage.delete(id: document.id)

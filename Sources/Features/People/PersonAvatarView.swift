@@ -37,6 +37,19 @@ struct PersonAvatarView: View {
   }
 }
 
+/// A person's avatar showing the photo on their contact card, when they have one.
+struct ContactAvatarView: View {
+  let name: String
+  let contactIdentifier: String?
+  var size: CGFloat?
+  @Environment(ContactPhotos.self) private var photos: ContactPhotos?
+
+  var body: some View {
+    PersonAvatarView(name: name, imageData: photos?[contactIdentifier], size: size)
+      .task(id: contactIdentifier) { await photos?.load(contactIdentifier) }
+  }
+}
+
 @MainActor
 private enum PersonAvatarImageCache {
   private static let cache: NSCache<NSData, UIImage> = {

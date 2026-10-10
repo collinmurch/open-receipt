@@ -255,9 +255,9 @@ struct ReceiptItemRowContent: View {
     } else {
       HStack(spacing: -5) {
         ForEach(assignedParticipants) { participant in
-          PersonAvatarView(
+          ContactAvatarView(
             name: participant.displayName,
-            imageData: participant.avatarData,
+            contactIdentifier: participant.source.contactIdentifier,
             size: 25
           )
           .overlay(Circle().stroke(.background, lineWidth: 2))
