@@ -86,8 +86,14 @@ enum LiftedCard {
 
 extension View {
   /// Draws the view as a card lifted out of a list: a row-wide copy whose background fades in as
-  /// it lifts, which a tap sets back down. A row long-pressed into focus starts at its pressed size.
-  func liftedCard(width: CGFloat, startsPressed: Bool, state: LiftedFocusState) -> some View {
+  /// it lifts, which a tap sets back down before running `onTap`. A row long-pressed into focus
+  /// starts at its pressed size.
+  func liftedCard(
+    width: CGFloat,
+    startsPressed: Bool,
+    state: LiftedFocusState,
+    onTap: (() -> Void)? = nil
+  ) -> some View {
     frame(width: width)
       .background {
         // The list row's own background stays behind the copy, so the card's fades in as it lifts.
@@ -100,7 +106,7 @@ extension View {
       }
       .scaleEffect(state.isLifted || (startsPressed && !state.isDismissing) ? .pressedRowScale : 1)
       .contentShape(.rect)
-      .onTapGesture { state.dismiss() }
+      .onTapGesture { state.dismiss(then: onTap) }
   }
 
   /// Hangs the view's top from `top`, inset like the lifted card, dropping in once the card lifts.

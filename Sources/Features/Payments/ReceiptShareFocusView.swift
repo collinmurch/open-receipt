@@ -59,13 +59,21 @@ struct ReceiptShareFocusView: View {
   private func actions(_ state: LiftedFocusState) -> some View {
     VStack(spacing: 12) {
       if let request {
-        ReceiptActionButton(
-          title: request.title,
-          systemImage: request.systemImage,
-          tint: request.method.prominentColor
-        ) {
-          onRequest(request)
-          state.dismiss()
+        VStack(spacing: 6) {
+          ReceiptActionButton(
+            title: request.title,
+            systemImage: request.systemImage,
+            tint: request.method.prominentColor
+          ) {
+            onRequest(request)
+            state.dismiss()
+          }
+
+          if let lastRequestedAt = content.share.participant.lastRequestedAt {
+            Text("Last requested \(PaymentRequestDateFormatter.formatted(lastRequestedAt))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
       }
 

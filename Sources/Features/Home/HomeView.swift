@@ -19,6 +19,7 @@ struct HomeView: View {
   @State private var path: [HomeRoute] = []
   @State private var isScannerPresented = false
   @State private var cameraErrorDescription: String?
+  @State private var libraryHaptic = HapticEvent()
   @Namespace private var libraryTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
@@ -34,10 +35,12 @@ struct HomeView: View {
       ReceiptLibraryView(
         transitionNamespace: libraryTransition,
         onScan: presentScanner,
-        onOpen: { path.append($0) }
+        onOpen: { path.append($0) },
+        haptic: $libraryHaptic
       )
       .navigationDestination(for: HomeRoute.self) { destination(for: $0) }
     }
+    .haptics(libraryHaptic)
     .fullScreenCover(isPresented: $isScannerPresented) {
       ReceiptScannerView(
         onCapture: capture,

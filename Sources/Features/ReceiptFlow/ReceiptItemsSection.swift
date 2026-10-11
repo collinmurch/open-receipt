@@ -211,7 +211,7 @@ struct ReceiptItemRowContent: View {
       HStack {
         VStack(alignment: .leading) {
           Text(item.description.isEmpty ? "New Item" : item.description)
-          if item.quantity != 1 {
+          if isEditing || item.quantity != 1 {
             Text("Quantity \(item.quantity, format: .number)")
               .font(.caption)
               .foregroundStyle(.secondary)

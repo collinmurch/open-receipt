@@ -6,6 +6,9 @@ struct ReceiptLibraryView: View {
   let transitionNamespace: Namespace.ID
   let onScan: () -> Void
   let onOpen: (HomeRoute) -> Void
+  /// Played above the navigation stack, since search reconfiguring the library's toolbar as a
+  /// row lifts can drop feedback attached to the library itself.
+  @Binding var haptic: HapticEvent
   @State private var searchText = ""
   @State private var isSearchPresented = false
   @FocusState private var isSearchFocused: Bool
@@ -22,7 +25,6 @@ struct ReceiptLibraryView: View {
   @State private var openingReceiptID: ReceiptSummary.ID?
   @State private var focusedID: ReceiptSummary.ID?
   @State private var focusedRowFrame: CGRect?
-  @State private var haptic = HapticEvent()
   @State private var riseCount = 0
   @State private var isUnlockPresented = false
   @Environment(ReceiptLibraryModel.self) private var library
@@ -131,7 +133,6 @@ struct ReceiptLibraryView: View {
         holdsCloseUnderSearch = false
       }
     }
-    .haptics(haptic)
     .errorAlert("Couldn’t Update Receipts", message: $library.errorDescription) {
       Button("Retry") { Task { await library.load() } }
       Button("OK", role: .cancel) {}
@@ -146,9 +147,9 @@ struct ReceiptLibraryView: View {
       // Disabled rather than removed while choosing: rebuilding the toolbar as search activates
       // takes the search field's focus.
       ToolbarItemGroup(placement: .topBarTrailing) {
-        Button("People", systemImage: "person.2") { onOpen(.people) }
+        Button("People", systemImage: "person.2") { push(.people) }
           .disabled(isChoosingSource)
-        Button("Settings", systemImage: "gearshape") { onOpen(.settings) }
+        Button("Settings", systemImage: "gearshape") { push(.settings) }
           .disabled(isChoosingSource)
       }
     }
@@ -245,12 +246,13 @@ struct ReceiptLibraryView: View {
   private func start(from source: NewReceiptSource) {
     switch source {
     case .scan:
+      closeSearch()
       onScan()
     case .importPhotos:
       recognitions.prewarm()
       isPhotoPickerPresented = true
     case .create:
-      onOpen(.receipt(.create(), zoomingFrom: .newReceipt))
+      push(.receipt(.create(), zoomingFrom: .newReceipt))
     }
   }
 
@@ -281,11 +283,8 @@ struct ReceiptLibraryView: View {
           receipt: receipt, recognition: recognitions.recognition(for: receipt.id)),
         rowFrame: focusedRowFrame,
         startsPressed: true,
-        primaryAction: receipt.isUnavailable
-          ? nil
-          : .init(title: "Open", systemImage: "arrow.up.forward") { open(receipt) },
-        primaryTint: receipt.backgroundStyle.prominentColor,
         deleteAction: .init(title: "Delete", systemImage: "trash") { delete(receipt) },
+        onTap: receipt.isUnavailable ? nil : { open(receipt) },
         onDismiss: endFocus
       )
       // The focus view animates its own arrival, starting over the row it copies.
@@ -315,7 +314,7 @@ struct ReceiptLibraryView: View {
   private func open(_ receipt: ReceiptSummary) {
     guard !receipt.isUnavailable, openingReceiptID == nil else { return }
     if let recognition = recognitions.recognition(for: receipt.id) {
-      onOpen(.receipt(.recognition(recognition), zoomingFrom: .row(receipt.id)))
+      push(.receipt(.recognition(recognition), zoomingFrom: .row(receipt.id)))
       return
     }
     openingReceiptID = receipt.id
@@ -324,7 +323,7 @@ struct ReceiptLibraryView: View {
       let document = try? await storage.load(receipt.id)
       let input = ReceiptFlowInput.storedReceipt(
         receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)
-      onOpen(.receipt(input, zoomingFrom: .row(receipt.id)))
+      push(.receipt(input, zoomingFrom: .row(receipt.id)))
     }
   }
 
@@ -334,6 +333,22 @@ struct ReceiptLibraryView: View {
     if isSearchFocused, !searchQuery.isEmpty {
       isSearchFocused = false
     } else {
+      isSearchPresented = false
+    }
+  }
+
+  /// Search only applies to the library, so it closes along with the push. Closing it once the
+  /// library has disappeared doesn't take.
+  private func push(_ route: HomeRoute) {
+    closeSearch()
+    onOpen(route)
+  }
+
+  private func closeSearch() {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      searchText = ""
       isSearchPresented = false
     }
   }
@@ -403,7 +418,7 @@ struct ReceiptLibraryView: View {
       return
     }
     let scan = ReceiptScan(pages: pages, source: .photoLibrary)
-    onOpen(.receipt(.scan(scan, recognitions: recognitions), zoomingFrom: .newReceipt))
+    push(.receipt(.scan(scan, recognitions: recognitions), zoomingFrom: .newReceipt))
   }
 }
 

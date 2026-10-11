@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Lifts a receipt out of the library or Recently Deleted with its actions: an optional primary
-/// action, and one that deletes it.
+/// action, and one that deletes it. A tap on the lifted receipt runs `onTap`, if any.
 struct ReceiptRowFocusView: View {
   /// An action offered under the lifted receipt.
   struct Action {
@@ -16,14 +16,17 @@ struct ReceiptRowFocusView: View {
   let rowFrame: CGRect
   /// Whether the row was long-pressed into focus, so the card starts at the row's pressed size.
   let startsPressed: Bool
-  let primaryAction: Action?
+  var primaryAction: Action? = nil
   /// A color dark enough to stay legible under the primary action's white label.
-  let primaryTint: Color
+  var primaryTint: Color = .blue
   let deleteAction: Action
+  var onTap: (() -> Void)? = nil
   let onDismiss: () -> Void
 
   var body: some View {
-    LiftedRowFocus(rowFrame: rowFrame, startsPressed: startsPressed, onDismiss: onDismiss) {
+    LiftedRowFocus(
+      rowFrame: rowFrame, startsPressed: startsPressed, onDismiss: onDismiss, onCardTap: onTap
+    ) {
       row
     } actions: { state in
       actions(state)

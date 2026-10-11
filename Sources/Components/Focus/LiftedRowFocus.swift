@@ -10,6 +10,8 @@ struct LiftedRowFocus<Card: View, Accessory: View, Actions: View>: View {
   let onDismiss: () -> Void
   /// Runs once the lift settles.
   var onLifted: () -> Void = {}
+  /// Runs once a tap on the card has set it back down.
+  var onCardTap: (() -> Void)? = nil
   @ViewBuilder let card: Card
   let accessory: (() -> Accessory)?
   @ViewBuilder let actions: (LiftedFocusState) -> Actions
@@ -30,7 +32,9 @@ struct LiftedRowFocus<Card: View, Accessory: View, Actions: View>: View {
       }
 
       card
-        .liftedCard(width: source.width, startsPressed: startsPressed, state: state)
+        .liftedCard(
+          width: source.width, startsPressed: startsPressed, state: state, onTap: onCardTap
+        )
         .position(state.isInPlace ? layout.cardCenter : CGPoint(x: source.midX, y: source.midY))
 
       actions(state)
@@ -45,6 +49,7 @@ extension LiftedRowFocus where Accessory == EmptyView {
     startsPressed: Bool,
     onDismiss: @escaping () -> Void,
     onLifted: @escaping () -> Void = {},
+    onCardTap: (() -> Void)? = nil,
     @ViewBuilder card: () -> Card,
     @ViewBuilder actions: @escaping (LiftedFocusState) -> Actions
   ) {
@@ -53,6 +58,7 @@ extension LiftedRowFocus where Accessory == EmptyView {
       startsPressed: startsPressed,
       onDismiss: onDismiss,
       onLifted: onLifted,
+      onCardTap: onCardTap,
       card: card,
       accessory: nil,
       actions: actions)
