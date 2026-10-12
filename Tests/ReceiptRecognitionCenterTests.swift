@@ -476,7 +476,7 @@ final class ReceiptRecognitionCenterTests: XCTestCase {
         document: document))
     let others = (1..<ReadingAccess.freeReadLimit).map { "other-\($0)" }
     let access = ReadingAccess(
-      client: .fixed(isEntitled: false), store: .memory(Set([key] + others)))
+      client: .fixed(isEntitled: false), store: .memory(Set([key] + others)), isUnlocked: false)
     let center = makeCenter(
       storage: makeDeferredStorage(document: document, save: { await recorder.append($0) }),
       access: access)

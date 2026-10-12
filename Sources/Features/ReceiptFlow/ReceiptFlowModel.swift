@@ -104,14 +104,6 @@ final class ReceiptFlowModel {
     }
   }
 
-  /// Whether the model is reading the receipt, or preparing to.
-  var isRecognizing: Bool {
-    switch phase {
-    case .preparingRead, .recognizing, .rescanning: true
-    default: false
-    }
-  }
-
   var failure: Failure? {
     guard case .failed(let failure) = phase else { return nil }
     return failure

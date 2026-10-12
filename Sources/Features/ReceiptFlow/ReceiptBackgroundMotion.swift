@@ -1,73 +1,26 @@
 import SwiftUI
 
-/// The shared motion of a receipt's backgrounds. Every page of a receipt reads the same motion,
-/// so they always show the same frame. The wash drifts only while the receipt is being read and
-/// otherwise rests, which lets its backgrounds stop redrawing.
-@MainActor
-@Observable
-final class ReceiptBackgroundMotion {
+/// The shared motion of a receipt's backgrounds. The wash drifts on a fixed cycle measured from
+/// `origin`, so every page that reads the same motion draws the same frame at the same moment and
+/// moving between pages never jumps.
+struct ReceiptBackgroundMotion: Sendable {
   let pattern: ReceiptBackgroundMotionPattern
-  /// Whether the wash is still. Resting backgrounds pause their timelines.
-  private(set) var isResting: Bool
-  @ObservationIgnored private var mode: Mode
-  @ObservationIgnored private var settleTask: Task<Void, Never>?
+  let origin: Date
 
-  private enum Mode {
-    case resting
-    case drifting(origin: Date)
-    case settling(from: Float, start: Date)
-  }
+  static let period: TimeInterval = 18
 
-  static let driftPeriod: TimeInterval = 18
-  static let settleDuration: TimeInterval = 1.6
+  /// Motion for backgrounds outside a receipt, which have no shared motion of their own.
+  static let standalone = ReceiptBackgroundMotion()
 
   /// Creates motion whose wash layout derives from `seed`, so a receipt looks the same each time
-  /// it opens.
-  init(seed: UUID = UUID(), isDrifting: Bool = false, now: Date = .now) {
+  /// it opens. The wash starts from its resting frame at `origin`.
+  init(seed: UUID = UUID(), origin: Date = .now) {
     pattern = ReceiptBackgroundMotionPattern(seed: seed)
-    mode = isDrifting ? .drifting(origin: now) : .resting
-    isResting = !isDrifting
+    self.origin = origin
   }
 
   func phase(at date: Date) -> Float {
-    switch mode {
-    case .resting:
-      return 0
-    case .drifting(let origin):
-      let elapsed = date.timeIntervalSince(origin)
-      return Float(sin(elapsed / Self.driftPeriod * 2 * .pi))
-    case .settling(let from, let start):
-      let progress = min(1, max(0, date.timeIntervalSince(start) / Self.settleDuration))
-      let eased = progress * progress * (3 - 2 * progress)
-      return from * Float(1 - eased)
-    }
-  }
-
-  /// Starts drifting from the current frame.
-  func drift(now: Date = .now) {
-    if case .drifting = mode { return }
-    settleTask?.cancel()
-    let current = Double(max(-1, min(1, phase(at: now))))
-    let offset = asin(current) / (2 * .pi) * Self.driftPeriod
-    mode = .drifting(origin: now.addingTimeInterval(-offset))
-    isResting = false
-  }
-
-  /// Eases from the current frame to the resting frame, then stops redrawing.
-  func settle(now: Date = .now) {
-    guard case .drifting = mode else { return }
-    mode = .settling(from: phase(at: now), start: now)
-    settleTask = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(Self.settleDuration))
-      guard !Task.isCancelled else { return }
-      self?.rest()
-    }
-  }
-
-  func rest() {
-    settleTask?.cancel()
-    mode = .resting
-    isResting = true
+    Float(sin(date.timeIntervalSince(origin) / Self.period * 2 * .pi))
   }
 }
 

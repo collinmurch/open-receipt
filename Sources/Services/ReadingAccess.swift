@@ -23,13 +23,15 @@ final class ReadingAccess {
   init(
     client: PurchaseClient,
     store: FreeReadStore,
-    isUnlocked: Bool = false,
+    isUnlocked: Bool? = nil,
     defaults: UserDefaults = .standard,
     resolveChannel: @escaping @Sendable () async -> BuildChannel = BuildChannel.resolve
   ) {
     self.client = client
     self.store = store
-    self.isUnlocked = isUnlocked
+    // Starting from the purchase found last time keeps a buyer from looking locked, and from
+    // using a free read, until the App Store answers.
+    self.isUnlocked = isUnlocked ?? defaults.bool(forKey: Self.lastKnownUnlockedKey)
     self.defaults = defaults
     self.resolveChannel = resolveChannel
     usedReads = store.load()
@@ -41,6 +43,7 @@ final class ReadingAccess {
       client: .fixed(isEntitled: true),
       store: .memory(),
       isUnlocked: true,
+      defaults: UserDefaults(suiteName: "ReadingAccess.unlimited") ?? .standard,
       resolveChannel: { .appStore })
   }
 
@@ -55,9 +58,12 @@ final class ReadingAccess {
 
   /// Follows purchases and the free read record for as long as the calling task runs.
   func start() async {
-    // The channel decides whether a purchase removed in testing counts, so it comes first.
+    // The purchase is looked up while the channel resolves, since both can wait on the App Store.
+    // The channel decides whether a purchase removed in testing counts, so it's applied first.
+    let client = client
+    async let isEntitled = client.isEntitled()
     channel = await resolveChannel()
-    await refresh()
+    apply(isEntitled: await isEntitled)
     // Writing the whole record back restores any store that was cleared.
     if !usedReads.isEmpty { store.save(usedReads) }
     let updates = client.updates()
@@ -78,8 +84,12 @@ final class ReadingAccess {
   }
 
   func refresh() async {
-    let isEntitled = await client.isEntitled()
+    apply(isEntitled: await client.isEntitled())
+  }
+
+  private func apply(isEntitled: Bool) {
     isUnlocked = isEntitled && !(channel.isTesting && isPurchaseRemovedForTesting)
+    defaults.set(isUnlocked, forKey: Self.lastKnownUnlockedKey)
     mergeStoredReads()
   }
 
@@ -158,6 +168,7 @@ final class ReadingAccess {
   }
 
   private static let removedPurchaseKey = "TestingPurchaseRemoved"
+  private static let lastKnownUnlockedKey = "LastKnownUnlimitedReading"
 
   private func mergeStoredReads() {
     let stored = store.load()

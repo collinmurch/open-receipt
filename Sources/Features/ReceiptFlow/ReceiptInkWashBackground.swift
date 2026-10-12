@@ -13,25 +13,23 @@ struct ReceiptInkWashBackground: View {
   let style: ReceiptBackgroundStyle
   @State private var isVisible = true
   @State private var isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-  /// Resting motion for a background shown outside a receipt, which has no shared motion. It is
-  /// static because a `@State` initial value is rebuilt, and discarded, on every parent update.
-  private static let restingMotion = ReceiptBackgroundMotion()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.receiptBackgroundMotion) private var sharedMotion
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    let motion = sharedMotion ?? Self.restingMotion
+    let motion = sharedMotion ?? .standalone
     let palette = style.inkWashPalette(for: colorScheme)
     let pattern = motion.pattern
     let isDark = colorScheme == .dark
+    // A still wash holds the resting frame rather than wherever it stopped, so pages opened at
+    // different times still match.
+    let isStill = reduceMotion || isLowPowerModeEnabled
 
     TimelineView(
-      .animation(
-        minimumInterval: 1 / 30,
-        paused: reduceMotion || isLowPowerModeEnabled || !isVisible || motion.isResting)
+      .animation(minimumInterval: 1 / 30, paused: isStill || !isVisible)
     ) { context in
-      let phase = reduceMotion ? 0 : motion.phase(at: context.date)
+      let phase = isStill ? 0 : motion.phase(at: context.date)
       Rectangle()
         .visualEffect { content, proxy in
           content.colorEffect(

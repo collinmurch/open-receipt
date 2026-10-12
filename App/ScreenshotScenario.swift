@@ -1,8 +1,8 @@
 #if DEBUG
   import SwiftUI
 
-  /// A fixed app state that `make previews` launches into. The capture tests pass
-  /// `-ScreenshotScenario <kind>` and `-ScreenshotReceipt <path to scene JSON>`.
+  /// A fixed app state that `make previews` and `make screenshot` launch into. The capture tests
+  /// pass `-ScreenshotScenario <kind>` and `-ScreenshotReceipt <path to scene JSON>`.
   struct ScreenshotScenario {
     enum Kind: String {
       /// A receipt partway through being read.
@@ -20,6 +20,16 @@
       /// The unlimited reading purchase over the library, after the free reads are used. It is
       /// uploaded for App Review rather than shown on the App Store.
       case paywall
+      /// A read receipt's items, before anyone is added to it.
+      case review
+      /// A read receipt asking about its tip, as it does right after reading.
+      case tip
+      /// The saved people, after splitting the requests scenario's receipt with them.
+      case people
+      /// Settings.
+      case settings
+      /// Recently Deleted, holding a few receipts from the library.
+      case recentlyDeleted
     }
 
     let kind: Kind
@@ -121,7 +131,38 @@
         let usedReads = (1...ReadingAccess.freeReadLimit).map { "screenshot-\($0)" }
         return stage(
           [],
-          access: ReadingAccess(client: .fixed(isEntitled: false), store: .memory(Set(usedReads))))
+          access: ReadingAccess(
+            client: .fixed(isEntitled: false), store: .memory(Set(usedReads)), isUnlocked: false))
+
+      case .review, .tip:
+        var document = try await Self.storeRead(
+          scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
+        if kind == .review {
+          let draft = try ReceiptDraft(document: document)
+          for adjustment in draft.unconfirmedAdjustments {
+            draft.stopAsking(about: adjustment)
+          }
+          document = document.updating(from: draft)
+          try await storage.save(document)
+        }
+        return stage([
+          .receipt(
+            .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
+        ])
+
+      case .people:
+        _ = try await storeSplit(scan, storage: storage, people: people, completes: true)
+        return stage([.people])
+
+      case .settings:
+        return stage([.settings])
+
+      case .recentlyDeleted:
+        try await storeLibrary(scan, page: page, storage: storage)
+        for receipt in try await storage.list().prefix(3) {
+          try await storage.delete(receipt.id)
+        }
+        return stage([.recentlyDeleted])
       }
     }
 
@@ -233,7 +274,7 @@
       // as the split screen.
       let groupName =
         switch kind {
-        case .share: Kind.requests.rawValue
+        case .share, .people: Kind.requests.rawValue
         case .breakdowns: Kind.split.rawValue
         default: kind.rawValue
         }
@@ -327,6 +368,7 @@
       Group {
         if let stage {
           HomeView(initialPath: stage.path)
+            .screenshotHighlight(ScreenshotHighlights.readyName)
             .unlimitedReadingSheet(isPresented: $showsUnlimitedReading)
             .environment(stage.library)
             .environment(stage.recognitions)

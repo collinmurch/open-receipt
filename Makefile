@@ -27,6 +27,8 @@ SCREENSHOT_SIMULATOR = platform=iOS Simulator,name=iPhone 17 Pro Max,OS=latest
 SCREENSHOT_CAPTURES  = $(ASSETS)/ScreenshotData
 SCREENSHOT_RECEIPT   = $(ASSETS)/Receipts/example-receipt.json
 SCREENSHOT_OUTPUT    = $(ASSETS)/Previews
+DEV_SCREENSHOTS      = $(BUILD_DIR)/screenshots
+DEV_SCREENSHOT_KINDS = $(filter-out breakdowns,$(shell awk '/enum Kind/,/^    }/' App/ScreenshotScenario.swift | grep -oE 'case [a-zA-Z]+' | cut -d' ' -f2))
 BASE_SPEC     = project.yml
 LOCAL_SPEC    = project.local.yml
 CURRENT_TEAM  := $(shell if [ -f "$(PROJECT)/project.pbxproj" ]; then rg -o 'DEVELOPMENT_TEAM = [A-Z0-9]+' "$(PROJECT)/project.pbxproj" | head -1 | awk '{print $$3}'; elif [ -f "$(LOCAL_SPEC)" ]; then awk '/DEVELOPMENT_TEAM:/ {print $$2; exit}' "$(LOCAL_SPEC)"; fi)
@@ -148,7 +150,7 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, hea
 			-scheme Screenshots \
 			-destination '$(SCREENSHOT_SIMULATOR)' \
 			-derivedDataPath $(BUILD_DIR)/derived \
-			$(if $(of),-only-testing:ScreenshotCapture/ScreenshotCapture/test$$(echo "$(of)" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')) \
+			-only-testing:ScreenshotCapture/StoreScreenshots$(if $(of),/test$$(echo "$(of)" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')) \
 			2>&1 | xcbeautify || exit $$?; \
 	elif [ ! -d "$(SCREENSHOT_CAPTURES)/light" ]; then \
 		echo "No capture in $(SCREENSHOT_CAPTURES). Run make previews first." >&2; exit 66; \
@@ -159,6 +161,48 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, hea
 		--assets "$(ASSETS)" \
 		--output "$(SCREENSHOT_OUTPUT)" \
 		$(if $(of),--only "$(of)")
+
+# Flags: of=<scenario> name=<file name> appearance=light|dark|both device=<simulator name>
+#        clean=1 deletes every capture, or only the one named by name= or of=.
+# Writes <name>-<appearance>.png and <name>.txt (the accessibility tree) to .build/screenshots.
+.PHONY: screenshot
+screenshot: $(if $(clean),,gen) ## Capture one app screen to .build/screenshots for checking UI work. clean=1 deletes captures.
+	@set -o pipefail; \
+	dir="$(abspath $(DEV_SCREENSHOTS))"; \
+	file='$(or $(name),$(of))'; \
+	captures() { for suffix in -light.png -dark.png .txt -failure.png -failure.txt; do \
+		echo "$$dir/$$file$$suffix"; done; }; \
+	if [ -n "$(clean)" ]; then \
+		if [ -n "$$file" ]; then \
+			captures | while read -r path; do rm -f "$$path"; done; \
+			echo "Removed $$file captures from $$dir"; \
+		else \
+			rm -rf "$$dir"; echo "Removed $$dir"; \
+		fi; \
+		exit 0; \
+	fi; \
+	if [ -z "$(of)" ] || ! echo " $(DEV_SCREENSHOT_KINDS) " | grep -q " $(of) "; then \
+		echo "Choose a screen with of=<scenario>: $(DEV_SCREENSHOT_KINDS)" >&2; exit 64; \
+	fi; \
+	case '$(appearance)' in ''|light|dark|both) ;; \
+		*) echo "Use appearance=light, dark, or both." >&2; exit 64;; \
+	esac; \
+	mkdir -p "$$dir"; \
+	TEST_RUNNER_SCREENSHOTS_SCENARIO='$(of)' \
+	TEST_RUNNER_SCREENSHOTS_NAME='$(name)' \
+	TEST_RUNNER_SCREENSHOTS_APPEARANCE='$(appearance)' \
+	TEST_RUNNER_SCREENSHOTS_OUTPUT="$$dir" \
+	TEST_RUNNER_SCREENSHOTS_RECEIPT="$(abspath $(SCREENSHOT_RECEIPT))" \
+	xcodebuild test \
+		-project $(PROJECT) \
+		-scheme Screenshots \
+		-destination '$(SIMULATOR)' \
+		-derivedDataPath $(BUILD_DIR)/derived \
+		-only-testing:ScreenshotCapture/DevScreenshot/testScreen \
+		2>&1 | xcbeautify --quieter --is-ci --disable-logging; \
+	status=$${PIPESTATUS[0]}; \
+	captures | while read -r path; do [ ! -f "$$path" ] || echo "$$path"; done; \
+	exit $$status
 
 # ─── Build / Test ─────────────────────────────────────────────────────────────
 .PHONY: build

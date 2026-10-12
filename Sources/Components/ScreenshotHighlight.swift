@@ -38,6 +38,9 @@ enum ScreenshotHighlights {
     #endif
   }()
 
+  /// Recorded once a scenario's screen is in place, so captures know the app is ready.
+  static let readyName = "scenario-ready"
+
   private static let url = UserDefaults.standard.string(forKey: "ScreenshotHighlights")
     .map { URL(filePath: $0) }
   private static var frames: [String: CGRect] = [:]

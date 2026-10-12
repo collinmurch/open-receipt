@@ -26,7 +26,6 @@ final class ReceiptFlowRescanTests: XCTestCase, ReceiptFlowTesting {
     guard case .rescanning = model.phase else {
       return XCTFail("Expected rescanning phase")
     }
-    XCTAssertTrue(model.isRecognizing)
   }
 
   func testRescanReadsReceiptAgain() async throws {

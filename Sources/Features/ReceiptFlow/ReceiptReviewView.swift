@@ -34,7 +34,6 @@ struct ReceiptReviewView: View {
   @State private var isPagesPresented = false
   @State private var haptic = HapticEvent()
   @Namespace private var sheetTransition
-  @Environment(\.receiptBackgroundMotion) private var motion
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.colorScheme) private var colorScheme
@@ -79,7 +78,6 @@ struct ReceiptReviewView: View {
       }
       .sheet(isPresented: $isPagesPresented) {
         ReceiptPagesView(receiptID: draft.id, editor: pages, style: draft.backgroundStyle)
-          .environment(\.receiptBackgroundMotion, motion)
       }
       .haptics(haptic)
       .sensoryFeedback(.success, trigger: draft.isCompleted) { wasCompleted, isCompleted in

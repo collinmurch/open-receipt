@@ -3,19 +3,7 @@ import XCTest
 /// Captures App Store screens from scripted app states. Run through `make previews`, which
 /// passes `SCREENSHOTS_OUTPUT` and `SCREENSHOTS_RECEIPT`. Each shot is written in light and dark
 /// appearance as a PNG beside JSON manifests that `ScreenshotComposer` reads.
-final class ScreenshotCapture: XCTestCase {
-  /// Where the running app records highlighted frames.
-  private var highlights: URL?
-
-  override func setUp() {
-    super.setUp()
-    continueAfterFailure = false
-  }
-
-  override func tearDown() async throws {
-    await MainActor.run { XCUIDevice.shared.appearance = .light }
-  }
-
+final class StoreScreenshots: ScenarioTestCase {
   @MainActor
   func testReading() throws {
     let rows = 8
@@ -146,18 +134,8 @@ final class ScreenshotCapture: XCTestCase {
       return directory
     }
     let highlights = root.appending(path: "\(name).highlights.json")
-    try? FileManager.default.removeItem(at: highlights)
-    self.highlights = highlights
-
-    XCUIDevice.shared.appearance = .light
-    let app = XCUIApplication()
-    app.launchArguments =
-      [
-        "-ScreenshotScenario", scenario,
-        "-ScreenshotReceipt", receipt,
-        "-ScreenshotHighlights", highlights.path,
-      ] + arguments
-    app.launch()
+    let app = launch(
+      scenario: scenario, receipt: receipt, highlights: highlights, arguments: arguments)
     defer { app.terminate() }
 
     for (appearance, directory) in zip(Appearance.allCases, directories) {
@@ -169,10 +147,7 @@ final class ScreenshotCapture: XCTestCase {
         }
         try waitForHighlight(highlight)
       } catch {
-        try XCUIScreen.main.screenshot().pngRepresentation.write(
-          to: directory.appending(path: "\(name)-failure.png"))
-        try Data(app.debugDescription.utf8).write(
-          to: directory.appending(path: "\(name)-failure.txt"))
+        try writeFailure(of: app, named: name, to: directory)
         throw error
       }
       settle(for: 1)
@@ -192,49 +167,11 @@ final class ScreenshotCapture: XCTestCase {
     try FileManager.default.removeItem(at: highlights)
   }
 
-  /// Waits until the running app has recorded where `name` is drawn.
-  private func waitForHighlight(_ name: String) throws {
-    let deadline = Date().addingTimeInterval(10)
-    while Date() < deadline {
-      if let highlights,
-        let data = try? Data(contentsOf: highlights),
-        let frames = try? JSONDecoder().decode([String: CGRect].self, from: data),
-        frames[name] != nil
-      {
-        return
-      }
-      settle(for: 0.25)
-    }
-    throw CaptureError.highlightNeverDrawn(name)
-  }
-
   /// Scrolls the payments page down to its group breakdown button, which otherwise rests under
   /// the page switcher.
   private func scrollPaymentsToEnd(_ app: XCUIApplication) {
     app.swipeUp()
     settle(for: 1)
-  }
-
-  private func settle(for seconds: TimeInterval) {
-    let settled = XCTestExpectation(description: "Animations settle")
-    _ = XCTWaiter.wait(for: [settled], timeout: seconds)
-  }
-}
-
-private enum Appearance: String, CaseIterable {
-  case light
-  case dark
-}
-
-private enum CaptureError: Error, CustomStringConvertible {
-  case highlightNeverDrawn(String)
-  case breakdownsNeverWritten
-
-  var description: String {
-    switch self {
-    case .highlightNeverDrawn(let name): "The app never drew \(name)."
-    case .breakdownsNeverWritten: "The app never wrote the breakdown slips."
-    }
   }
 }
 

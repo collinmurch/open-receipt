@@ -242,6 +242,63 @@ final class ReadingAccessTests: XCTestCase {
     XCTAssertTrue(access.isUnlocked)
   }
 
+  func testStartsLockedBeforeAnyPurchaseIsFound() {
+    let access = makeAccess(client: .fixed(isEntitled: true))
+
+    XCTAssertFalse(access.isUnlocked)
+  }
+
+  func testStartsUnlockedWhenPurchaseWasFoundBefore() async {
+    let defaults = isolatedDefaults()
+    let earlier = makeAccess(client: .fixed(isEntitled: true), defaults: defaults)
+    await earlier.start()
+
+    let access = makeAccess(client: .fixed(isEntitled: false), defaults: defaults)
+
+    XCTAssertTrue(access.isUnlocked)
+  }
+
+  func testUnlockedFromBeforeAdmitsWithoutUsingRead() async {
+    let defaults = isolatedDefaults()
+    await makeAccess(client: .fixed(isEntitled: true), defaults: defaults).refresh()
+    let access = makeAccess(client: .fixed(isEntitled: true), defaults: defaults)
+
+    XCTAssertTrue(access.admit("new"))
+    XCTAssertEqual(access.freeReadsLeft, ReadingAccess.freeReadLimit)
+  }
+
+  func testStartLocksWhenPurchaseIsGone() async {
+    let defaults = isolatedDefaults()
+    await makeAccess(client: .fixed(isEntitled: true), defaults: defaults).start()
+    let access = makeAccess(client: .fixed(isEntitled: false), defaults: defaults)
+
+    await access.start()
+
+    XCTAssertFalse(access.isUnlocked)
+  }
+
+  func testGonePurchaseIsRemembered() async {
+    let defaults = isolatedDefaults()
+    await makeAccess(client: .fixed(isEntitled: true), defaults: defaults).start()
+    await makeAccess(client: .fixed(isEntitled: false), defaults: defaults).start()
+
+    let access = makeAccess(client: .fixed(isEntitled: true), defaults: defaults)
+
+    XCTAssertFalse(access.isUnlocked)
+  }
+
+  func testRemovedPurchaseIsRememberedWhileTesting() async {
+    let defaults = isolatedDefaults()
+    let testing = makeAccess(
+      client: .fixed(isEntitled: true), channel: .testFlight, defaults: defaults)
+    await testing.start()
+    await testing.removePurchaseForTesting()
+
+    let access = makeAccess(client: .fixed(isEntitled: true), defaults: defaults)
+
+    XCTAssertFalse(access.isUnlocked)
+  }
+
   /// A read key for every free read.
   private func usedReads() -> Set<String> {
     Set((1...ReadingAccess.freeReadLimit).map { "used-\($0)" })

@@ -12,10 +12,8 @@ struct ReceiptFlowView: View {
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
 
   init(input: ReceiptFlowInput) {
-    let model = ReceiptFlowModel(input: input)
-    _model = State(initialValue: model)
-    _motion = State(
-      initialValue: ReceiptBackgroundMotion(seed: input.id, isDrifting: model.isRecognizing))
+    _model = State(initialValue: ReceiptFlowModel(input: input))
+    _motion = State(initialValue: ReceiptBackgroundMotion(seed: input.id))
   }
 
   var body: some View {
@@ -29,13 +27,6 @@ struct ReceiptFlowView: View {
         case (.recognizing, .failed): model.failure?.isError == true ? .error : .warning
         case (_, .failed): model.failure?.isError == true ? .error : nil
         default: nil
-        }
-      }
-      .onChange(of: model.isRecognizing) { _, isRecognizing in
-        if isRecognizing {
-          motion.drift()
-        } else {
-          motion.settle()
         }
       }
       .task(id: model.workID) {

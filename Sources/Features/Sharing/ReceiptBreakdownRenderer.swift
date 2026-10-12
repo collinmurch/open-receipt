@@ -7,19 +7,15 @@ enum ReceiptBreakdownRenderer {
   static let width: CGFloat = 390
   static let scale: CGFloat = 3
 
-  /// Recently drawn cards, newest last. A breakdown is a snapshot of everything its card shows,
-  /// so an equal breakdown always draws the same image.
-  private static var drawings: [Drawing] = []
-  private static let drawingLimit = 16
+  /// Recently drawn cards, costed by their bitmap size. The cache lets go of them under memory
+  /// pressure, and a card it dropped is drawn again when it's next needed.
+  private static let drawings: NSCache<DrawingKey, Drawing> = {
+    let cache = NSCache<DrawingKey, Drawing>()
+    cache.totalCostLimit = 32 * 1024 * 1024
+    return cache
+  }()
 
-  private struct Drawing {
-    let breakdown: ReceiptBreakdown
-    let image: UIImage?
-    let png: Task<Data?, Never>
-  }
-
-  /// The breakdown's card, drawn once and reused. Drawing it also starts encoding its PNG, so a
-  /// share or message that follows finds it ready.
+  /// The breakdown's card, drawn once and reused.
   @discardableResult
   static func image(for breakdown: ReceiptBreakdown) -> UIImage? {
     drawing(for: breakdown).image
@@ -28,6 +24,13 @@ enum ReceiptBreakdownRenderer {
   /// The breakdown's card encoded as a PNG.
   static func pngData(for breakdown: ReceiptBreakdown) async -> Data? {
     await drawing(for: breakdown).png.value
+  }
+
+  /// Starts encoding each breakdown's PNG, so encodes awaited one by one run side by side.
+  static func preparePNGData(for breakdowns: [ReceiptBreakdown]) {
+    for breakdown in breakdowns {
+      _ = drawing(for: breakdown).png
+    }
   }
 
   static func pdfData(for breakdown: ReceiptBreakdown) -> Data? {
@@ -45,20 +48,15 @@ enum ReceiptBreakdownRenderer {
     return data.length > 0 ? data as Data : nil
   }
 
-  /// Drawing has to happen on the main actor, but encoding doesn't, so it runs detached.
   private static func drawing(for breakdown: ReceiptBreakdown) -> Drawing {
-    if let cached = drawings.first(where: { $0.breakdown == breakdown }) {
+    let key = DrawingKey(breakdown)
+    if let cached = drawings.object(forKey: key) {
       return cached
     }
     let renderer = renderer(for: breakdown)
     renderer.scale = scale
-    let image = renderer.uiImage
-    let drawing = Drawing(
-      breakdown: breakdown,
-      image: image,
-      png: Task.detached(priority: .userInitiated) { image?.pngData() })
-    drawings.append(drawing)
-    if drawings.count > drawingLimit { drawings.removeFirst() }
+    let drawing = Drawing(image: renderer.uiImage)
+    drawings.setObject(drawing, forKey: key, cost: drawing.cost)
     return drawing
   }
 
@@ -71,5 +69,43 @@ enum ReceiptBreakdownRenderer {
     renderer.proposedSize = ProposedViewSize(width: width, height: nil)
     renderer.isOpaque = true
     return renderer
+  }
+}
+
+/// A breakdown as a cache key. A breakdown is a snapshot of everything its card shows, so an equal
+/// breakdown always draws the same image.
+private final class DrawingKey: NSObject {
+  let breakdown: ReceiptBreakdown
+
+  init(_ breakdown: ReceiptBreakdown) {
+    self.breakdown = breakdown
+  }
+
+  override var hash: Int {
+    breakdown.title.hashValue
+  }
+
+  override func isEqual(_ object: Any?) -> Bool {
+    (object as? DrawingKey)?.breakdown == breakdown
+  }
+}
+
+@MainActor
+private final class Drawing {
+  let image: UIImage?
+
+  init(image: UIImage?) {
+    self.image = image
+  }
+
+  /// The card's PNG, encoded the first time it's asked for. Drawing has to happen on the main
+  /// actor, but encoding doesn't, so it runs detached.
+  lazy var png: Task<Data?, Never> = Task.detached(priority: .userInitiated) { [image] in
+    image?.pngData()
+  }
+
+  var cost: Int {
+    guard let image = image?.cgImage else { return 0 }
+    return image.bytesPerRow * image.height
   }
 }

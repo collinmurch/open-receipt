@@ -13,7 +13,6 @@ final class ReceiptFlowReadingTests: XCTestCase, ReceiptFlowTesting {
       return XCTFail("Expected recognizing phase")
     }
     XCTAssertTrue(active === recognition)
-    XCTAssertTrue(model.isRecognizing)
   }
 
   func testSuccessfulRecognitionCreatesReviewDraft() async {
@@ -25,7 +24,6 @@ final class ReceiptFlowReadingTests: XCTestCase, ReceiptFlowTesting {
     await model.performWork(using: center, storage: storage)
 
     XCTAssertEqual(model.reviewingDraft?.merchantName, "Juniper Market")
-    XCTAssertFalse(model.isRecognizing)
   }
 
   func testFailedRecognitionCanRetry() async {
@@ -149,7 +147,6 @@ final class ReceiptFlowReadingTests: XCTestCase, ReceiptFlowTesting {
     guard case .storing = model.phase else {
       return XCTFail("Expected storing phase")
     }
-    XCTAssertFalse(model.isRecognizing)
     XCTAssertNil(center.recognition(for: scan.id))
   }
 }

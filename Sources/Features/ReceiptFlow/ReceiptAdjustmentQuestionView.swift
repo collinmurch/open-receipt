@@ -30,7 +30,15 @@ struct ReceiptAdjustmentQuestionView: View {
     .defaultScrollAnchor(.center, for: .alignment)
     .scrollBounceBehavior(.basedOnSize)
     .scrollDismissesKeyboard(.interactively)
-    .receiptBottomBar { actions }
+    .receiptBottomBar { addButton }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Skip") {
+          isAmountFocused = false
+          draft.stopAsking(about: adjustment)
+        }
+      }
+    }
     .tint(draft.backgroundStyle.accentColor(for: colorScheme))
     .navigationTitle(draft.merchantName.isEmpty ? "Receipt" : draft.merchantName)
     .navigationBarTitleDisplayMode(.inline)
@@ -101,30 +109,17 @@ struct ReceiptAdjustmentQuestionView: View {
     .frame(maxWidth: .infinity)
   }
 
-  private var actions: some View {
-    GlassEffectContainer(spacing: 12) {
-      HStack(spacing: 12) {
-        Button {
-          isAmountFocused = false
-          draft.stopAsking(about: adjustment)
-        } label: {
-          GlassActionLabel(title: "No \(adjustment.title)", systemImage: "xmark")
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .capsule)
-
-        ReceiptActionButton(
-          title: "Add \(adjustment.title)",
-          systemImage: "checkmark",
-          tint: draft.backgroundStyle.prominentColor
-        ) {
-          isAmountFocused = false
-          draft.confirm(adjustment, amount: amount)
-        }
-        .disabled(amount <= 0)
-        .opacity(amount > 0 ? 1 : 0.5)
-      }
+  private var addButton: some View {
+    ReceiptActionButton(
+      title: "Add \(adjustment.title)",
+      systemImage: "checkmark",
+      tint: draft.backgroundStyle.prominentColor
+    ) {
+      isAmountFocused = false
+      draft.confirm(adjustment, amount: amount)
     }
+    .disabled(amount <= 0)
+    .opacity(amount > 0 ? 1 : 0.5)
   }
 
   private static func presets(
