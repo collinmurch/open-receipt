@@ -40,8 +40,6 @@ struct SettingsView: View {
         }
       } header: {
         Text("Default Currency")
-      } footer: {
-        Text("New receipts start in this currency.")
       }
 
       Section {
@@ -54,8 +52,15 @@ struct SettingsView: View {
         .pickerStyle(.menu)
       } header: {
         Text("Default Split")
-      } footer: {
-        Text("New receipts split tax and tip this way.")
+      }
+
+      Section {
+        ForEach(Array(zip(TipSettings.percentageKeys, TipSettings.initialPercentages)), id: \.0) {
+          key, initial in
+          TipPercentageStepper(key: key, initial: initial)
+        }
+      } header: {
+        Text("Tip Suggestions")
       }
 
       UnlimitedReadingSection(
@@ -104,6 +109,22 @@ struct SettingsView: View {
     }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
+  }
+}
+
+/// One suggested tip percentage.
+private struct TipPercentageStepper: View {
+  @AppStorage private var percentage: Int
+
+  init(key: String, initial: Int) {
+    _percentage = AppStorage(wrappedValue: initial, key)
+  }
+
+  var body: some View {
+    Stepper(value: $percentage, in: TipSettings.percentageRange) {
+      Text(Double(percentage).formatted(.percent.scale(1)))
+        .monospacedDigit()
+    }
   }
 }
 

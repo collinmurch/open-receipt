@@ -1,17 +1,11 @@
 import SwiftUI
 
-private enum AdjustmentInputMode: CaseIterable, Identifiable {
-  case amount
-  case percentage
-
-  var id: Self { self }
-}
-
 struct ReceiptTotalsSection: View {
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
   @Binding var haptic: HapticEvent
-  @State private var tipInputMode = AdjustmentInputMode.amount
+  @State private var isTipCustom = false
+  @FocusState private var isTipFocused: Bool
   @State private var savingsInputMode = AdjustmentInputMode.amount
   @FocusState private var focusedField: ReceiptAmountField?
 
@@ -21,16 +15,14 @@ struct ReceiptTotalsSection: View {
 
     Section {
       if isEditing {
-        editingRows(
-          showsSubtotal: showsSubtotal, expectedSubtotal: expectedSubtotal,
-          expectedTotal: expectedTotal)
+        editingRows(expectedSubtotal: expectedSubtotal, expectedTotal: expectedTotal)
       } else {
         summaryRows(
           showsSubtotal: showsSubtotal, expectedSubtotal: expectedSubtotal,
           expectedTotal: expectedTotal)
       }
     } header: {
-      header
+      Text("Totals")
     } footer: {
       if isEditing, expectedTotal != nil {
         fixTotalButton
@@ -38,32 +30,18 @@ struct ReceiptTotalsSection: View {
     }
   }
 
+  /// Every adjustment keeps its place while editing: its field when the receipt has it, and a row
+  /// that adds it when it doesn't.
   @ViewBuilder
-  private func editingRows(
-    showsSubtotal: Bool,
-    expectedSubtotal: Double?,
-    expectedTotal: Double?
-  ) -> some View {
-    if showsSubtotal {
-      amountField(
-        "Subtotal", field: .subtotal, value: $draft.subtotal, expectedValue: expectedSubtotal)
-    }
-    if draft.adjustments.contains(.tax) {
-      adjustmentField(.tax, value: $draft.tax)
-    }
-    if draft.adjustments.contains(.tip) {
-      percentageAdjustmentField(
-        .tip,
-        amount: $draft.tip,
-        percentage: $draft.tipPercentage,
-        mode: $tipInputMode)
-    }
-    if draft.adjustments.contains(.savings) {
-      percentageAdjustmentField(
-        .savings,
-        amount: $draft.savings,
-        percentage: $draft.savingsPercentage,
-        mode: $savingsInputMode)
+  private func editingRows(expectedSubtotal: Double?, expectedTotal: Double?) -> some View {
+    amountField(
+      "Subtotal", field: .subtotal, value: $draft.subtotal, expectedValue: expectedSubtotal)
+    ForEach(ReceiptTotalAdjustment.allCases) { adjustment in
+      if draft.adjustments.contains(adjustment) {
+        adjustmentEditor(adjustment)
+      } else {
+        addAdjustmentRow(adjustment)
+      }
     }
     amountField(
       "Total",
@@ -92,28 +70,64 @@ struct ReceiptTotalsSection: View {
       expectedValue: expectedTotal)
   }
 
-  private var header: some View {
-    HStack {
-      Text("Totals")
-      if isEditing, !draft.adjustments.missing.isEmpty {
-        Menu {
-          ForEach(draft.adjustments.missing) { adjustment in
-            Button {
-              withAnimation(.settle) { draft.adjustments.add(adjustment) }
-              haptic.play(.selection)
-            } label: {
-              Label("Add \(adjustment.title)", systemImage: adjustment.systemImage)
-            }
-          }
-        } label: {
-          Label("Add Adjustment", systemImage: "plus")
-            .labelStyle(.iconOnly)
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel("Add Adjustment")
+  @ViewBuilder
+  private func adjustmentEditor(_ adjustment: ReceiptTotalAdjustment) -> some View {
+    switch adjustment {
+    case .tax:
+      adjustmentField(.tax, value: $draft.tax)
+    case .tip:
+      tipEditor
+    case .savings:
+      percentageAdjustmentField(
+        .savings,
+        amount: $draft.savings,
+        percentage: $draft.savingsPercentage,
+        mode: $savingsInputMode)
+    }
+  }
+
+  /// The tip, chosen from the suggested percentages or entered like the other amounts.
+  private var tipEditor: some View {
+    let presets = AdjustmentPreset.tips(of: draft.expectedSubtotal, currencyCode: displayCurrency)
+    let choice = AdjustmentChoice.binding(
+      amount: $draft.tip, isCustom: $isTipCustom, presets: presets)
+    return VStack(spacing: 12) {
+      LabeledContent {
+        AdjustmentAmountValue(
+          title: ReceiptTotalAdjustment.tip.title, amount: $draft.tip,
+          isCustom: choice.wrappedValue == .custom, base: draft.expectedSubtotal,
+          currencyCode: displayCurrency, isFocused: $isTipFocused)
+      } label: {
+        adjustmentLabel(.tip)
       }
-      Spacer()
+      .contentShape(.rect)
+      .onTapGesture {
+        withAnimation(.settle) { choice.wrappedValue = .custom }
+        isTipFocused = true
+      }
+      AdjustmentChoicePicker(
+        title: "Tip Amount", presets: presets, choice: choice.animation(.settle))
+    }
+  }
+
+  private func addAdjustmentRow(_ adjustment: ReceiptTotalAdjustment) -> some View {
+    Button {
+      withAnimation(.settle) {
+        draft.adjustments.add(adjustment)
+        if adjustment == .tip {
+          isTipCustom = false
+          let presets = AdjustmentPreset.tips(
+            of: draft.expectedSubtotal, currencyCode: displayCurrency)
+          draft.tip = presets.middle?.amount ?? 0
+        }
+      }
+      haptic.play(.selection)
+      // The field exists once the row has been replaced. A tip starts at a suggestion instead.
+      if adjustment != .tip {
+        Task { focusedField = .adjustment(adjustment) }
+      }
+    } label: {
+      AddRowLabel("Add \(adjustment.title)")
     }
   }
 
@@ -205,7 +219,7 @@ struct ReceiptTotalsSection: View {
       HStack {
         Picker("\(adjustment.title) format", selection: mode) {
           ForEach(AdjustmentInputMode.allCases) { option in
-            Text(label(for: option)).tag(option)
+            Text(option.label(currencyCode: displayCurrency)).tag(option)
           }
         }
         .pickerStyle(.segmented)
@@ -268,24 +282,7 @@ struct ReceiptTotalsSection: View {
     }
   }
 
-  private func label(for mode: AdjustmentInputMode) -> String {
-    switch mode {
-    case .amount: ReceiptCurrency.symbol(displayCurrency)
-    case .percentage: "%"
-    }
-  }
-
   private var displayCurrency: String {
     draft.displayCurrency
-  }
-}
-
-extension ReceiptTotalAdjustment {
-  fileprivate var systemImage: String {
-    switch self {
-    case .tax: "percent"
-    case .tip: "dollarsign"
-    case .savings: "tag"
-    }
   }
 }

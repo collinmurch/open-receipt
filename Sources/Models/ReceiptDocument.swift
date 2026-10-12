@@ -21,6 +21,9 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
   struct Presentation: Codable, Equatable, Sendable {
     var backgroundStyle: ReceiptBackgroundStyle
     var isCompleted = false
+    /// The tax and tip a read didn't find, which the receipt asks about when it opens. Absent
+    /// when there's nothing to ask, as in receipts saved before reads asked.
+    var unconfirmedAdjustments: [ReceiptTotalAdjustment]? = nil
   }
 
   struct Scan: Codable, Equatable, Sendable {

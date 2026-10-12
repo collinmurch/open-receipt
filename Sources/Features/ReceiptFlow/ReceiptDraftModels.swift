@@ -19,10 +19,6 @@ struct ReceiptTotalAdjustments: Equatable, Sendable {
     amounts.isEmpty
   }
 
-  var missing: [ReceiptTotalAdjustment] {
-    ReceiptTotalAdjustment.allCases.filter { amounts[$0] == nil }
-  }
-
   func contains(_ adjustment: ReceiptTotalAdjustment) -> Bool {
     amounts[adjustment] != nil
   }

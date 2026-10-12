@@ -46,6 +46,15 @@ extension ReceiptDraft {
     )
   }
 
+  /// The tax a receipt that doesn't show any most likely charged: what its total has beyond a
+  /// printed subtotal that matches the items. `nil` when the subtotal doesn't back that up, since
+  /// the difference could then be an item that wasn't read.
+  var impliedTax: Double? {
+    guard subtotal > 0, corrections.subtotal == nil else { return nil }
+    let difference = rounded(total - expectedTotal)
+    return difference > 0 ? difference : nil
+  }
+
   var savingsPercentage: Double {
     get {
       guard expectedSubtotal > 0 else { return 0 }
@@ -53,16 +62,6 @@ extension ReceiptDraft {
     }
     set {
       savings = rounded(max(0, expectedSubtotal * newValue / 100))
-    }
-  }
-
-  var tipPercentage: Double {
-    get {
-      guard expectedSubtotal > 0 else { return 0 }
-      return tip / expectedSubtotal * 100
-    }
-    set {
-      tip = rounded(max(0, expectedSubtotal * newValue / 100))
     }
   }
 

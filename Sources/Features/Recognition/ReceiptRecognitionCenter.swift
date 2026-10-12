@@ -389,6 +389,7 @@ final class ReceiptRecognitionCenter {
         id: document.id,
         owner: owner,
         backgroundStyle: document.presentation.backgroundStyle)
+    draft.askAboutMissingAdjustments()
     var completed = document.updating(from: draft)
     completed.recognition.contractVersion = ReceiptModelContract.version
     completed.recognition.lastAttemptedAt = attemptedAt

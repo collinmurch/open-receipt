@@ -18,6 +18,10 @@ final class ReceiptDraft {
     didSet { markDurableChange() }
   }
   private(set) var isCompleted: Bool
+  /// The tax and tip still to ask about, in the order they're asked.
+  private(set) var unconfirmedAdjustments: [ReceiptTotalAdjustment] {
+    didSet { markPersistedChange() }
+  }
   private(set) var participants: [ReceiptParticipant]
   private(set) var persistenceRevision = 0
   @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
@@ -46,6 +50,7 @@ final class ReceiptDraft {
     items = receipt.items.map { ReceiptDraftItem(item: $0) }
     self.adjustmentSplitMethod = adjustmentSplitMethod
     isCompleted = false
+    unconfirmedAdjustments = []
     participants = [.currentUser(owner: owner)]
   }
 
@@ -74,6 +79,7 @@ final class ReceiptDraft {
     items = state.items
     adjustmentSplitMethod = state.adjustmentSplitMethod
     isCompleted = state.isCompleted
+    unconfirmedAdjustments = state.unconfirmedAdjustments
     participants = state.participants
   }
 
@@ -224,6 +230,32 @@ final class ReceiptDraft {
       return item
     }
     if items != self.items { self.items = items }
+  }
+
+  /// Asks about the tax and tip a read didn't find. A read that found no items has nothing to
+  /// work them out from, so it asks nothing and the receipt opens to be fixed.
+  func askAboutMissingAdjustments() {
+    guard expectedSubtotal > 0 else {
+      unconfirmedAdjustments = []
+      return
+    }
+    unconfirmedAdjustments = ReceiptTotalAdjustment.confirmable.filter {
+      !adjustments.contains($0)
+    }
+  }
+
+  /// Records `amount` of `adjustment` and stops asking about it. A total that added up keeps
+  /// adding up, so a tip left after the receipt was printed raises it.
+  func confirm(_ adjustment: ReceiptTotalAdjustment, amount: Double) {
+    let addedUp = corrections.total == nil
+    adjustments[adjustment] = amount
+    if addedUp { fixTotal() }
+    stopAsking(about: adjustment)
+  }
+
+  /// Stops asking about `adjustment` without recording an amount, for a receipt that has none.
+  func stopAsking(about adjustment: ReceiptTotalAdjustment) {
+    unconfirmedAdjustments.removeAll { $0 == adjustment }
   }
 
   func complete() {

@@ -264,6 +264,9 @@
         draft.tip = tip
         draft.fixTotal()
       }
+      for adjustment in draft.unconfirmedAdjustments {
+        draft.stopAsking(about: adjustment)
+      }
       if completes {
         draft.complete()
       }

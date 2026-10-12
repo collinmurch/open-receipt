@@ -5,6 +5,10 @@ enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiab
   case tip
   case savings
 
+  /// The adjustments a receipt asks about after a read that didn't find them. Savings aren't
+  /// asked about, since most receipts have none.
+  static let confirmable: [ReceiptTotalAdjustment] = [.tax, .tip]
+
   var id: Self { self }
 
   var title: String {

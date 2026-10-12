@@ -13,6 +13,7 @@ struct ReceiptDraftPersistenceState {
   let items: [ReceiptDraftItem]
   let adjustmentSplitMethod: ReceiptAdjustmentSplitMethod
   let isCompleted: Bool
+  let unconfirmedAdjustments: [ReceiptTotalAdjustment]
   let participants: [ReceiptParticipant]
 
   init(document: ReceiptDocument) throws {
@@ -53,6 +54,7 @@ struct ReceiptDraftPersistenceState {
     }
     adjustmentSplitMethod = split.adjustmentMethod
     isCompleted = document.presentation.isCompleted
+    unconfirmedAdjustments = document.presentation.unconfirmedAdjustments ?? []
     participants = split.participants.map { participant in
       ReceiptParticipant(
         id: participant.id,
@@ -96,6 +98,8 @@ extension ReceiptDocument {
     document.updatedAt = date
     document.presentation.backgroundStyle = draft.backgroundStyle
     document.presentation.isCompleted = draft.isCompleted
+    document.presentation.unconfirmedAdjustments =
+      draft.unconfirmedAdjustments.isEmpty ? nil : draft.unconfirmedAdjustments
     document.recognition.status = .succeeded
     document.recognition.lastAttemptedAt = document.recognition.lastAttemptedAt ?? date
     document.recognition.completedAt = document.recognition.completedAt ?? date

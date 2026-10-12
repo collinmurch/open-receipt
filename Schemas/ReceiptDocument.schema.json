@@ -45,7 +45,13 @@
       "required": ["backgroundStyle", "isCompleted"],
       "properties": {
         "backgroundStyle": { "$ref": "#/$defs/backgroundStyle" },
-        "isCompleted": { "type": "boolean" }
+        "isCompleted": { "type": "boolean" },
+        "unconfirmedAdjustments": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": { "enum": ["tax", "tip"] }
+        }
       }
     },
     "backgroundStyle": {

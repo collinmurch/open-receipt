@@ -81,3 +81,22 @@ extension View {
     contentShape(.rect).onTapGesture { focus.wrappedValue = value }
   }
 }
+
+/// The label of a row that adds something to a list while editing, like the add rows in
+/// Contacts. It lines up with the remove button on the rows it adds.
+struct AddRowLabel: View {
+  let title: String
+
+  init(_ title: String) {
+    self.title = title
+  }
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "plus.circle.fill")
+        .foregroundStyle(.white, .green)
+      Text(title)
+        .foregroundStyle(.primary)
+    }
+  }
+}

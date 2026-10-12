@@ -28,6 +28,22 @@ enum AdjustmentSplitSettings {
   }
 }
 
+enum TipSettings {
+  static let percentageKeys = ["tipPercentageLow", "tipPercentageMiddle", "tipPercentageHigh"]
+  static let initialPercentages = [18, 20, 22]
+  static let percentageRange = 1...100
+
+  /// The tip percentages offered, lowest first and without repeats, using the initial one in
+  /// place of any that isn't stored validly.
+  static func percentages(in defaults: UserDefaults = .standard) -> [Int] {
+    let percentages = zip(percentageKeys, initialPercentages).map { key, initial in
+      (defaults.object(forKey: key) as? Int).flatMap { percentageRange.contains($0) ? $0 : nil }
+        ?? initial
+    }
+    return Array(Set(percentages)).sorted()
+  }
+}
+
 /// Whether reads use the sample receipt instead of Private Cloud Compute, so the simulator and
 /// testers can read without PCC or its quota. Only testing builds can; it starts on in development.
 enum SampleReceipts {

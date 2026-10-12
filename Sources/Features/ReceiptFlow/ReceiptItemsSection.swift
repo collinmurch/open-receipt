@@ -42,23 +42,15 @@ struct ReceiptItemsSection: View {
         haptic.play(.removal)
       }
       .deleteDisabled(!isEditing)
+      if isEditing {
+        Button {
+          onSelectItem(draft.addItem())
+        } label: {
+          AddRowLabel("Add Item")
+        }
+      }
     } header: {
       Text("Items")
-    } footer: {
-      HStack {
-        Spacer()
-        Button("Add Item", systemImage: "plus") {
-          onSelectItem(draft.addItem())
-        }
-        .buttonStyle(.bordered)
-        Spacer()
-      }
-      .frame(height: isEditing ? 48 : 0)
-      .opacity(isEditing ? 1 : 0)
-      .clipped()
-      .allowsHitTesting(isEditing)
-      .padding(.top, isEditing ? 4 : 0)
-      .animation(.settle, value: isEditing)
     }
   }
 

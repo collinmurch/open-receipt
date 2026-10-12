@@ -284,39 +284,12 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.savingsPercentage, 20, accuracy: 0.000_1)
   }
 
-  func testTipPercentageUpdatesDollarTip() {
-    let draft = makeDraft()
-
-    draft.tipPercentage = 20
-
-    XCTAssertEqual(draft.tip, 0.90, accuracy: 0.000_1)
-    XCTAssertEqual(draft.tipPercentage, 20, accuracy: 0.000_1)
-  }
-
-  func testTipPercentageRoundsTipToCents() {
-    let draft = makeDraft()
-
-    draft.tipPercentage = 18.5
-
-    XCTAssertEqual(draft.tip, 0.83)
-  }
-
   func testSavingsPercentageRoundsSavingsToCents() {
     let draft = makeDraft()
 
     draft.savingsPercentage = 18.5
 
     XCTAssertEqual(draft.savings, 0.83)
-  }
-
-  func testTipPercentageRoundsTipToWholeYen() {
-    let draft = makeDraft()
-    draft.currency = "JPY"
-    draft.items[0].lineTotal = 1000
-
-    draft.tipPercentage = 18.25
-
-    XCTAssertEqual(draft.tip, 183)
   }
 
   func testSplitItemInYenUsesWholeYen() {

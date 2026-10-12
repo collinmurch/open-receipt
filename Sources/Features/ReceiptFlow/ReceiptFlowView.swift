@@ -85,13 +85,23 @@ struct ReceiptFlowView: View {
       ReceiptRecognitionView(recognition: recognition, onEnterManually: stopReading)
 
     case .reviewing(let draft):
-      ReceiptReviewView(
-        draft: draft,
-        showsSampleNotice: parsingClient.usesSampleData && !model.pages.pages.isEmpty,
-        pages: pagesEditor,
-        startsInEditing: model.startsInEditing,
-        onFlush: { await model.flush(storage: storage) }
-      )
+      Group {
+        if let adjustment = draft.unconfirmedAdjustments.first {
+          ReceiptAdjustmentQuestionView(draft: draft, adjustment: adjustment)
+            .id(adjustment)
+            .transition(.push(from: .trailing))
+        } else {
+          ReceiptReviewView(
+            draft: draft,
+            showsSampleNotice: parsingClient.usesSampleData && !model.pages.pages.isEmpty,
+            pages: pagesEditor,
+            startsInEditing: model.startsInEditing,
+            onFlush: { await model.flush(storage: storage) }
+          )
+          .transition(.push(from: .trailing))
+        }
+      }
+      .animation(.settle, value: draft.unconfirmedAdjustments)
       .background {
         ReceiptAutosave(draft: draft) {
           await model.autosave(storage: storage)
