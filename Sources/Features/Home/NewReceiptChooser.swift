@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A way to start a new receipt.
-enum NewReceiptSource {
+enum NewReceiptSource: CaseIterable {
   case scan
   case importPhotos
   case create

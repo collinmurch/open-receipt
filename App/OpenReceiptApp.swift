@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct OpenReceiptApp: App {
+  @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
   @State private var library = ReceiptLibraryModel(storage: .live)
   @State private var access: ReadingAccess
   @State private var recognitions: ReceiptRecognitionCenter
@@ -38,6 +39,7 @@ struct OpenReceiptApp: App {
       .environment(recognitions)
       .environment(access)
       .environment(photos)
+      .environment(NewReceiptQuickActions.shared)
       .task { await access.start() }
   }
 }

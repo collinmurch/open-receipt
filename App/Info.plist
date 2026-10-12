@@ -6,5 +6,32 @@
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).read.*</string>
 	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).new-receipt.scan</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Scan</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>document.viewfinder</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).new-receipt.import</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Import</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>photo.on.rectangle.angled</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).new-receipt.create</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Create</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>square.and.pencil</string>
+		</dict>
+	</array>
 </dict>
 </plist>

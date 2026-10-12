@@ -19,10 +19,12 @@ struct HomeView: View {
   @State private var path: [HomeRoute] = []
   @State private var isScannerPresented = false
   @State private var cameraErrorDescription: String?
+  @State private var requestedSource: NewReceiptSource?
   @State private var libraryHaptic = HapticEvent()
   @Namespace private var libraryTransition
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
+  @Environment(NewReceiptQuickActions.self) private var quickActions: NewReceiptQuickActions?
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.scenePhase) private var scenePhase
 
@@ -36,6 +38,7 @@ struct HomeView: View {
         transitionNamespace: libraryTransition,
         onScan: presentScanner,
         onOpen: { path.append($0) },
+        requestedSource: $requestedSource,
         haptic: $libraryHaptic
       )
       .navigationDestination(for: HomeRoute.self) { destination(for: $0) }
@@ -57,6 +60,12 @@ struct HomeView: View {
     .task {
       await library.load()
       await recognitions.resumeDeferredReads()
+    }
+    .onChange(of: quickActions?.pending, initial: true) { _, source in
+      guard let source else { return }
+      quickActions?.pending = nil
+      returnToLibrary(for: source)
+      requestedSource = source
     }
     .onChange(of: recognitions.finishedCount) {
       Task { await library.load() }
@@ -92,6 +101,17 @@ struct HomeView: View {
   private func presentScanner() {
     recognitions.prewarm()
     isScannerPresented = true
+  }
+
+  /// A quick action starts its receipt from the library, so whatever is open closes first. An
+  /// open scanner stays up for Scan.
+  private func returnToLibrary(for source: NewReceiptSource) {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      path = []
+    }
+    if source != .scan { isScannerPresented = false }
   }
 
   /// Reading starts as soon as the scan exists, unless the model is unavailable. The receipt is

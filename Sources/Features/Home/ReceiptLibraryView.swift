@@ -6,6 +6,8 @@ struct ReceiptLibraryView: View {
   let transitionNamespace: Namespace.ID
   let onScan: () -> Void
   let onOpen: (HomeRoute) -> Void
+  /// A receipt to start right away, such as from a home screen quick action.
+  @Binding var requestedSource: NewReceiptSource?
   /// Played above the navigation stack, since search reconfiguring the library's toolbar as a
   /// row lifts can drop feedback attached to the library itself.
   @Binding var haptic: HapticEvent
@@ -112,6 +114,11 @@ struct ReceiptLibraryView: View {
       selectionBehavior: .ordered,
       matching: .images
     )
+    .onChange(of: requestedSource, initial: true) { _, source in
+      guard let source else { return }
+      requestedSource = nil
+      startRequested(source)
+    }
     .onChange(of: importedItems) { _, items in
       Task { await importImages(items) }
     }
@@ -241,6 +248,19 @@ struct ReceiptLibraryView: View {
     case .create:
       chooserPhase = .dropping(pending: source)
     }
+  }
+
+  /// Starts `source` at once, putting away the chooser and any lifted row without animating them
+  /// out, since the app is only just showing.
+  private func startRequested(_ source: NewReceiptSource) {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      chooserPhase = .hidden
+      focusedID = nil
+      focusedRowFrame = nil
+    }
+    start(from: source)
   }
 
   private func start(from source: NewReceiptSource) {
