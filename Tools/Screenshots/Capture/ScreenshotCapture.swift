@@ -38,27 +38,23 @@ final class ScreenshotCapture: XCTestCase {
 
   @MainActor
   func testRequests() throws {
-    try capture(name: "05-requests", scenario: "requests", highlight: "request-Jillian")
-  }
-
-  @MainActor
-  func testBreakdown() throws {
-    try capture(name: "04-breakdown", scenario: "requests", highlight: "request-button") { app in
+    try capture(name: "04-requests", scenario: "requests", highlight: "request-Jillian") { app in
       try self.waitForHighlight("request-Jillian")
-      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Jillian")).firstMatch.tap()
+      self.scrollPaymentsToEnd(app)
     }
   }
 
   @MainActor
   func testShare() throws {
     try capture(
-      name: "06-share",
+      name: "05-share",
       scenario: "share",
       highlight: "group-message-button",
       arguments: ["-groupShareIncludesEveryBreakdown", "YES"]
     ) { app in
       try self.waitForHighlight("request-Jillian")
-      app.buttons["Share Breakdown"].firstMatch.tap()
+      self.scrollPaymentsToEnd(app)
+      app.buttons["Share Group Breakdown"].firstMatch.tap()
     }
   }
 
@@ -124,7 +120,7 @@ final class ScreenshotCapture: XCTestCase {
   @MainActor
   func testPaywall() throws {
     try capture(
-      name: "07-paywall", scenario: "paywall", highlight: "unlimited-reading-purchase")
+      name: "06-paywall", scenario: "paywall", highlight: "unlimited-reading-purchase")
   }
 
   /// Launches `scenario`, runs `prepare`, waits for the app to draw `highlight`, and writes the
@@ -210,6 +206,13 @@ final class ScreenshotCapture: XCTestCase {
       settle(for: 0.25)
     }
     throw CaptureError.highlightNeverDrawn(name)
+  }
+
+  /// Scrolls the payments page down to its group breakdown button, which otherwise rests under
+  /// the page switcher.
+  private func scrollPaymentsToEnd(_ app: XCUIApplication) {
+    app.swipeUp()
+    settle(for: 1)
   }
 
   private func settle(for seconds: TimeInterval) {

@@ -14,6 +14,16 @@
     struct Group: Decodable {
       var owner: String?
       let assignments: [String: [String]]
+      /// The time of day, as "HH:mm", each person was last requested today.
+      var requestedToday: [String: String]?
+
+      /// When `name` was last requested, today at the time the scene gives.
+      func lastRequested(_ name: String, calendar: Calendar = .current) -> Date? {
+        guard let time = requestedToday?[name] else { return nil }
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2 else { return nil }
+        return calendar.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: Date())
+      }
     }
 
     /// Someone on the receipt, with the payment method they are requested through and the phone

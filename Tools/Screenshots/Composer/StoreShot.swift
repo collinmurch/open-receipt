@@ -16,7 +16,7 @@ struct StoreShot {
 
   /// Captures uploaded to App Review as they are, without a frame, such as the in-app purchase's
   /// review screenshot.
-  static let reviewOnly = ["07-paywall"]
+  static let reviewOnly = ["06-paywall"]
 
   /// The capture whose receipt wash colors every backdrop.
   static let paletteSource = "03-split"
@@ -37,18 +37,11 @@ struct StoreShot {
       headline: "Everyone pays\nfor what they ordered.",
       highlight: "receipt-participants"),
     StoreShot(
-      name: "04-breakdown",
-      headline: "Tax and tip, split fairly.\nDown to the cent.",
-      highlight: "request-button",
-      highlightCornerRadius: nil),
-    StoreShot(
-      name: "05-requests",
+      name: "04-requests",
       headline: "Request from each person\nexactly what they owe.",
-      highlight: "request-Jillian",
-      highlightOutset: CGSize(width: 16, height: 10),
-      highlightCornerRadius: 26),
+      highlight: "request-Jillian"),
     StoreShot(
-      name: "06-share",
+      name: "05-share",
       headline: "Send everyone\na breakdown of their share.",
       highlight: "group-message-button",
       highlightCornerRadius: nil),

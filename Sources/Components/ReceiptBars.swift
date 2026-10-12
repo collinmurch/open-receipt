@@ -6,9 +6,6 @@ enum ReceiptBottomBar {
   /// capsule of a system tab bar so a caption fits beneath them, and every control lines up
   /// whether or not it has one.
   static let screenEdgeInset: CGFloat = 45
-
-  /// The gap between a control and a caption hanging beneath it.
-  static let captionSpacing: CGFloat = 8
 }
 
 extension View {

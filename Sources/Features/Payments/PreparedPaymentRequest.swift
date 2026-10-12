@@ -65,16 +65,10 @@ struct PreparedPaymentRequest {
     return destination.method.unsupportedCurrencyReason(currency)
   }
 
+  /// The request's action and amount. The share's payment caption already names the method.
   var title: String {
     let amount = amount.formatted(.currency(code: currency))
-    switch method {
-    case .cashApp:
-      return "Open \(amount) in Cash App"
-    case .venmo, .iMessage:
-      return "Request \(amount) in \(method.title)"
-    case .none:
-      return "Request \(amount)"
-    }
+    return method == .cashApp ? "Open \(amount)" : "Request \(amount)"
   }
 
   var systemImage: String {

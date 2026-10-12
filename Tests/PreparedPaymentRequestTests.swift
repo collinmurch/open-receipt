@@ -56,16 +56,16 @@ final class PreparedPaymentRequestTests: XCTestCase {
     XCTAssertNil(prepare(source: .currentUser(contactIdentifier: nil)))
   }
 
-  func testVenmoTitleNamesAmountAndMethod() throws {
+  func testVenmoTitleNamesAmount() throws {
     let request = try XCTUnwrap(prepare())
 
-    XCTAssertEqual(request.title, "Request $12.50 in Venmo")
+    XCTAssertEqual(request.title, "Request $12.50")
   }
 
   func testCashAppTitleOpensCashApp() throws {
     let request = try XCTUnwrap(prepare(destination: .cashApp(.init(cashtag: "sam"))))
 
-    XCTAssertEqual(request.title, "Open $12.50 in Cash App")
+    XCTAssertEqual(request.title, "Open $12.50")
   }
 
   func testNoteNamesMerchant() {

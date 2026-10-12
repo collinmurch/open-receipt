@@ -254,7 +254,11 @@
         var person = try await people.include(
           nil, participant.name, contactIdentifier, scan.capturedAt)
         person.paymentMethods = participant.paymentMethods
-        participants[participant.name] = draft.addPerson(try await people.save(person)).id
+        let id = draft.addPerson(try await people.save(person)).id
+        participants[participant.name] = id
+        if let requestedAt = group.lastRequested(participant.name) {
+          draft.recordRequest(for: id, at: requestedAt)
+        }
       }
       for item in draft.items {
         let ids = Set((group.assignments[item.description] ?? []).compactMap { participants[$0] })

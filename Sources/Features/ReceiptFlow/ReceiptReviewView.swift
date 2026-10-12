@@ -25,7 +25,7 @@ struct ReceiptReviewView: View {
   @State private var focusedItemID: ReceiptDraftItem.ID?
   /// An item the list scrolls to and then lifts into focus, once the receipt has shown.
   @State private var revealedItemID: ReceiptDraftItem.ID?
-  @State private var paymentsFocus: ReceiptPaymentsFocus?
+  @State private var isGroupSharePresented = false
   @State private var focusedRowFrame: CGRect?
   @State private var isFocusedItemPressed = false
   @State private var participantStripFrame: CGRect?
@@ -98,7 +98,7 @@ struct ReceiptReviewView: View {
         ReceiptRequestsView(
           draft: draft,
           peopleStorage: peopleStorage,
-          focus: $paymentsFocus,
+          isGroupSharePresented: $isGroupSharePresented,
           onFlush: onFlush,
           onAssignItems: revealFirstUnassignedItem
         )
@@ -257,8 +257,8 @@ struct ReceiptReviewView: View {
 
   private var isFocusingItem: Bool { focusedItemID != nil }
 
-  /// Whether an item, or something on the payments page, is lifted out of its list.
-  private var isFocusing: Bool { focusedItemID != nil || paymentsFocus != nil }
+  /// Whether an item is lifted out of its list, or the group breakdown is open over the payments page.
+  private var isFocusing: Bool { focusedItemID != nil || isGroupSharePresented }
 
   private var isItemFocusPresented: Bool {
     focusedItemID != nil && focusedRowFrame != nil && participantStripFrame != nil

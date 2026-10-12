@@ -6,9 +6,8 @@ Scan. Split. Settle. Open Receipt turns a receipt into an itemized bill. Assign 
   <img src="Assets/Previews/light/01-library.png" width="135" alt="Receipt library">
   <img src="Assets/Previews/light/02-reading.png" width="135" alt="Reading a receipt">
   <img src="Assets/Previews/light/03-split.png" width="135" alt="Splitting items">
-  <img src="Assets/Previews/light/04-breakdown.png" width="135" alt="Per-person breakdown">
-  <img src="Assets/Previews/light/05-requests.png" width="135" alt="Payment requests">
-  <img src="Assets/Previews/light/06-share.png" width="135" alt="Sharing a split">
+  <img src="Assets/Previews/light/04-requests.png" width="135" alt="Payment requests">
+  <img src="Assets/Previews/light/05-share.png" width="135" alt="Sharing a split">
 </p>
 
 ## Requirements

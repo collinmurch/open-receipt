@@ -48,6 +48,7 @@
       }
     },
     "requests": {
+      "requestedToday": { "Matt": "19:30" },
       "assignments": {
         "Ahi Tartare": ["Me", "Jillian"],
         "Lamb Lollipops": ["Matt"],
