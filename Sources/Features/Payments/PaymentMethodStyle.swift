@@ -1,15 +1,16 @@
 import SwiftUI
 
 extension PaymentMethod {
-  /// A color that stays legible under white labels, for prominent tinted buttons.
+  /// A color for prominent tinted buttons under white labels. Cash App keeps its brand green, so
+  /// iMessage takes a deeper, bluer green to stay distinct from it.
   var prominentColor: Color {
     switch self {
     case .venmo:
       Color(red: 0, green: 140.0 / 255.0, blue: 1)
     case .cashApp:
-      Color(red: 0, green: 0.6, blue: 0.24)
+      Color(red: 0, green: 214.0 / 255.0, blue: 79.0 / 255.0)
     case .iMessage:
-      Color(red: 0.1, green: 0.6, blue: 0.24)
+      Color(red: 0, green: 0.52, blue: 0.36)
     case .none:
       .orange
     }

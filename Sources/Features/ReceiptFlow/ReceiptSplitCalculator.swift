@@ -3,6 +3,7 @@ import Foundation
 struct ReceiptItemShare: Identifiable, Equatable {
   let itemID: ReceiptDraftItem.ID
   let description: String
+  let quantity: Double
   let fraction: Double
   let amount: Double
 
@@ -31,9 +32,19 @@ struct ReceiptParticipantShare: Identifiable, Equatable {
     itemSubtotal + adjustments.reduce(0) { $0 + $1.amount }
   }
 
+  /// How many items the share includes, counting each item's quantity. A quantity that isn't a
+  /// whole number, such as a weight, counts as one item.
+  var itemCount: Int {
+    items.reduce(0) { count, item in
+      let isWholeCount =
+        item.quantity.isFinite && item.quantity >= 1 && item.quantity.rounded() == item.quantity
+      return count + (isWholeCount ? Int(item.quantity) : 1)
+    }
+  }
+
   /// How many items the share includes, such as "3 items".
   var itemCountText: String {
-    String(inflecting: "^[\(items.count) item](inflect: true)")
+    String(inflecting: "^[\(itemCount) item](inflect: true)")
   }
 }
 
@@ -91,6 +102,7 @@ enum ReceiptSplitCalculator {
           ReceiptItemShare(
             itemID: item.id,
             description: item.description,
+            quantity: item.quantity,
             fraction: 1 / Double(assignedIDs.count),
             amount: ReceiptCurrency.amount(minorUnits: units, code: currency)))
         itemSubtotals[participantID, default: 0] += Double(lineUnits) / Double(assignedIDs.count)

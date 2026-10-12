@@ -18,6 +18,44 @@ final class ReceiptSplitCalculatorTests: XCTestCase {
     XCTAssertEqual(calculation.participantShares[0].items[0].fraction, 0.5)
   }
 
+  func testItemShareKeepsItemQuantity() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Taco", quantity: 3, lineTotal: 9)], total: 9)
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].items[0].quantity, 3)
+  }
+
+  func testItemCountIncludesQuantities() throws {
+    let draft = makeDraft(
+      items: [
+        ReceiptItem(description: "Taco", quantity: 2, lineTotal: 6),
+        ReceiptItem(description: "Soda", quantity: 1, lineTotal: 2),
+      ],
+      total: 8)
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+    draft.items[1].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].itemCount, 3)
+  }
+
+  func testWeighedItemCountsAsOneItem() throws {
+    let draft = makeDraft(
+      items: [ReceiptItem(description: "Bananas", quantity: 1.42, lineTotal: 0.85)], total: 0.85)
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].itemCount, 1)
+  }
+
   func testProportionalAdjustmentsFollowItemSubtotals() throws {
     let draft = try makeTwoPersonDraft()
 

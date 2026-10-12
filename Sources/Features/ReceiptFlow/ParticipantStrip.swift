@@ -130,7 +130,7 @@ struct ParticipantStrip: View {
           .lineLimit(1)
         Text(amount, format: .currency(code: currency))
           .font(.caption2.monospacedDigit().weight(.semibold))
-          .foregroundStyle(.tint)
+          .foregroundStyle(.secondary)
           .contentTransition(.numericText(value: amount))
       }
       .frame(width: itemWidth)

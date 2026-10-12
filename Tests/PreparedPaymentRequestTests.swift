@@ -130,7 +130,10 @@ final class PreparedPaymentRequestTests: XCTestCase {
     ReceiptParticipantShare(
       participant: ReceiptParticipant(
         id: UUID(), source: source, displayName: "Sam"),
-      items: [ReceiptItemShare(itemID: UUID(), description: "Pizza", fraction: 1, amount: 12.5)],
+      items: [
+        ReceiptItemShare(
+          itemID: UUID(), description: "Pizza", quantity: 1, fraction: 1, amount: 12.5)
+      ],
       adjustments: [])
   }
 }

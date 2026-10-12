@@ -120,7 +120,7 @@ private struct PersonBreakdown: View {
       ForEach(share.items) { item in
         BreakdownLine(
           title: item.description,
-          detail: item.fraction < 1 ? "\(item.fraction.sharePercentText) share" : nil,
+          detail: detail(for: item),
           amount: item.amount,
           currency: breakdown.currency)
       }
@@ -142,6 +142,17 @@ private struct PersonBreakdown: View {
     PerforationLine()
     BreakdownTotal(
       title: "Total", amount: share.total, currency: breakdown.currency, accent: accent)
+  }
+
+  private func detail(for item: ReceiptItemShare) -> String? {
+    var parts: [String] = []
+    if item.quantity != 1 {
+      parts.append("Quantity \(item.quantity.formatted(.number))")
+    }
+    if item.fraction < 1 {
+      parts.append("\(item.fraction.sharePercentText) share")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 }
 
