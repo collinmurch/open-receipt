@@ -16,7 +16,7 @@
     { "name": "Lauren", "iMessage": "4155550142", "phone": "(415) 555-0142" }
   ],
   "items": [
-    { "description": "Ahi Tartare", "lineTotal": 16.00 },
+    { "description": "Ahi Tartare", "quantity": 2, "lineTotal": 16.00 },
     { "description": "Lamb Lollipops", "lineTotal": 23.00 },
     { "description": "CRU House Salad", "lineTotal": 9.00 },
     { "description": "Caprese Salad", "lineTotal": 13.00 },
