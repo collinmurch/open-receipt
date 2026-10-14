@@ -8,7 +8,7 @@ enum StoreAppearance: String, CaseIterable {
 /// One App Store screenshot: a softened photo, a headline, the captured screen as a floating
 /// card, and one element of that screen lifted above it.
 struct StoreFrame: View {
-  static let size = CGSize(width: 1284, height: 2778)
+  static let size = CGSize(width: 1206, height: 2622)
 
   let shot: StoreShot
   let capture: Capture
@@ -17,10 +17,10 @@ struct StoreFrame: View {
   let swatches: (leading: [Swatch], trailing: [Swatch])
   let appearance: StoreAppearance
 
-  private let maxCardWidth: CGFloat = 1110
-  private let cardTop: CGFloat = 500
-  private let cardBottomMargin: CGFloat = 64
-  private let cardCornerRadius: CGFloat = 68
+  private let maxCardWidth: CGFloat = 1042
+  private let cardTop: CGFloat = 470
+  private let cardBottomMargin: CGFloat = 60
+  private let cardCornerRadius: CGFloat = 64
   private let liftScale: CGFloat = 1.12
 
   var body: some View {
@@ -90,15 +90,15 @@ struct StoreFrame: View {
 
   private var headline: some View {
     Text(shot.headline)
-      .font(.system(size: 88, weight: .bold))
+      .font(.system(size: 83, weight: .bold))
       .kerning(-1.5)
       .lineSpacing(4)
       .multilineTextAlignment(.center)
       .foregroundStyle(
         appearance == .dark ? Color.white : Color(white: 0.1)
       )
-      .frame(width: Self.size.width, height: cardTop - 60)
-      .offset(y: 20)
+      .frame(width: Self.size.width, height: cardTop - 56)
+      .offset(y: 19)
   }
 
   @ViewBuilder
