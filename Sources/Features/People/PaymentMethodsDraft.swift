@@ -37,6 +37,21 @@ struct PaymentMethodsDraft {
     }
   }
 
+  /// Whether nothing has been picked or typed for `method`, so it has nowhere to send requests.
+  func isBlank(_ method: PaymentMethod) -> Bool {
+    switch method {
+    case .venmo:
+      venmoRecipient == nil && Person.Venmo.normalizedUsername(venmoUsername).isEmpty
+    case .cashApp:
+      Person.CashApp.normalizedCashtag(cashtag).isEmpty
+    case .iMessage:
+      iMessageRecipient == nil
+        && customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    case .none:
+      false
+    }
+  }
+
   /// Writes the edited methods into `methods`, removing those left blank.
   func apply(to methods: inout Person.PaymentMethods) {
     let username = Person.Venmo.normalizedUsername(venmoUsername)

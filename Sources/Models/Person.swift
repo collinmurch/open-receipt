@@ -19,6 +19,16 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
         nil
       }
     }
+
+    /// The method chosen for this person, when nothing says where it sends requests.
+    var blankMethod: PaymentMethod? {
+      switch defaultMethod {
+      case .venmo: venmo == nil ? .venmo : nil
+      case .cashApp: cashApp == nil ? .cashApp : nil
+      case .iMessage: iMessage == nil ? .iMessage : nil
+      case PaymentMethod.none?, nil: nil
+      }
+    }
   }
 
   struct Venmo: Codable, Equatable, Sendable {

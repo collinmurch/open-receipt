@@ -21,6 +21,20 @@ enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Senda
     }
   }
 
+  /// What to say when this method is chosen but nothing says where to send requests.
+  var blankMessage: String? {
+    switch self {
+    case .venmo:
+      "Venmo username can’t be blank"
+    case .cashApp:
+      "Cashtag can’t be blank"
+    case .iMessage:
+      "iMessage phone or email can’t be blank"
+    case .none:
+      nil
+    }
+  }
+
   var iconAssetName: String? {
     switch self {
     case .venmo:

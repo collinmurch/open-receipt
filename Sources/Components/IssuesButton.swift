@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Marks a row that needs fixing, and lists what's wrong with it when tapped.
-struct ReceiptIssuesButton: View {
-  let issues: [ReceiptIssue]
+struct IssuesButton: View {
+  let messages: [String]
   @State private var isPresented = false
 
   var body: some View {
@@ -15,11 +15,11 @@ struct ReceiptIssuesButton: View {
     }
     .buttonStyle(.borderless)
     .accessibilityLabel("Needs fixing")
-    .accessibilityValue(issues.map(\.message).joined(separator: " "))
+    .accessibilityValue(messages.joined(separator: " "))
     .popover(isPresented: $isPresented) {
       VStack(alignment: .leading, spacing: 6) {
-        ForEach(issues) { issue in
-          Text(issue.message)
+        ForEach(messages, id: \.self) { message in
+          Text(message)
         }
       }
       .font(.subheadline)
@@ -31,13 +31,18 @@ struct ReceiptIssuesButton: View {
 }
 
 extension View {
-  /// Puts a `ReceiptIssuesButton` before the view when there are issues.
-  func receiptIssues(_ issues: [ReceiptIssue]) -> some View {
+  /// Puts an `IssuesButton` before the view when there are issues.
+  func issues(_ messages: [String]) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
-      if !issues.isEmpty {
-        ReceiptIssuesButton(issues: issues)
+      if !messages.isEmpty {
+        IssuesButton(messages: messages)
       }
       self
     }
+  }
+
+  /// Puts an `IssuesButton` listing a receipt's `issues` before the view when there are any.
+  func receiptIssues(_ issues: [ReceiptIssue]) -> some View {
+    self.issues(issues.map(\.message))
   }
 }

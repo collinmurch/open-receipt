@@ -72,8 +72,6 @@ struct PeopleView: View {
           }
         }
       }
-    } footer: {
-      Text("New receipts start with this contact as you.")
     }
   }
 
@@ -119,7 +117,8 @@ struct PeopleView: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(person.displayName)
         PaymentDestinationCaption(
-          destination: person.paymentMethods.destination(globalDefault: defaultPaymentMethod))
+          destination: person.paymentMethods.destination(globalDefault: defaultPaymentMethod),
+          blankMethod: person.paymentMethods.blankMethod)
       }
     }
   }

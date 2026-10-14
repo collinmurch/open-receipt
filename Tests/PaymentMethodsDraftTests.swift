@@ -85,4 +85,43 @@ final class PaymentMethodsDraftTests: XCTestCase {
       displayName: "Sam",
       phoneNumbers: [.init(label: nil, value: "5551234567")])
   }
+
+  func testEmptyCashtagIsBlank() {
+    var draft = PaymentMethodsDraft(Person.PaymentMethods())
+    draft.cashtag = " $ "
+
+    XCTAssertTrue(draft.isBlank(.cashApp))
+  }
+
+  func testTypedCashtagIsNotBlank() {
+    var draft = PaymentMethodsDraft(Person.PaymentMethods())
+    draft.cashtag = "sam"
+
+    XCTAssertFalse(draft.isBlank(.cashApp))
+  }
+
+  func testEmptyVenmoUsernameIsBlank() {
+    var draft = PaymentMethodsDraft(Person.PaymentMethods())
+    draft.venmoUsername = "@"
+
+    XCTAssertTrue(draft.isBlank(.venmo))
+  }
+
+  func testVenmoContactRecipientIsNotBlank() {
+    var draft = PaymentMethodsDraft(Person.PaymentMethods())
+    draft.venmoRecipient = .phoneNumber("5551234567")
+
+    XCTAssertFalse(draft.isBlank(.venmo))
+  }
+
+  func testEmptyIMessageRecipientIsBlank() {
+    var draft = PaymentMethodsDraft(Person.PaymentMethods())
+    draft.customIMessageRecipient = " "
+
+    XCTAssertTrue(draft.isBlank(.iMessage))
+  }
+
+  func testNoMethodIsNeverBlank() {
+    XCTAssertFalse(PaymentMethodsDraft(Person.PaymentMethods()).isBlank(.none))
+  }
 }

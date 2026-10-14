@@ -48,4 +48,24 @@ final class PaymentMethodTests: XCTestCase {
     XCTAssertNil(methods.cashApp)
     XCTAssertNil(methods.iMessage)
   }
+
+  func testChosenMethodWithoutDetailsIsBlank() {
+    let methods = Person.PaymentMethods(defaultMethod: .cashApp, venmo: .init(username: "sam"))
+
+    XCTAssertEqual(methods.blankMethod, .cashApp)
+  }
+
+  func testChosenMethodWithDetailsIsNotBlank() {
+    let methods = Person.PaymentMethods(defaultMethod: .cashApp, cashApp: .init(cashtag: "sam"))
+
+    XCTAssertNil(methods.blankMethod)
+  }
+
+  func testGlobalDefaultIsNeverBlank() {
+    XCTAssertNil(Person.PaymentMethods().blankMethod)
+  }
+
+  func testNoMethodIsNeverBlank() {
+    XCTAssertNil(Person.PaymentMethods(defaultMethod: PaymentMethod.none).blankMethod)
+  }
 }

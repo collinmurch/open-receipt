@@ -5,6 +5,8 @@ import SwiftUI
 struct ReceiptShareCard<Accessory: View, Actions: View>: View {
   let share: ReceiptParticipantShare
   let paymentDestination: PaymentDestination?
+  /// The share's chosen payment method, when nothing says where it sends requests.
+  let blankPaymentMethod: PaymentMethod?
   /// Whether to caption where requests go, which the owner's own share leaves out.
   let showsPaymentDestination: Bool
   let showsTotal: Bool
@@ -56,7 +58,8 @@ struct ReceiptShareCard<Accessory: View, Actions: View>: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
         if showsPaymentDestination {
-          PaymentDestinationCaption(destination: paymentDestination)
+          PaymentDestinationCaption(
+            destination: paymentDestination, blankMethod: blankPaymentMethod)
         }
       }
       Spacer(minLength: 0)
@@ -140,9 +143,11 @@ struct ShareTotalText: View {
   }
 }
 
-/// Where a person's payment requests go, or a warning when they have no payment method.
+/// Where a person's payment requests go, or a warning when they have no payment method or
+/// their chosen one is blank.
 struct PaymentDestinationCaption: View {
   let destination: PaymentDestination?
+  let blankMethod: PaymentMethod?
 
   var body: some View {
     if let destination {
@@ -150,7 +155,7 @@ struct PaymentDestinationCaption: View {
         .font(.caption)
         .foregroundStyle(.secondary)
     } else {
-      Text("No payment method set")
+      Text(blankMethod?.blankMessage ?? "No payment method set")
         .font(.caption)
         .foregroundStyle(.orange)
     }

@@ -125,6 +125,7 @@ struct ReceiptRequestsView: View {
     return ReceiptShareCard(
       share: share,
       paymentDestination: destination,
+      blankPaymentMethod: contact?.paymentMethods.blankMethod,
       showsPaymentDestination: !isCurrentUser,
       showsTotal: calculation.unassignedItemCount == 0,
       currency: draft.displayCurrency,

@@ -169,6 +169,7 @@ final class StoreScreenshots: ScenarioTestCase {
 
   /// Scrolls the payments page down to its group breakdown button, which otherwise rests under
   /// the page switcher.
+  @MainActor
   private func scrollPaymentsToEnd(_ app: XCUIApplication) {
     app.swipeUp()
     settle(for: 1)

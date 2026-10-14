@@ -179,13 +179,17 @@ struct PersonDetailView: View {
   private var customUsernameField: some View {
     handleField(
       "Username", prefix: "@", placeholder: "username", text: $paymentMethods.venmoUsername,
-      field: .venmoUsername)
+      field: .venmoUsername
+    )
+    .issues(blankIssues(for: .venmo))
   }
 
   private var cashAppField: some View {
     handleField(
       "Cashtag", prefix: "$", placeholder: "cashtag", text: $paymentMethods.cashtag,
-      field: .cashtag)
+      field: .cashtag
+    )
+    .issues(blankIssues(for: .cashApp))
   }
 
   /// A username field that shows the service's `prefix` before what's typed.
@@ -221,6 +225,15 @@ struct PersonDetailView: View {
         .focused($focusedField, equals: .iMessageRecipient)
     }
     .focusesOnTap($focusedField, equals: .iMessageRecipient)
+    .issues(blankIssues(for: .iMessage))
+  }
+
+  /// Flags `method`'s field while it's this person's chosen method and nothing fills it.
+  private func blankIssues(for method: PaymentMethod) -> [String] {
+    guard person.paymentMethods.defaultMethod == method, paymentMethods.isBlank(method),
+      let message = method.blankMessage
+    else { return [] }
+    return ["\(message)."]
   }
 
   private var defaultPaymentMethodRow: some View {
@@ -255,6 +268,13 @@ struct PersonDetailView: View {
 
       PaymentMethodIcon(method: method)
       Text(method.title)
+
+      // The field shows the warning while it's expanded.
+      let issues = expandedMethod == method ? [] : blankIssues(for: method)
+      if !issues.isEmpty {
+        Spacer()
+        IssuesButton(messages: issues)
+      }
     }
   }
 
