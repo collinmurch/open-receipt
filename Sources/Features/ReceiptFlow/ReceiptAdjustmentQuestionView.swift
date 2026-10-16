@@ -28,6 +28,10 @@ struct ReceiptAdjustmentQuestionView: View {
         .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.center, for: .alignment)
+    // The content rarely scrolls, so swiping can't dismiss the keyboard. Tapping anywhere the
+    // controls don't handle does instead.
+    .contentShape(.rect)
+    .onTapGesture { isAmountFocused = false }
     .scrollBounceBehavior(.basedOnSize)
     .scrollDismissesKeyboard(.interactively)
     .receiptBottomBar { addButton }
