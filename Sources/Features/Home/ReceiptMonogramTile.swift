@@ -26,6 +26,7 @@ struct ReceiptMonogramTile: View {
           if let initials {
             Text(initials)
               .font(.system(.subheadline, design: .rounded).weight(.bold))
+              .fixedSize()
               .transition(.opacity.combined(with: .scale(scale: 0.8)))
           } else {
             Image(systemName: systemImage)

@@ -25,7 +25,7 @@ struct StoreShot {
     StoreShot(
       name: "01-library",
       headline: "Every receipt,\nkept in one place.",
-      highlight: "library-row-Cru Food and Wine Bar",
+      highlight: "library-row-Comedy Cellar",
       highlightOutset: CGSize(width: 16, height: 10),
       highlightCornerRadius: 26),
     StoreShot(

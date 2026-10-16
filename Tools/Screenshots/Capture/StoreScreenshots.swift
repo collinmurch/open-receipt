@@ -21,7 +21,12 @@ final class StoreScreenshots: ScenarioTestCase {
 
   @MainActor
   func testSplit() throws {
-    try capture(name: "03-split", scenario: "split", highlight: "receipt-participants")
+    try capture(name: "03-split", scenario: "split", highlight: "receipt-participants") { app in
+      try self.waitForHighlight("receipt-participants")
+      for name in ["Jillian", "Will"] {
+        app.buttons[name].firstMatch.tap()
+      }
+    }
   }
 
   @MainActor
@@ -49,7 +54,7 @@ final class StoreScreenshots: ScenarioTestCase {
   @MainActor
   func testLibrary() throws {
     try capture(
-      name: "01-library", scenario: "library", highlight: "library-row-Cru Food and Wine Bar")
+      name: "01-library", scenario: "library", highlight: "library-row-Comedy Cellar")
   }
 
   /// The receipt being read for the App Store search result, in the header's colors.

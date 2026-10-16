@@ -32,17 +32,6 @@ struct SettingsView: View {
       }
 
       Section {
-        NavigationLink {
-          ReceiptCurrencyPicker(selection: $defaultCurrencyCode)
-        } label: {
-          LabeledContent(
-            "Currency", value: ReceiptCurrency.localizedName(defaultCurrencyCode))
-        }
-      } header: {
-        Text("Default Currency")
-      }
-
-      Section {
         Picker("Split Tax/Tip", selection: $defaultAdjustmentSplitMethod) {
           ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
             Text(method.title)
@@ -52,6 +41,17 @@ struct SettingsView: View {
         .pickerStyle(.menu)
       } header: {
         Text("Default Split")
+      }
+
+      Section {
+        NavigationLink {
+          ReceiptCurrencyPicker(selection: $defaultCurrencyCode)
+        } label: {
+          LabeledContent(
+            "Currency", value: ReceiptCurrency.localizedName(defaultCurrencyCode))
+        }
+      } header: {
+        Text("Default Currency")
       }
 
       Section {

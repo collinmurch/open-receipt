@@ -10,11 +10,11 @@ struct SearchArtwork: View {
   let capture: Capture
   let photo: CGImage
   /// The part of the photo the camera shows, in its pixels: the receipt from its header down to
-  /// the tip suggestions, above the line with the restaurant's email address.
-  var photoCrop = CGRect(x: 70, y: 150, width: 610, height: 760)
+  /// the subtotals, inside the paper's edges.
+  var photoCrop = CGRect(x: 40, y: 150, width: 1130, height: 1407)
   /// Where the beam crosses the photo, in its pixels: the line being written on the reading
   /// screen.
-  var beamY: CGFloat = 505
+  var beamY: CGFloat = 1345
 
   private let top: CGFloat = 660
   private let cameraFrame = CGRect(x: 640, y: 780, width: 1100, height: 1370)
@@ -52,6 +52,10 @@ struct SearchArtwork: View {
         Image(decorative: cropped, scale: 1)
           .resizable()
           .interpolation(.high)
+          // The club's red lights would fight the wash, so the paper is shown neutral and bright.
+          .grayscale(1)
+          .contrast(1.35)
+          .brightness(0.2)
           .frame(width: cameraFrame.width, height: photoCrop.height * scale)
         ArtworkPalette.mint
           .frame(height: beam)
@@ -75,8 +79,6 @@ struct SearchArtwork: View {
       }
       .shadow(color: ArtworkPalette.ink.opacity(0.16), radius: 6, y: 4)
       .shadow(color: ArtworkPalette.ink.opacity(0.3), radius: 70, y: 44)
-      // The receipt leans left in the photo, so leaning the card right levels its text.
-      .rotationEffect(.degrees(3))
       .position(x: cameraFrame.midX, y: cameraFrame.midY)
     }
   }

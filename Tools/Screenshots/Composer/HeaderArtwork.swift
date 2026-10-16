@@ -10,8 +10,8 @@ struct HeaderArtwork: View {
   let slips: [CGImage]
 
   /// Pixels per point of the slips on the canvas. The app writes them at 4x.
-  private let slipScale: CGFloat = 0.52
-  private let spread: CGFloat = 700
+  private let slipScale: CGFloat = 0.66
+  private let spread: CGFloat = 890
   private let tilt: Double = 6
   /// The outer slips' size beside the middle one's, so they sit a little farther back.
   private let outerScale: CGFloat = 0.95
@@ -39,7 +39,7 @@ struct HeaderArtwork: View {
     let isOuter = offset != 0
     let scale = slipScale * (isOuter ? outerScale : 1)
     let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-    let top: CGFloat = isOuter ? 250 : 170
+    let top: CGFloat = isOuter ? 150 : 80
     return Image(decorative: image, scale: 1)
       .resizable()
       .interpolation(.high)
