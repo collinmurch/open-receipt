@@ -15,6 +15,18 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section {
+        Picker("Split Tax/Tip", selection: $defaultAdjustmentSplitMethod) {
+          ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
+            Text(method.title)
+              .tag(method)
+          }
+        }
+        .pickerStyle(.menu)
+      } header: {
+        Text("Default Split")
+      }
+
+      Section {
         Picker("Payment Method", selection: $defaultPaymentMethod) {
           ForEach(PaymentMethod.allCases) { method in
             Label {
@@ -29,18 +41,6 @@ struct SettingsView: View {
         .pickerStyle(.inline)
       } header: {
         Text("Default Payment Method")
-      }
-
-      Section {
-        Picker("Split Tax/Tip", selection: $defaultAdjustmentSplitMethod) {
-          ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
-            Text(method.title)
-              .tag(method)
-          }
-        }
-        .pickerStyle(.menu)
-      } header: {
-        Text("Default Split")
       }
 
       Section {
