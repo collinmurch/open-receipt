@@ -1,10 +1,14 @@
 import Foundation
 
 enum IMessageRequest {
-  static func body(amount: Double, currency: String, context: String) -> String? {
+  static func body(
+    amount: Double,
+    currency: String,
+    context: String,
+    locale: Locale = .autoupdatingCurrent
+  ) -> String? {
     guard amount.isRequestable, ReceiptValidator.isCurrencyCode(currency) else { return nil }
-    let formattedAmount = amount.formatted(
-      .currency(code: currency).locale(Locale(identifier: "en_US")))
+    let formattedAmount = amount.formatted(.currency(code: currency).locale(locale))
     let normalizedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedContext.isEmpty else {
       return "Could you pay me \(formattedAmount) when you get a chance?"

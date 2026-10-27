@@ -13,7 +13,7 @@ struct ReceiptRequestsView: View {
   /// A saved person opened from their card to add a payment method.
   @State private var editedPerson: Person?
   /// Where each person's contact card says to message them.
-  @State private var messageRecipients: [ReceiptParticipant.ID: Person.IMessage.Recipient] = [:]
+  @State private var contactRecipients: [ReceiptParticipant.ID: Person.IMessage.Recipient] = [:]
   @State private var viewedBreakdown: ViewedBreakdown?
   @State private var requester = PaymentRequester()
   @State private var haptic = HapticEvent()
@@ -159,7 +159,7 @@ struct ReceiptRequestsView: View {
       currency: draft.displayCurrency,
       note: requestNote,
       isSplitComplete: true)
-    let contact = destination == nil ? person(for: share) : nil
+    let contact = destination == nil && share.total.isRequestable ? person(for: share) : nil
     let caption: String? =
       if request != nil {
         share.participant.lastRequestedAt.map {
@@ -239,18 +239,18 @@ struct ReceiptRequestsView: View {
       let breakdowns = draft.allBreakdowns(accentScheme: colorScheme, photos: photos)
     {
       let others = draft.participants.filter { !$0.source.isCurrentUser }
+      let recipients = others.compactMap { participant in
+        messageRecipient(for: participant).map {
+          GroupMessageRecipient(name: participant.displayName, recipient: $0)
+        }
+      }
       ReceiptGroupShareView(
         breakdowns: breakdowns,
-        messageRecipients: others.compactMap { participant in
-          messageRecipients[participant.id].map {
-            GroupMessageRecipient(name: participant.displayName, recipient: $0)
-          }
-        },
-        unreachableNames: others.filter { messageRecipients[$0.id] == nil }.map(\.displayName),
+        messageRecipients: recipients,
+        unreachableNames: others.filter { messageRecipient(for: $0) == nil }.map(\.displayName),
         includesEveryBreakdown: $includesEveryBreakdown,
         onMessage: { selected in
-          let recipients = others.compactMap { messageRecipients[$0.id] }
-          requester.message(selected, to: recipients, onSent: playSentHaptic)
+          requester.message(selected, to: recipients.map(\.recipient), onSent: playSentHaptic)
         },
         onDismiss: endGroupShare
       )
@@ -260,6 +260,13 @@ struct ReceiptRequestsView: View {
 
   private func person(for share: ReceiptParticipantShare) -> Person? {
     ReceiptPersonResolver.person(for: share.participant, in: people.people)
+  }
+
+  /// Where to message `participant`: the iMessage recipient chosen for them, else their contact
+  /// card's.
+  private func messageRecipient(for participant: ReceiptParticipant) -> Person.IMessage.Recipient? {
+    let person = ReceiptPersonResolver.person(for: participant, in: people.people)
+    return person?.paymentMethods.iMessage?.recipient ?? contactRecipients[participant.id]
   }
 
   private func paymentDestination(for share: ReceiptParticipantShare) -> PaymentDestination? {
@@ -301,12 +308,12 @@ struct ReceiptRequestsView: View {
     guard !contactIdentifiers.isEmpty,
       let contacts = try? await contactClient.fetchContacts(Array(contactIdentifiers.values))
     else {
-      messageRecipients = [:]
+      contactRecipients = [:]
       return
     }
     let contactsByIdentifier = Dictionary(
       contacts.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
-    messageRecipients = contactIdentifiers.compactMapValues {
+    contactRecipients = contactIdentifiers.compactMapValues {
       contactsByIdentifier[$0]?.defaultRecipient(Person.IMessage.Recipient.self)
     }
   }

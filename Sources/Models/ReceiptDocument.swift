@@ -114,6 +114,10 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
     /// The order tax, tip, and savings are listed in. Absent in receipts saved before they could
     /// be reordered.
     var adjustmentOrder: [ReceiptTotalAdjustment]? = nil
+    /// The percentage of its base the tip was chosen as, or 0 for a tip entered as an amount or
+    /// read from the receipt. Absent without a tip, and in receipts saved before tips followed
+    /// their base.
+    var tipPercentage: Int? = nil
     var participants: [Participant]
     var itemAssignments: [ItemAssignment]
 
@@ -170,8 +174,10 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
 struct DecimalString: Codable, Equatable, Sendable {
   let value: String
 
+  /// `value` in plain decimal notation, such as "0.00001" rather than "1e-05", with the fewest
+  /// digits that read back as exactly `value`.
   init(_ value: Double) {
-    self.value = String(value)
+    self.value = Self.plainNotation(String(value))
   }
 
   var doubleValue: Double? {
@@ -205,6 +211,25 @@ struct DecimalString: Codable, Equatable, Sendable {
     }
     var container = encoder.singleValueContainer()
     try container.encode(value)
+  }
+
+  /// `number` with any exponent written out as digits, such as "-0.0000325" for "-3.25e-05".
+  private static func plainNotation(_ number: String) -> String {
+    guard let exponentIndex = number.firstIndex(of: "e"),
+      let exponent = Int(number[number.index(after: exponentIndex)...])
+    else { return number }
+    let mantissa = number[..<exponentIndex]
+    let sign = mantissa.hasPrefix("-") ? "-" : ""
+    let unsigned = mantissa.drop { $0 == "-" }
+    let digits = unsigned.filter { $0 != "." }
+    let point = unsigned.prefix { $0 != "." }.count + exponent
+    if point <= 0 {
+      return sign + "0." + String(repeating: "0", count: -point) + digits
+    }
+    if point >= digits.count {
+      return sign + digits + String(repeating: "0", count: point - digits.count)
+    }
+    return sign + digits.prefix(point) + "." + digits.dropFirst(point)
   }
 }
 

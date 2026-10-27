@@ -292,6 +292,31 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.savings, 0.83)
   }
 
+  func testSavingsPercentageIsOfPrintedSubtotal() {
+    let draft = makeDraft()
+    draft.subtotal = 10
+
+    draft.savingsPercentage = 20
+
+    XCTAssertEqual(draft.savings, 2, accuracy: 0.000_1)
+  }
+
+  func testSavingsPercentageIsAtMostAll() {
+    let draft = makeDraft()
+
+    draft.savingsPercentage = 150
+
+    XCTAssertEqual(draft.savings, 4.50, accuracy: 0.000_1)
+  }
+
+  func testSavingsPercentageIsNeverNegative() {
+    let draft = makeDraft()
+
+    draft.savingsPercentage = -10
+
+    XCTAssertEqual(draft.savings, 0)
+  }
+
   func testSplitItemInYenUsesWholeYen() {
     let draft = makeDraft()
     draft.currency = "JPY"

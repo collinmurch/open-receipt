@@ -40,6 +40,12 @@ struct ReceiptItemEditorView: View {
         TextField("Name", text: $item.description, axis: .vertical)
           .lineLimit(1...3)
           .focused($focusedField, equals: .name)
+          .onChange(of: item.description) { _, name in
+            guard name.contains(where: \.isNewline) else { return }
+            item.description = Self.singleLine(name)
+            // A multi-line field takes Return as a line break rather than a submit.
+            focusedField = .quantity
+          }
         LabeledContent("Quantity") {
           NumberField(
             "Quantity",
@@ -52,10 +58,18 @@ struct ReceiptItemEditorView: View {
         }
         .focusesOnTap($focusedField, equals: .quantity)
         LabeledContent("Line Total") {
-          CurrencyAmountField(value: $item.lineTotal, currencyCode: currency)
-            .multilineTextAlignment(.trailing)
-            .focused($focusedField, equals: .lineTotal)
-            .accessibilityLabel("Line total")
+          HStack {
+            CurrencyAmountField(value: $item.lineTotal, currencyCode: currency)
+              .multilineTextAlignment(.trailing)
+              .focused($focusedField, equals: .lineTotal)
+              .accessibilityLabel("Line total")
+            Button("Change Sign", systemImage: "plus.forwardslash.minus") {
+              item.lineTotal = -item.lineTotal
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .disabled(item.lineTotal == 0)
+          }
         }
         .focusesOnTap($focusedField, equals: .lineTotal)
       } header: {
@@ -113,6 +127,13 @@ struct ReceiptItemEditorView: View {
           dismiss()
         })
     }
+  }
+}
+
+extension ReceiptItemEditorView {
+  /// `name` with each line break replaced by a space, since an item's name is one line.
+  static func singleLine(_ name: String) -> String {
+    name.split(whereSeparator: \.isNewline).joined(separator: " ")
   }
 }
 

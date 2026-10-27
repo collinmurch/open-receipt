@@ -13,6 +13,10 @@ struct ReceiptDraftPersistenceState {
   let items: [ReceiptDraftItem]
   let adjustmentSplitMethod: ReceiptAdjustmentSplitMethod
   let adjustmentOrder: [ReceiptTotalAdjustment]
+  let tipPercentage: Int?
+  /// Whether the tip was saved before tips could follow a percentage, so whether it was chosen
+  /// as one is unknown.
+  let isTipPercentageUnknown: Bool
   let isCompleted: Bool
   let unconfirmedAdjustments: [ReceiptTotalAdjustment]
   let participants: [ReceiptParticipant]
@@ -29,8 +33,8 @@ struct ReceiptDraftPersistenceState {
     subtotal = try receipt.amounts.subtotal.requiredDouble()
     var loadedAdjustments = ReceiptTotalAdjustments()
     for adjustment in receipt.amounts.adjustments {
-      let value = try adjustment.amount.requiredDouble()
-      loadedAdjustments[adjustment.kind] = adjustment.kind == .savings ? abs(value) : value
+      loadedAdjustments[adjustment.kind] = adjustment.kind.signed(
+        try adjustment.amount.requiredDouble())
     }
     adjustments = loadedAdjustments
     total = try receipt.amounts.total.requiredDouble()
@@ -57,6 +61,9 @@ struct ReceiptDraftPersistenceState {
     adjustmentOrder =
       split.adjustmentOrder.flatMap(ReceiptTotalAdjustment.validOrder)
       ?? ReceiptTotalAdjustment.order(tipBase: TipSettings.base())
+    let hasTip = loadedAdjustments.contains(.tip)
+    tipPercentage = hasTip ? split.tipPercentage.flatMap { $0 > 0 ? $0 : nil } : nil
+    isTipPercentageUnknown = hasTip && split.tipPercentage == nil
     isCompleted = document.presentation.isCompleted
     unconfirmedAdjustments = document.presentation.unconfirmedAdjustments ?? []
     participants = split.participants.map { participant in
@@ -123,13 +130,12 @@ extension ReceiptDocument {
       amounts: Amounts(
         subtotal: DecimalString(draft.subtotal),
         adjustments: ReceiptTotalAdjustment.allCases.compactMap { kind in
-          guard let value = draft.adjustments[kind] else { return nil }
-          let signedValue = kind == .savings ? -abs(value) : value
+          guard draft.adjustments.contains(kind) else { return nil }
           return Adjustment(
             id: kind.rawValue,
             kind: kind,
             label: kind.title,
-            amount: DecimalString(signedValue))
+            amount: DecimalString(draft.adjustments.signedAmount(of: kind)))
         },
         total: DecimalString(draft.total)),
       payment: draft.payment.map {
@@ -141,6 +147,7 @@ extension ReceiptDocument {
     document.split = Split(
       adjustmentMethod: draft.adjustmentSplitMethod,
       adjustmentOrder: draft.adjustmentOrder,
+      tipPercentage: draft.adjustments.contains(.tip) ? draft.tipPercentage ?? 0 : nil,
       participants: draft.participants.map {
         Participant(
           id: $0.id,

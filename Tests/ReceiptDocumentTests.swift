@@ -137,10 +137,171 @@ final class ReceiptDocumentTests: XCTestCase {
     XCTAssertEqual(savings.amount.value, "-2.0")
   }
 
+  func testDraftRoundTripPreservesSavings() throws {
+    let draft = makeDraft()
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loadedDraft = try ReceiptDraft(document: document)
+
+    XCTAssertEqual(loadedDraft.savings, 1)
+  }
+
+  func testDraftRoundTripPreservesNegativeSavings() throws {
+    let draft = makeDraft()
+    draft.savings = -2
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loadedDraft = try ReceiptDraft(document: document)
+
+    XCTAssertEqual(loadedDraft.savings, -2)
+  }
+
+  func testDraftRoundTripPreservesTipPercentage() throws {
+    let draft = makeDraft()
+    draft.setTipPercentage(20)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loadedDraft = try ReceiptDraft(document: document)
+
+    XCTAssertEqual(loadedDraft.tipPercentage, 20)
+    XCTAssertEqual(loadedDraft.tip, draft.tip)
+  }
+
+  func testDraftRoundTripKeepsEnteredTipAnAmount() throws {
+    let draft = makeDraft()
+    draft.tip = 2
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loadedDraft = try ReceiptDraft(document: document)
+
+    XCTAssertNil(loadedDraft.tipPercentage)
+  }
+
+  func testSplitWithoutTipPercentageDecodesWithNone() throws {
+    let draft = makeDraft()
+    draft.setTipPercentage(20)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+    let data = try encoder.encode(document)
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var split = try XCTUnwrap(json["split"] as? [String: Any])
+    split.removeValue(forKey: "tipPercentage")
+    json["split"] = split
+
+    let legacyData = try JSONSerialization.data(withJSONObject: json)
+    let decoded = try decoder.decode(ReceiptDocument.self, from: legacyData)
+
+    XCTAssertNil(decoded.split?.tipPercentage)
+  }
+
+  func testLegacyTipMatchingOneSuggestionFollowsIt() throws {
+    let loaded = try ReceiptDraft(document: legacyDocument(itemTotal: 10, tip: 2))
+
+    XCTAssertEqual(loaded.tipPercentage, 20)
+  }
+
+  func testLegacyTipMatchingSeveralSuggestionsStaysAnAmount() throws {
+    let loaded = try ReceiptDraft(document: legacyDocument(itemTotal: 0.05, tip: 0.01))
+
+    XCTAssertNil(loaded.tipPercentage)
+  }
+
+  func testLegacyTipMatchingNoSuggestionStaysAnAmount() throws {
+    let loaded = try ReceiptDraft(document: legacyDocument(itemTotal: 10, tip: 2.50))
+
+    XCTAssertNil(loaded.tipPercentage)
+  }
+
+  func testEnteredTipMatchingSuggestionStaysAnAmount() throws {
+    let draft = tippedDraft(itemTotal: 10, tip: 2)
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loaded = try ReceiptDraft(document: document)
+
+    XCTAssertNil(loaded.tipPercentage)
+  }
+
+  /// A receipt saved before tips followed a percentage.
+  private func legacyDocument(itemTotal: Double, tip: Double) -> ReceiptDocument {
+    let draft = tippedDraft(itemTotal: itemTotal, tip: tip)
+    var document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+    document.split?.tipPercentage = nil
+    return document
+  }
+
+  private func tippedDraft(itemTotal: Double, tip: Double) -> ReceiptDraft {
+    ReceiptDraft(
+      receipt: ParsedReceipt(
+        merchantName: "Cafe",
+        subtotal: itemTotal,
+        tip: tip,
+        total: itemTotal + tip,
+        items: [ReceiptItem(description: "Coffee", quantity: 1, lineTotal: itemTotal)]))
+  }
+
   func testDecimalStringEncodesAsJSONString() throws {
     let data = try JSONEncoder().encode(DecimalString(7.23))
 
     XCTAssertEqual(String(data: data, encoding: .utf8), "\"7.23\"")
+  }
+
+  func testDecimalStringWritesSmallValueWithoutExponent() {
+    XCTAssertEqual(DecimalString(0.00001).value, "0.00001")
+  }
+
+  func testDecimalStringWritesLargeValueWithoutExponent() {
+    XCTAssertEqual(DecimalString(1e16).value, "10000000000000000")
+  }
+
+  func testDecimalStringWritesNegativeSmallValueWithoutExponent() {
+    XCTAssertEqual(DecimalString(-3.25e-5).value, "-0.0000325")
+  }
+
+  func testDecimalStringWritesLargeFractionalValueWithoutExponent() {
+    XCTAssertEqual(DecimalString(1.5e17).value, "150000000000000000")
+  }
+
+  func testDecimalStringKeepsWholeValueDecimalPoint() {
+    XCTAssertEqual(DecimalString(-2).value, "-2.0")
+  }
+
+  func testDecimalStringRoundTripsSplitQuantity() {
+    let quantity = 0.0001 / 7
+
+    XCTAssertEqual(DecimalString(quantity).doubleValue, quantity)
+  }
+
+  func testDecimalStringRoundTripsSum() {
+    let amount = 0.1 + 0.2
+
+    XCTAssertEqual(DecimalString(amount).doubleValue, amount)
+  }
+
+  func testDecimalStringRoundTripsSmallestValue() {
+    XCTAssertEqual(DecimalString(.leastNonzeroMagnitude).doubleValue, .leastNonzeroMagnitude)
+  }
+
+  func testDecimalStringRoundTripsLargestValue() {
+    XCTAssertEqual(DecimalString(.greatestFiniteMagnitude).doubleValue, .greatestFiniteMagnitude)
+  }
+
+  func testDecimalStringMatchesSchemaPatternForSplitQuantity() {
+    XCTAssertTrue(matchesSchemaDecimalPattern(DecimalString(0.0001 / 7).value))
+  }
+
+  func testDecimalStringMatchesSchemaPatternForLargeValue() {
+    XCTAssertTrue(matchesSchemaDecimalPattern(DecimalString(1e16).value))
+  }
+
+  func testDecimalStringMatchesSchemaPatternForSmallestValue() {
+    XCTAssertTrue(matchesSchemaDecimalPattern(DecimalString(-.leastNonzeroMagnitude).value))
+  }
+
+  func testDecimalStringReadsExponentForm() throws {
+    let data = Data("\"1e-05\"".utf8)
+
+    let decimal = try JSONDecoder().decode(DecimalString.self, from: data)
+
+    XCTAssertEqual(decimal.doubleValue, 0.00001)
   }
 
   func testDecimalStringRejectsNonFiniteValue() {
@@ -198,6 +359,10 @@ final class ReceiptDocumentTests: XCTestCase {
     let object = try JSONSerialization.jsonObject(with: encoder.encode(document.recognition))
 
     XCTAssertNotNil((object as? [String: Any])?["pageIds"])
+  }
+
+  private func matchesSchemaDecimalPattern(_ value: String) -> Bool {
+    value.wholeMatch(of: #/-?(0|[1-9][0-9]*)(\.[0-9]+)?/#) != nil
   }
 
   private func makePage() -> ReceiptDocument.Page {

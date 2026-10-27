@@ -163,6 +163,7 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, hea
 		$(if $(of),--only "$(of)")
 
 # Flags: of=<scenario> name=<file name> appearance=light|dark|both device=<simulator name>
+#        text_size=<DynamicTypeSize case, such as large or accessibility3>
 #        clean=1 deletes every capture, or only the one named by name= or of=.
 # Writes <name>-<appearance>.png and <name>.txt (the accessibility tree) to .build/screenshots.
 .PHONY: screenshot
@@ -187,10 +188,14 @@ screenshot: $(if $(clean),,gen) ## Capture one app screen to .build/screenshots 
 	case '$(appearance)' in ''|light|dark|both) ;; \
 		*) echo "Use appearance=light, dark, or both." >&2; exit 64;; \
 	esac; \
+	case '$(text_size)' in ''|xSmall|small|medium|large|xLarge|xxLarge|xxxLarge|accessibility[1-5]) ;; \
+		*) echo "Use text_size=xSmall through xxxLarge, or accessibility1 through accessibility5." >&2; exit 64;; \
+	esac; \
 	mkdir -p "$$dir"; \
 	TEST_RUNNER_SCREENSHOTS_SCENARIO='$(of)' \
 	TEST_RUNNER_SCREENSHOTS_NAME='$(name)' \
 	TEST_RUNNER_SCREENSHOTS_APPEARANCE='$(appearance)' \
+	TEST_RUNNER_SCREENSHOTS_TEXT_SIZE='$(text_size)' \
 	TEST_RUNNER_SCREENSHOTS_OUTPUT="$$dir" \
 	TEST_RUNNER_SCREENSHOTS_RECEIPT="$(abspath $(SCREENSHOT_RECEIPT))" \
 	xcodebuild test \

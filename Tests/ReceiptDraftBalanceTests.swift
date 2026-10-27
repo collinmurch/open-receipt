@@ -196,9 +196,9 @@ final class ReceiptDraftBalanceTests: XCTestCase {
 
   func testMovingSuggestedTipBelowTaxKeepsItsPercentage() {
     let draft = makeDraft(tax: 3, total: 33)
-    draft.addAdjustment(.tip, amount: 6)
+    draft.setTipPercentage(20)
 
-    draft.setAdjustmentOrder([.tax, .tip, .savings], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tax, .tip, .savings])
 
     XCTAssertEqual(draft.adjustmentOrder, [.tax, .tip, .savings])
     XCTAssertEqual(draft.tip, 6.60, accuracy: 0.000_1)
@@ -206,27 +206,27 @@ final class ReceiptDraftBalanceTests: XCTestCase {
 
   func testMovingSuggestedTipMovesTotal() {
     let draft = makeDraft(tax: 3, total: 33)
-    draft.addAdjustment(.tip, amount: 6)
+    draft.setTipPercentage(20)
 
-    draft.setAdjustmentOrder([.tax, .tip, .savings], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tax, .tip, .savings])
 
     XCTAssertEqual(draft.total, 39.60, accuracy: 0.000_1)
   }
 
   func testMovingSuggestedTipAboveTaxKeepsItsPercentage() {
     let draft = makeDraft(tax: 3, total: 33, order: [.tax, .tip, .savings])
-    draft.addAdjustment(.tip, amount: 6.60)
+    draft.setTipPercentage(20)
 
-    draft.setAdjustmentOrder([.tip, .tax, .savings], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tip, .tax, .savings])
 
     XCTAssertEqual(draft.tip, 6, accuracy: 0.000_1)
   }
 
   func testMovingSuggestedTipBelowSavingsKeepsItsPercentage() {
     let draft = makeDraft(savings: 5, total: 25)
-    draft.addAdjustment(.tip, amount: 6)
+    draft.setTipPercentage(20)
 
-    draft.setAdjustmentOrder([.tax, .savings, .tip], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tax, .savings, .tip])
 
     XCTAssertEqual(draft.tip, 5, accuracy: 0.000_1)
   }
@@ -235,7 +235,7 @@ final class ReceiptDraftBalanceTests: XCTestCase {
     let draft = makeDraft(tax: 3, total: 33)
     draft.addAdjustment(.tip, amount: 5)
 
-    draft.setAdjustmentOrder([.tax, .tip, .savings], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tax, .tip, .savings])
 
     XCTAssertEqual(draft.tip, 5, accuracy: 0.000_1)
   }
@@ -243,7 +243,7 @@ final class ReceiptDraftBalanceTests: XCTestCase {
   func testMovingWithoutTipAddsNone() {
     let draft = makeDraft(tax: 3, total: 33)
 
-    draft.setAdjustmentOrder([.tax, .tip, .savings], percentages: [18, 20, 22])
+    draft.setAdjustmentOrder([.tax, .tip, .savings])
 
     XCTAssertFalse(draft.adjustments.contains(.tip))
   }
@@ -254,6 +254,113 @@ final class ReceiptDraftBalanceTests: XCTestCase {
     draft.setAdjustmentOrder([.tax, .tip])
 
     XCTAssertEqual(draft.adjustmentOrder, [.tip, .tax, .savings])
+  }
+
+  func testTypingTipKeepsTotalThatDidNotAddUpWhenTypingBegan() {
+    let draft = makeDraft(tax: 3, total: 33.50)
+    draft.addAdjustment(.tip)
+    draft.beginEditing(.adjustment(.tip))
+
+    for amount in [0.05, 0.50, 5] { draft.tip = amount }
+
+    XCTAssertEqual(draft.total, 33.50, accuracy: 0.000_1)
+  }
+
+  func testTypingTaxKeepsTotalThatDidNotAddUpWhenTypingBegan() {
+    let draft = makeDraft(total: 30.50)
+    draft.addAdjustment(.tax)
+    draft.beginEditing(.adjustment(.tax))
+
+    for amount in [0.05, 0.50, 5] { draft.tax = amount }
+
+    XCTAssertEqual(draft.total, 30.50, accuracy: 0.000_1)
+  }
+
+  func testTypingSavingsKeepsTotalThatDidNotAddUpWhenTypingBegan() {
+    let draft = makeDraft(total: 29.50)
+    draft.addAdjustment(.savings)
+    draft.beginEditing(.adjustment(.savings))
+
+    for amount in [0.05, 0.50, 5] { draft.savings = amount }
+
+    XCTAssertEqual(draft.total, 29.50, accuracy: 0.000_1)
+  }
+
+  func testTypingSubtotalKeepsTotalThatDidNotAddUpWhenTypingBegan() {
+    let draft = makeDraft(subtotal: 35, tax: 3, total: 33.50)
+    draft.beginEditing(.subtotal)
+
+    for amount in [3.05, 30.50, 305] { draft.setSubtotal(amount) }
+
+    XCTAssertEqual(draft.total, 33.50, accuracy: 0.000_1)
+  }
+
+  func testTypingTipMovesTotalThatAddedUpWhenTypingBegan() {
+    let draft = makeDraft(tax: 3, total: 33)
+    draft.addAdjustment(.tip)
+    draft.beginEditing(.adjustment(.tip))
+
+    for amount in [0.05, 0.50, 5] { draft.tip = amount }
+
+    XCTAssertEqual(draft.total, 38, accuracy: 0.000_1)
+  }
+
+  func testTypingAgainJudgesTotalWhenTypingBeganAgain() {
+    let draft = makeDraft(tax: 3, total: 33.50)
+    draft.addAdjustment(.tip)
+    draft.beginEditing(.adjustment(.tip))
+    draft.tip = 0.50
+    draft.endEditing()
+
+    draft.beginEditing(.adjustment(.tip))
+    draft.tip = 5
+
+    XCTAssertEqual(draft.total, 38, accuracy: 0.000_1)
+  }
+
+  func testTypingIntoOneFieldLeavesOthersJudgedAsTheyAre() {
+    let draft = makeDraft(tax: 3, total: 33)
+    draft.addAdjustment(.tip)
+    draft.beginEditing(.adjustment(.tax))
+
+    draft.tip = 5
+
+    XCTAssertEqual(draft.total, 38, accuracy: 0.000_1)
+  }
+
+  func testChangingTotalEndsTyping() {
+    let draft = makeDraft(total: 30)
+    draft.addAdjustment(.tax)
+    draft.beginEditing(.adjustment(.tax))
+
+    draft.total = 99
+    draft.tax = 2
+
+    XCTAssertEqual(draft.total, 99, accuracy: 0.000_1)
+  }
+
+  func testAddingAnotherAdjustmentEndsTyping() {
+    let draft = makeDraft(total: 30.50)
+    draft.addAdjustment(.tax)
+    draft.beginEditing(.adjustment(.tax))
+
+    draft.addAdjustment(.tip, amount: 0.50)
+    draft.tax = 1
+
+    XCTAssertEqual(draft.total, 31.50, accuracy: 0.000_1)
+  }
+
+  func testAssigningItemsEndsTyping() throws {
+    let draft = makeDraft(total: 30.50)
+    draft.addAdjustment(.tax)
+    draft.beginEditing(.adjustment(.tax))
+    let ownerID = try XCTUnwrap(draft.participants.first?.id)
+
+    draft.toggleAssignment(of: [ownerID], to: try XCTUnwrap(draft.items.first?.id))
+    draft.tax = 0.50
+    draft.tax = 1
+
+    XCTAssertEqual(draft.total, 31, accuracy: 0.000_1)
   }
 
   func testOrderBeforeTaxListsTipFirst() {

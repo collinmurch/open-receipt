@@ -76,36 +76,25 @@ struct ReceiptSplitCalculation: Sendable {
 
 enum ReceiptSplitCalculator {
   /// Splits `input` in whole units of its currency, so every share is an amount that can be paid
-  /// and the shares add up to exactly what was split.
-  static func calculate(_ input: ReceiptSplitInput) -> ReceiptSplitCalculation {
+  /// and the shares add up to exactly what was split. `balance` is `input`'s balance, when it's
+  /// already known.
+  static func calculate(
+    _ input: ReceiptSplitInput, balance: ReceiptBalance? = nil
+  ) -> ReceiptSplitCalculation {
     let currency = input.currency
     let participants = input.participants
     let participantIDs = participants.map(\.id)
-    var ledger = Ledger()
-    var itemShares: [ReceiptParticipant.ID: [ReceiptItemShare]] = [:]
-    var itemSubtotals: [ReceiptParticipant.ID: Double] = [:]
-    var unassignedItemCount = 0
-
-    for item in input.items {
+    let itemUnits = input.items.map { ReceiptCurrency.minorUnits($0.lineTotal, code: currency) }
+    let itemLines = zip(input.items, itemUnits).compactMap {
+      item, units -> (item: ReceiptDraftItem, line: Line)? in
       let assignedIDs = participantIDs.filter { item.participantIDs.contains($0) }
-      guard !assignedIDs.isEmpty else {
-        unassignedItemCount += 1
-        continue
-      }
-
-      let lineUnits = ReceiptCurrency.minorUnits(item.lineTotal, code: currency)
-      let allocation = ledger.allocate(
-        lineUnits, weights: assignedIDs.map { (id: $0, weight: 1) })
-      for participantID in assignedIDs {
-        let units = allocation[participantID, default: 0]
-        itemShares[participantID, default: []].append(
-          ReceiptItemShare(
-            itemID: item.id,
-            description: item.description,
-            quantity: item.quantity,
-            fraction: 1 / Double(assignedIDs.count),
-            amount: ReceiptCurrency.amount(minorUnits: units, code: currency)))
-        itemSubtotals[participantID, default: 0] += Double(lineUnits) / Double(assignedIDs.count)
+      guard !assignedIDs.isEmpty else { return nil }
+      return (item, Line(units: units, weights: assignedIDs.map { (id: $0, weight: 1) }))
+    }
+    var itemSubtotals: [ReceiptParticipant.ID: Double] = [:]
+    for (_, line) in itemLines {
+      for share in line.shares {
+        itemSubtotals[share.id, default: 0] += Double(line.units) * share.fraction
       }
     }
 
@@ -113,21 +102,42 @@ enum ReceiptSplitCalculator {
       participantIDs: participantIDs,
       itemSubtotals: itemSubtotals,
       method: input.adjustmentMethod)
-    let weightsByID = Dictionary(uniqueKeysWithValues: weights.map { ($0.id, $0.weight) })
-    let totalWeight = weights.reduce(0) { $0 + $1.weight }
-    var adjustmentShares: [ReceiptParticipant.ID: [ReceiptAdjustmentShare]] = [:]
+    let components = adjustmentComponents(
+      of: input, balance: balance ?? ReceiptBalance(input),
+      itemUnits: itemUnits.reduce(0, +))
+    let componentLines = components.map {
+      (component: $0, line: Line(units: $0.units, weights: weights))
+    }
+    let allocation = allocate(
+      itemLines.map(\.line) + componentLines.map(\.line),
+      participantIDs: participantIDs,
+      ownerID: participants.first { $0.source.isCurrentUser }?.id)
 
-    for component in adjustmentComponents(of: input) {
-      let allocation = ledger.allocate(component.units, weights: weights)
-      for participantID in participantIDs {
-        guard let units = allocation[participantID] else { continue }
-        let weight = weightsByID[participantID, default: 0]
-        adjustmentShares[participantID, default: []].append(
+    func amount(_ units: Int) -> Double {
+      ReceiptCurrency.amount(minorUnits: units, code: currency)
+    }
+    var itemShares: [ReceiptParticipant.ID: [ReceiptItemShare]] = [:]
+    for ((item, line), lineUnits) in zip(itemLines, allocation) {
+      for (share, units) in zip(line.shares, lineUnits) {
+        itemShares[share.id, default: []].append(
+          ReceiptItemShare(
+            itemID: item.id,
+            description: item.description,
+            quantity: item.quantity,
+            fraction: share.fraction,
+            amount: amount(units)))
+      }
+    }
+    var adjustmentShares: [ReceiptParticipant.ID: [ReceiptAdjustmentShare]] = [:]
+    for ((component, line), lineUnits) in zip(componentLines, allocation.dropFirst(itemLines.count))
+    {
+      for (share, units) in zip(line.shares, lineUnits) {
+        adjustmentShares[share.id, default: []].append(
           ReceiptAdjustmentShare(
             id: component.id,
             title: component.title,
-            fraction: totalWeight > 0 ? weight / totalWeight : 0,
-            amount: ReceiptCurrency.amount(minorUnits: units, code: currency)))
+            fraction: share.fraction,
+            amount: amount(units)))
       }
     }
 
@@ -140,7 +150,7 @@ enum ReceiptSplitCalculator {
     return ReceiptSplitCalculation(
       participantShares: shares,
       amountsOwed: Dictionary(uniqueKeysWithValues: shares.map { ($0.id, $0.total) }),
-      unassignedItemCount: unassignedItemCount)
+      unassignedItemCount: input.items.count - itemLines.count)
   }
 
   private typealias Weight = (id: ReceiptParticipant.ID, weight: Double)
@@ -167,14 +177,15 @@ enum ReceiptSplitCalculator {
   /// The amounts between the items and the total that everyone shares: a printed subtotal that
   /// differs from the items, each adjustment, and anything else the total includes. Savings
   /// already taken off the item prices aren't taken off again. They are counted in whole units,
-  /// so together with the items they add up to exactly the total.
-  private static func adjustmentComponents(of input: ReceiptSplitInput) -> [AdjustmentComponent] {
+  /// so together with the items, which come to `itemUnits`, they add up to exactly the total.
+  private static func adjustmentComponents(
+    of input: ReceiptSplitInput, balance: ReceiptBalance, itemUnits: Int
+  ) -> [AdjustmentComponent] {
     func units(_ amount: Double) -> Int {
       ReceiptCurrency.minorUnits(amount, code: input.currency)
     }
-    let balance = ReceiptBalance(input)
     var components: [AdjustmentComponent] = []
-    var knownUnits = input.items.reduce(0) { $0 + units($1.lineTotal) }
+    var knownUnits = itemUnits
     if balance.subtotalDifferenceUnits != 0 {
       knownUnits += balance.subtotalDifferenceUnits
       components.append(
@@ -201,47 +212,128 @@ enum ReceiptSplitCalculator {
     return components
   }
 
-  /// Splits amounts in whole units across a receipt, tracking how far each participant's
-  /// allocation is from their exact share. Each amount's leftover units go to whoever is furthest
-  /// behind, with ties going to whoever comes first, so rounding evens out over the receipt
-  /// instead of landing on the same person every time.
-  private struct Ledger {
-    /// Each participant's exact share minus what they've been allocated, in units.
-    private var balances: [ReceiptParticipant.ID: Double] = [:]
+  /// Splits each line into whole units that add up to the line, rounding every exact share down or
+  /// up so that each participant's total is also within one unit of their exact total.
+  /// Participants furthest below their exact total are rounded up first, and the owner last, so
+  /// they pay a leftover unit last and take a leftover saving first.
+  ///
+  /// Rounding a share up takes one of its line's leftover units. When a participant's lines have
+  /// none left, someone already rounded up on one of them moves to another line of theirs that
+  /// does, as in bipartite matching, so whether a participant can be rounded up never depends on
+  /// the order lines were placed in.
+  private static func allocate(
+    _ lines: [Line],
+    participantIDs: [ReceiptParticipant.ID],
+    ownerID: ReceiptParticipant.ID?
+  ) -> [[Int]] {
+    let participantIndices = Dictionary(
+      participantIDs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+    // Every line's shares, numbered in one run, with whom each is for and its line.
+    var lineShares: [Range<Int>] = []
+    var sharers: [Int] = []
+    var shareLines: [Int] = []
+    var floors: [Int] = []
+    var openUnits: [Int] = []
+    var options = Array(repeating: [(share: Int, fraction: Double)](), count: participantIDs.count)
+    var fractions = Array(repeating: 0.0, count: participantIDs.count)
+    for (lineIndex, line) in lines.enumerated() {
+      let start = floors.count
+      for share in line.shares {
+        let participant = participantIndices[share.id]!
+        let exact = snapped(Double(line.units) * share.fraction)
+        let floor = exact.rounded(.down)
+        if exact > floor {
+          options[participant].append((floors.count, exact - floor))
+          fractions[participant] += exact - floor
+        }
+        sharers.append(participant)
+        shareLines.append(lineIndex)
+        floors.append(Int(floor))
+      }
+      lineShares.append(start..<floors.count)
+      openUnits.append(line.units - floors[start...].reduce(0, +))
+    }
+    var isRoundedUp = Array(repeating: false, count: floors.count)
+    // Each participant's shares, largest fraction first, are rounded up first.
+    let shareOptions = options.map { $0.sorted { $0.fraction > $1.fraction }.map(\.share) }
+    // A share that's rounded up or whose line is full never becomes free again, since searches
+    // only take shares back on full lines, so each participant's free shares are found from where
+    // the last search left off.
+    var nextFree = Array(repeating: 0, count: participantIDs.count)
 
-    mutating func allocate(_ units: Int, weights: [Weight]) -> [ReceiptParticipant.ID: Int] {
+    // Each search visits every participant and line at most once: one that couldn't make room
+    // earlier in the search still can't, because a failed search changes nothing.
+    var visitedParticipants: [Bool] = []
+    var visitedLines: [Bool] = []
+    func search(_ participant: Int) -> Bool {
+      visitedParticipants[participant] = true
+      let options = shareOptions[participant]
+      while nextFree[participant] < options.count {
+        let share = options[nextFree[participant]]
+        nextFree[participant] += 1
+        if !isRoundedUp[share], openUnits[shareLines[share]] > 0 {
+          isRoundedUp[share] = true
+          openUnits[shareLines[share]] -= 1
+          return true
+        }
+      }
+      for share in options
+      where !isRoundedUp[share] && !visitedLines[shareLines[share]] {
+        visitedLines[shareLines[share]] = true
+        for other in lineShares[shareLines[share]]
+        where isRoundedUp[other] && !visitedParticipants[sharers[other]] {
+          isRoundedUp[other] = false
+          if search(sharers[other]) {
+            isRoundedUp[share] = true
+            return true
+          }
+          isRoundedUp[other] = true
+        }
+      }
+      return false
+    }
+    func roundUp(_ participant: Int) {
+      visitedParticipants = Array(repeating: false, count: participantIDs.count)
+      visitedLines = Array(repeating: false, count: lines.count)
+      _ = search(participant)
+    }
+
+    var remainders: [(order: Int, isOwner: Bool, remainder: Double)] = []
+    for (participant, id) in participantIDs.enumerated() where fractions[participant] > 0 {
+      let fraction = snapped(fractions[participant])
+      let wholeUnits = Int(fraction.rounded(.down))
+      for _ in 0..<wholeUnits { roundUp(participant) }
+      // Remainders within floating-point error of each other tie, so they keep their order.
+      let remainder = ((fraction - Double(wholeUnits)) / tolerance).rounded() * tolerance
+      remainders.append((participant, id == ownerID, remainder))
+    }
+    remainders.sort {
+      ($0.isOwner ? 1 : 0, -$0.remainder, $0.order) < ($1.isOwner ? 1 : 0, -$1.remainder, $1.order)
+    }
+    for candidate in remainders where candidate.remainder > 0 { roundUp(candidate.order) }
+    assert(openUnits.allSatisfy { $0 == 0 }, "Every line's units are placed")
+
+    return lineShares.map { $0.map { floors[$0] + (isRoundedUp[$0] ? 1 : 0) } }
+  }
+
+  private static let tolerance = 1e-9
+
+  /// `value`, or the whole number it's within floating-point error of.
+  private static func snapped(_ value: Double) -> Double {
+    let whole = value.rounded()
+    return abs(value - whole) < tolerance ? whole : value
+  }
+
+  /// An amount in whole units and the fraction of it each participant sharing it owes.
+  private struct Line {
+    let units: Int
+    let shares: [(id: ReceiptParticipant.ID, fraction: Double)]
+
+    init(units: Int, weights: [Weight]) {
       let positiveWeights = weights.filter { $0.weight > 0 }
       let totalWeight = positiveWeights.reduce(0) { $0 + $1.weight }
-      guard totalWeight > 0 else { return [:] }
-
-      let sign = units < 0 ? -1 : 1
-      let magnitude = abs(units)
-      var allocation: [ReceiptParticipant.ID: Int] = [:]
-      var candidates: [(order: Int, id: ReceiptParticipant.ID, shortfall: Double)] = []
-      var allocatedUnits = 0
-
-      for (order, entry) in positiveWeights.enumerated() {
-        let exact = Double(magnitude) * entry.weight / totalWeight
-        let base = Int(exact.rounded(.down))
-        let remainder = exact - Double(base)
-        allocation[entry.id] = base
-        allocatedUnits += base
-        let balance = balances[entry.id, default: 0]
-        candidates.append(
-          (order: order, id: entry.id, shortfall: Double(sign) * balance + remainder))
-        balances[entry.id] = balance + Double(sign) * remainder
-      }
-
-      candidates.sort {
-        abs($0.shortfall - $1.shortfall) < 1e-9
-          ? $0.order < $1.order : $0.shortfall > $1.shortfall
-      }
-      for candidate in candidates.prefix(magnitude - allocatedUnits) {
-        allocation[candidate.id, default: 0] += 1
-        balances[candidate.id, default: 0] -= Double(sign)
-      }
-
-      return allocation.mapValues { $0 * sign }
+      self.units = units
+      shares = totalWeight > 0 ? positiveWeights.map { ($0.id, $0.weight / totalWeight) } : []
     }
   }
 

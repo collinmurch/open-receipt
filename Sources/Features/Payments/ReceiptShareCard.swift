@@ -15,10 +15,17 @@ struct ReceiptShareCard<Accessory: View, Actions: View>: View {
   /// Drawn after the share's total.
   @ViewBuilder let accessory: Accessory
   @ViewBuilder let actions: Actions
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
+    // Accessibility sizes stack the total under the person, giving each the card's full width.
+    let isStacked = dynamicTypeSize.isAccessibilitySize
+    let layout =
+      isStacked
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+      : AnyLayout(HStackLayout(spacing: 12))
     VStack(spacing: 20) {
-      HStack(spacing: 12) {
+      layout {
         if let onOpenContact {
           Button(action: onOpenContact) {
             identity
@@ -32,15 +39,19 @@ struct ReceiptShareCard<Accessory: View, Actions: View>: View {
             .accessibilityElement(children: .combine)
         }
 
-        VStack(alignment: .trailing, spacing: 2) {
-          ShareTotalText(amount: showsTotal ? share.total : nil, currency: currency)
-          Text(share.itemCountText)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+          VStack(alignment: isStacked ? .leading : .trailing, spacing: 2) {
+            ShareTotalText(amount: showsTotal ? share.total : nil, currency: currency)
+            Text(share.itemCountText)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityElement(children: .combine)
+          if isStacked {
+            Spacer(minLength: 0)
+          }
+          accessory
         }
-        .accessibilityElement(children: .combine)
-
-        accessory
       }
 
       actions
@@ -112,7 +123,7 @@ struct ShareCardButtonLabel: View {
   var body: some View {
     HStack(spacing: 8) {
       Text(title)
-        .lineLimit(1)
+        .buttonTitleLineLimit()
         .minimumScaleFactor(0.8)
       Image(systemName: systemImage)
     }

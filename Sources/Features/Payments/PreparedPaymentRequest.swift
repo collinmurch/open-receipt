@@ -12,8 +12,8 @@ struct PreparedPaymentRequest {
   let currency: String
   let action: Action
 
-  /// Fails for the receipt's owner, an unfinished split, a person without a payment method, or a
-  /// currency the method can't request.
+  /// Fails for the receipt's owner, an unfinished split, a share with nothing to request, a person
+  /// without a payment method, or a currency the method can't request.
   init?(
     share: ReceiptParticipantShare,
     destination: PaymentDestination?,
@@ -59,8 +59,13 @@ struct PreparedPaymentRequest {
   ) -> String? {
     guard !share.participant.source.isCurrentUser else { return nil }
     guard isSplitComplete else { return "Assign every item before you send requests." }
+    let name = share.participant.displayName
+    guard share.total.isRequestable else {
+      guard share.total < 0 else { return "Nothing to request from \(name)." }
+      return "You owe \(name) \((-share.total).formatted(.currency(code: currency)))."
+    }
     guard let destination else {
-      return "Add a payment method to request from \(share.participant.displayName)."
+      return "Add a payment method to request from \(name)."
     }
     return destination.method.unsupportedCurrencyReason(currency)
   }

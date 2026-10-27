@@ -1,4 +1,3 @@
-import SwiftUI
 import XCTest
 
 @testable import open_receipt
@@ -6,8 +5,8 @@ import XCTest
 @MainActor
 final class AdjustmentChoiceTests: XCTestCase {
   private let presets = [
-    AdjustmentPreset(title: "18%", amount: 1.80),
-    AdjustmentPreset(title: "20%", amount: 2),
+    AdjustmentPreset(title: "18%", amount: 1.80, percentage: 18),
+    AdjustmentPreset(title: "20%", amount: 2, percentage: 20),
   ]
 
   func testPercentagePresetRoundsToCurrency() {
@@ -38,65 +37,37 @@ final class AdjustmentChoiceTests: XCTestCase {
     XCTAssertNil([AdjustmentPreset]().middle)
   }
 
-  func testAmountMatchingPresetChoosesIt() {
-    let choice = makeChoice(amount: 2)
+  func testPercentageChoosesItsPreset() {
+    let choice = AdjustmentChoice(percentage: 20, presets: presets)
 
-    XCTAssertEqual(choice.wrappedValue, .preset(presets[1]))
+    XCTAssertEqual(choice, .preset(presets[1]))
   }
 
-  func testAmountMatchingNoPresetIsCustom() {
-    let choice = makeChoice(amount: 3)
+  func testPercentageChoosesItsPresetAmongPresetsOfOneAmount() {
+    let presets = [18, 20, 22].map {
+      AdjustmentPreset.percentage($0, of: 0.05, currencyCode: "USD")
+    }
 
-    XCTAssertEqual(choice.wrappedValue, .custom)
+    let choice = AdjustmentChoice(percentage: 22, presets: presets)
+
+    XCTAssertEqual(choice.percentage, 22)
   }
 
-  func testChosenCustomStaysCustomAtPresetAmount() {
-    let choice = makeChoice(amount: 2, isCustom: true)
-
-    XCTAssertEqual(choice.wrappedValue, .custom)
+  func testNoPercentageIsCustom() {
+    XCTAssertEqual(AdjustmentChoice(percentage: nil, presets: presets), .custom)
   }
 
-  func testChoosingPresetSetsAmount() {
-    var amount = 3.0
-    let choice = makeChoice(amount: Binding(get: { amount }, set: { amount = $0 }))
-
-    choice.wrappedValue = .preset(presets[0])
-
-    XCTAssertEqual(amount, 1.80)
+  func testPercentageWithoutPresetIsCustom() {
+    XCTAssertEqual(AdjustmentChoice(percentage: 25, presets: presets), .custom)
   }
 
-  func testChoosingPresetEndsCustom() {
-    var isCustom = true
-    let choice = makeChoice(
-      amount: .constant(3), isCustom: Binding(get: { isCustom }, set: { isCustom = $0 }))
-
-    choice.wrappedValue = .preset(presets[0])
-
-    XCTAssertFalse(isCustom)
+  func testCustomHasNoPercentage() {
+    XCTAssertNil(AdjustmentChoice.custom.percentage)
   }
 
-  func testChoosingCustomKeepsAmount() {
-    var amount = 2.0
-    let choice = makeChoice(amount: Binding(get: { amount }, set: { amount = $0 }))
+  func testPresetWithoutPercentageHasNone() {
+    let choice = AdjustmentChoice.preset(AdjustmentPreset(title: "Auto", amount: 1))
 
-    choice.wrappedValue = .custom
-
-    XCTAssertEqual(amount, 2)
-    XCTAssertEqual(choice.wrappedValue, .custom)
-  }
-
-  private func makeChoice(amount: Double, isCustom: Bool = false) -> Binding<AdjustmentChoice> {
-    makeChoice(amount: .constant(amount), isCustom: .constant(isCustom))
-  }
-
-  private func makeChoice(
-    amount: Binding<Double>,
-    isCustom: Binding<Bool>? = nil
-  ) -> Binding<AdjustmentChoice> {
-    var storedIsCustom = false
-    return AdjustmentChoice.binding(
-      amount: amount,
-      isCustom: isCustom ?? Binding(get: { storedIsCustom }, set: { storedIsCustom = $0 }),
-      presets: presets)
+    XCTAssertNil(choice.percentage)
   }
 }

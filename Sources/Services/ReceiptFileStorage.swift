@@ -211,7 +211,7 @@ actor ReceiptFileStorage {
 
   /// Summaries of stored receipts, keyed by the modification date of each receipt's file.
   private struct ReceiptLibraryIndex: Codable {
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     struct Entry: Codable {
       let modifiedAt: Date

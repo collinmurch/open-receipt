@@ -2,8 +2,19 @@ import SwiftUI
 
 struct ParticipantStrip: View {
   /// The strip's height at the default text size. Views that inset content below the strip scale
-  /// it with `@ScaledMetric(relativeTo: .caption2)`.
+  /// it with `scaled(_:for:)`.
   static let baseHeight: CGFloat = 94
+  /// The largest text size the strip grows to. Like a tab bar, it stops there and shows larger
+  /// names in the large content viewer instead, so it leaves room for the receipt.
+  static let maximumTypeSize = DynamicTypeSize.xxxLarge
+
+  /// `value` scaled like the strip's text at `size`, which stops growing at `maximumTypeSize`.
+  static func scaled(_ value: CGFloat, for size: DynamicTypeSize) -> CGFloat {
+    UIFontMetrics(forTextStyle: .caption2).scaledValue(
+      for: value,
+      compatibleWith: UITraitCollection(
+        preferredContentSizeCategory: UIContentSizeCategory(min(size, maximumTypeSize))))
+  }
 
   let participants: [ReceiptParticipant]
   let amountsOwed: [ReceiptParticipant.ID: Double]
@@ -16,11 +27,12 @@ struct ParticipantStrip: View {
   /// Where the people sheet zooms from when the Add button opens it.
   var addTransition: (id: AnyHashable, namespace: Namespace.ID)?
 
-  @ScaledMetric(relativeTo: .caption2) private var height = Self.baseHeight
-  @ScaledMetric(relativeTo: .caption2) private var avatarSize: CGFloat = 38
-  @ScaledMetric(relativeTo: .caption2) private var itemWidth: CGFloat = 58
-  @ScaledMetric(relativeTo: .caption2) private var spacing: CGFloat = 14
-  @ScaledMetric(relativeTo: .caption2) private var clearButtonWidth: CGFloat = 52
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  private var height: CGFloat { scaled(Self.baseHeight) }
+  private var avatarSize: CGFloat { scaled(38) }
+  private var itemWidth: CGFloat { scaled(58) }
+  private var spacing: CGFloat { scaled(14) }
+  private var clearButtonWidth: CGFloat { scaled(52) }
   private let cornerRadius: CGFloat = 22
   private let horizontalPadding: CGFloat = 14
   private let clearButtonSpacing: CGFloat = 8
@@ -41,6 +53,11 @@ struct ParticipantStrip: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .frame(height: height)
+    .dynamicTypeSize(...Self.maximumTypeSize)
+  }
+
+  private func scaled(_ value: CGFloat) -> CGFloat {
+    Self.scaled(value, for: dynamicTypeSize)
   }
 
   private func strip(shortNames: [ReceiptParticipant.ID: String]) -> some View {
@@ -61,6 +78,7 @@ struct ParticipantStrip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add people")
+        .accessibilityShowsLargeContentViewer()
       }
       .padding(.horizontal, horizontalPadding)
       .frame(maxHeight: .infinity)
@@ -71,21 +89,26 @@ struct ParticipantStrip: View {
     .scrollIndicators(.hidden)
   }
 
-  /// The clear button always stays in the glass, tucked under the strip's trailing edge until
-  /// there's a selection, so it slides out of the strip, and back in, with whatever moves the strip.
+  /// The clear button's glass always stays, tucked under the strip's trailing edge until there's a
+  /// selection, so it slides out of the strip, and back in, with whatever moves the strip. The
+  /// button itself only exists while it shows, since hiding it from accessibility doesn't reach
+  /// through the glass.
   private var clearButton: some View {
-    Button("Clear Selection", systemImage: "person.2.slash", action: onClearSelection)
-      .labelStyle(.iconOnly)
-      .font(.headline)
+    Color.clear
       .frame(width: clearButtonWidth)
-      .frame(maxHeight: .infinity)
-      .contentShape(.rect)
-      .opacity(showsClearButton ? 1 : 0)
-      .buttonStyle(.plain)
+      .overlay {
+        if showsClearButton {
+          Button("Clear Selection", systemImage: "person.2.slash", action: onClearSelection)
+            .labelStyle(.iconOnly)
+            .font(.headline)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(.rect)
+            .buttonStyle(.plain)
+            .accessibilityShowsLargeContentViewer()
+        }
+      }
       .glassEffect(.regular.interactive(showsClearButton), in: .rect(cornerRadius: cornerRadius))
       .offset(x: showsClearButton ? clearButtonReach : 0)
-      .allowsHitTesting(showsClearButton)
-      .accessibilityHidden(!showsClearButton)
   }
 
   private var clearButtonReach: CGFloat { clearButtonWidth + clearButtonSpacing }
@@ -131,13 +154,17 @@ struct ParticipantStrip: View {
         Text(amount, format: .currency(code: currency))
           .font(.caption2.monospacedDigit().weight(.semibold))
           .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.6)
           .contentTransition(.numericText(value: amount))
       }
       .frame(width: itemWidth)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(participant.displayName)
+    .accessibilityValue(amount.formatted(.currency(code: currency)))
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityShowsLargeContentViewer()
     .accessibilityHint("Select this person for item assignment")
   }
 

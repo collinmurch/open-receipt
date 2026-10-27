@@ -59,7 +59,7 @@ After changing a screen, capture it with `make screenshot` and look at the PNG. 
 Example: `make screenshot of=review appearance=both name=after`
 
 - `of=` picks the scenario. Run it without `of=` to list them.
-- `appearance=light|dark|both` defaults to light. `device=` picks another simulator. `name=` names the files (default: the scenario), so before and after captures can sit side by side.
+- `appearance=light|dark|both` defaults to light. `text_size=` draws the app at a `DynamicTypeSize`, such as `accessibility3` to check large text; it defaults to the simulator's. `device=` picks another simulator. `name=` names the files (default: the scenario), so before and after captures can sit side by side.
 - Each capture writes `<name>-<appearance>.png` and `<name>.txt`, the app's accessibility tree, to `.build/screenshots/`. A failed capture writes `<name>-failure.png` and `<name>-failure.txt` instead.
 - Captures are scratch output and never committed. Delete them with `make screenshot clean=1`, or one with `make screenshot clean=1 name=<name>`.
 - If a screen has no scenario, add a `Kind` case and stage its state there. Don't tap through the UI to reach it.

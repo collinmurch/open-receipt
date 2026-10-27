@@ -27,6 +27,7 @@ struct FormTextField: View {
 }
 
 /// A decimal form field that selects its whole value when it gains focus, so typing replaces it.
+/// Only what's typed sets the value: showing it rounded to `format` leaves it as it is.
 struct NumberField: View {
   let title: String
   @Binding var value: Double
@@ -49,6 +50,7 @@ struct NumberField: View {
       .formValueStyle(isFocused: isFocused)
       .onAppear { text = value.formatted(format) }
       .onChange(of: text) { _, newText in
+        guard isFocused, newText != value.formatted(format) else { return }
         if let parsed = try? Double(newText, format: format), parsed != value {
           value = parsed
         }

@@ -122,8 +122,8 @@ struct ReceiptBalanceNoticeRow: View {
           Text(notice.message)
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
       actions
@@ -133,29 +133,35 @@ struct ReceiptBalanceNoticeRow: View {
     .accessibilityElement(children: .contain)
   }
 
+  /// The fixes side by side on one line each, or stacked and wrapping when that doesn't fit.
   private var actions: some View {
-    HStack(spacing: 8) {
-      ForEach(Array(notice.actions.enumerated()), id: \.element) { index, action in
-        let isPrimary = index == 0
-        Button {
-          perform(action)
-        } label: {
-          if case .addItem = action {
-            Label(title(of: action), systemImage: "plus")
-              .labelStyle(.titleAndIcon)
-              .lineLimit(1)
-          } else {
-            Text(title(of: action))
-              .lineLimit(1)
-          }
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8) { actionButtons }
+        .lineLimit(1)
+      VStack(spacing: 8) { actionButtons }
+        .multilineTextAlignment(.center)
+    }
+  }
+
+  private var actionButtons: some View {
+    ForEach(Array(notice.actions.enumerated()), id: \.element) { index, action in
+      let isPrimary = index == 0
+      Button {
+        perform(action)
+      } label: {
+        if case .addItem = action {
+          Label(title(of: action), systemImage: "plus")
+            .labelStyle(.titleAndIcon)
+        } else {
+          Text(title(of: action))
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
-        .fontWeight(isPrimary ? .semibold : .regular)
-        .tint(isPrimary ? Color.orange : Color.gray)
-        .foregroundStyle(isPrimary ? Color.orange : Color.primary)
       }
+      .buttonStyle(.bordered)
+      .buttonBorderShape(.capsule)
+      .controlSize(.small)
+      .fontWeight(isPrimary ? .semibold : .regular)
+      .tint(isPrimary ? Color.orange : Color.gray)
+      .foregroundStyle(isPrimary ? Color.orange : Color.primary)
     }
   }
 

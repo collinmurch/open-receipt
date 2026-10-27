@@ -7,8 +7,8 @@ struct ReceiptAdjustmentQuestionView: View {
   @Bindable var draft: ReceiptDraft
   let adjustment: ReceiptTotalAdjustment
   private let presets: [AdjustmentPreset]
-  @State private var amount: Double
-  @State private var isCustom: Bool
+  @State private var choice: AdjustmentChoice
+  @State private var customAmount = 0.0
   @FocusState private var focusedField: ReceiptAmountField?
   @Environment(\.colorScheme) private var colorScheme
 
@@ -17,8 +17,7 @@ struct ReceiptAdjustmentQuestionView: View {
     self.adjustment = adjustment
     let presets = Self.presets(for: adjustment, in: draft)
     self.presets = presets
-    _amount = State(initialValue: presets.middle?.amount ?? 0)
-    _isCustom = State(initialValue: presets.isEmpty)
+    _choice = State(initialValue: presets.middle.map(AdjustmentChoice.preset) ?? .custom)
   }
 
   var body: some View {
@@ -57,7 +56,7 @@ struct ReceiptAdjustmentQuestionView: View {
         if !presets.isEmpty {
           AdjustmentChoicePicker(
             title: "\(adjustment.title) Amount", presets: presets,
-            choice: choice.animation(.settle))
+            choice: choiceBinding.animation(.settle))
         }
         VStack(alignment: .leading, spacing: 8) {
           amountRow
@@ -75,8 +74,8 @@ struct ReceiptAdjustmentQuestionView: View {
   /// The amount, drawn like a row of the receipt's list.
   private var amountRow: some View {
     AdjustmentAmountRow(
-      title: adjustment.title, amount: $amount, isCustom: choice.wrappedValue == .custom,
-      currencyCode: currency, focus: $focusedField, field: field
+      title: adjustment.title, amount: Binding(get: { amount }, set: { customAmount = $0 }),
+      isCustom: choice == .custom, currencyCode: currency, focus: $focusedField, field: field
     ) {
       Text(adjustment.title)
     }
@@ -85,15 +84,27 @@ struct ReceiptAdjustmentQuestionView: View {
     .background(
       Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 28, style: .continuous)
     )
-    .choosesCustomAmount(choice, focusing: field, in: $focusedField)
+    .choosesCustomAmount(choiceBinding)
   }
 
   private var field: ReceiptAmountField {
     .adjustment(adjustment)
   }
 
-  private var choice: Binding<AdjustmentChoice> {
-    AdjustmentChoice.binding(amount: $amount, isCustom: $isCustom, presets: presets)
+  /// The choice, where choosing custom starts from the amount shown.
+  private var choiceBinding: Binding<AdjustmentChoice> {
+    Binding(
+      get: { choice },
+      set: { newChoice in
+        if newChoice == .custom { customAmount = amount }
+        choice = newChoice
+      }
+    ).focusingCustom(field, in: $focusedField)
+  }
+
+  private var amount: Double {
+    guard case .preset(let preset) = choice else { return customAmount }
+    return preset.amount
   }
 
   private var header: some View {
@@ -120,7 +131,11 @@ struct ReceiptAdjustmentQuestionView: View {
       tint: draft.backgroundStyle.prominentColor
     ) {
       focusedField = nil
-      draft.confirm(adjustment, amount: amount)
+      if adjustment == .tip, let percentage = choice.percentage {
+        draft.confirmTip(percentage: percentage)
+      } else {
+        draft.confirm(adjustment, amount: amount)
+      }
     }
     .disabled(amount <= 0)
     .opacity(amount > 0 ? 1 : 0.5)
@@ -141,11 +156,13 @@ struct ReceiptAdjustmentQuestionView: View {
   }
 
   private var detail: String? {
-    if adjustment == .tax, case .preset = choice.wrappedValue {
+    if adjustment == .tax, case .preset = choice {
       return "The total is \(formatted(amount)) more than the items."
     }
     if adjustment == .tip {
-      return draft.tipCaption(for: amount).map { "\(formatted(amount)) is \($0)." }
+      return draft.tipCaption(for: amount, percentage: choice.percentage).map {
+        "\(formatted(amount)) is \($0)."
+      }
     }
     let base = draft.itemsTotal
     guard base > 0, amount > 0 else { return nil }

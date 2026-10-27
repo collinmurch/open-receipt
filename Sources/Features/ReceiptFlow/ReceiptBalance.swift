@@ -53,6 +53,27 @@ struct ReceiptBalance: Equatable, Sendable {
   /// Balances `input`, reading savings at `placement`, or wherever best explains the printed
   /// amounts when it's `nil`.
   init(_ input: ReceiptSplitInput, placement: SavingsPlacement? = nil) {
+    if let placement {
+      self.init(input, at: placement)
+    } else {
+      self.init(input) { _ in input }
+    }
+  }
+
+  /// Balances `input` as `adjusted` changes it for each placement, reading savings wherever that
+  /// best explains the printed amounts. It's for an amount that depends on where savings were
+  /// taken off, such as a tip on the subtotal after them: each placement is judged with the
+  /// amount it would give.
+  init(
+    _ input: ReceiptSplitInput,
+    adjustedAt adjusted: (SavingsPlacement) -> ReceiptSplitInput
+  ) {
+    self = Self.placements(for: input).map { Self(adjusted($0), at: $0) }.min {
+      $0.score < $1.score
+    }!
+  }
+
+  private init(_ input: ReceiptSplitInput, at placement: SavingsPlacement) {
     let code = input.currency
     func units(_ amount: Double) -> Int { ReceiptCurrency.minorUnits(amount, code: code) }
     func amount(_ units: Int) -> Double { ReceiptCurrency.amount(minorUnits: units, code: code) }
@@ -63,7 +84,6 @@ struct ReceiptBalance: Equatable, Sendable {
       charges: units(input.adjustments[.tax] ?? 0) + units(input.adjustments[.tip] ?? 0),
       savings: units(input.adjustments[.savings] ?? 0),
       total: units(input.total))
-    let placement = placement ?? amounts.likeliestPlacement
     let steps = amounts.steps(at: placement)
 
     self.placement = placement
@@ -77,6 +97,25 @@ struct ReceiptBalance: Equatable, Sendable {
     totalDifference = amount(totalDifferenceUnits)
   }
 
+  /// Where `input`'s savings could have been taken off. A receipt without a subtotal only shows
+  /// whether they're in the item prices.
+  private static func placements(for input: ReceiptSplitInput) -> [SavingsPlacement] {
+    guard (input.adjustments[.savings] ?? 0) != 0 else { return [.afterSubtotal] }
+    return input.subtotal > 0
+      ? SavingsPlacement.all : SavingsPlacement.all.filter { $0.isInItems == $0.isInSubtotal }
+  }
+
+  /// How well the balance explains its receipt, lowest best: it leaves the fewest steps off, then
+  /// assumes the least, then leaves the smallest differences.
+  private var score: (Int, Int, Int) {
+    let differences = [subtotalDifferenceUnits, totalDifferenceUnits]
+    return (
+      differences.filter { $0 != 0 }.count,
+      placement.assumptionCount,
+      differences.reduce(0) { $0 + abs($1) }
+    )
+  }
+
   var isBalanced: Bool {
     subtotalDifferenceUnits == 0 && totalDifferenceUnits == 0
   }
@@ -84,6 +123,11 @@ struct ReceiptBalance: Equatable, Sendable {
   /// Whether savings come off between the subtotal the receipt shows and its total. When they
   /// don't, they were already taken off above it.
   var subtractsSavingsFromSubtotal: Bool {
+    subtractsSavingsFromSubtotal(at: placement)
+  }
+
+  /// Whether savings read at `placement` come off between the subtotal and the total.
+  func subtractsSavingsFromSubtotal(at placement: SavingsPlacement) -> Bool {
     printedSubtotal == nil ? !placement.isInItems : !placement.isInSubtotal
   }
 
@@ -113,26 +157,6 @@ struct ReceiptBalance: Equatable, Sendable {
       let calculatedSubtotal =
         items + (placement.isInItems ? savings : 0) - (placement.isInSubtotal ? savings : 0)
       return (calculatedSubtotal, subtotal + charges - (placement.isInSubtotal ? 0 : savings))
-    }
-
-    /// The placement that leaves the fewest steps off, then assumes the least, then leaves the
-    /// smallest differences.
-    var likeliestPlacement: SavingsPlacement {
-      guard savings != 0 else { return .afterSubtotal }
-      let placements =
-        subtotal == nil
-        ? SavingsPlacement.all.filter { $0.isInItems == $0.isInSubtotal } : SavingsPlacement.all
-      return placements.min { score($0) < score($1) } ?? .afterSubtotal
-    }
-
-    private func score(_ placement: SavingsPlacement) -> (Int, Int, Int) {
-      let steps = steps(at: placement)
-      let differences = [subtotal.map { $0 - (steps.subtotal ?? $0) } ?? 0, total - steps.total]
-      return (
-        differences.filter { $0 != 0 }.count,
-        placement.assumptionCount,
-        differences.reduce(0) { $0 + abs($1) }
-      )
     }
   }
 }

@@ -6,21 +6,17 @@ struct ReceiptTotalsSection: View {
 
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
-  /// Whether the tip is entered as an amount rather than chosen from the suggestions.
-  @Binding var isTipCustom: Bool
   var focusedField: FocusState<ReceiptEditField?>.Binding
   @Binding var haptic: HapticEvent
   /// Adds an item for the amount the items are short, and opens it to be named.
   let onAddItem: (Double) -> Void
   @State private var savingsInputMode = AdjustmentInputMode.amount
 
-  /// The amounts typed in while editing, in the order they're listed. A tip chosen from the
-  /// suggestions has no field.
-  static func editableFields(of draft: ReceiptDraft, isTipCustom: Bool) -> [ReceiptAmountField] {
-    let tipChoice = AdjustmentChoice.current(
-      amount: draft.tip, isCustom: isTipCustom, presets: draft.tipPresets)
+  /// The amounts typed in while editing, in the order they're listed. A tip chosen as a
+  /// percentage has no field.
+  static func editableFields(of draft: ReceiptDraft) -> [ReceiptAmountField] {
     let adjustments = draft.adjustmentOrder.filter { adjustment in
-      draft.adjustments.contains(adjustment) && (adjustment != .tip || tipChoice == .custom)
+      draft.adjustments.contains(adjustment) && (adjustment != .tip || draft.tipPercentage == nil)
     }
     return [.subtotal] + adjustments.map(ReceiptAmountField.adjustment) + [.total]
   }
@@ -40,6 +36,13 @@ struct ReceiptTotalsSection: View {
       }
     } header: {
       Text("Totals")
+    }
+    .onChange(of: focusedField.wrappedValue, initial: true) { _, focused in
+      if case .amount(let field)? = focused {
+        draft.beginEditing(field)
+      } else {
+        draft.endEditing()
+      }
     }
   }
 
@@ -172,9 +175,11 @@ struct ReceiptTotalsSection: View {
   /// The tip, chosen from the suggested percentages or entered like the other amounts.
   private var tipEditor: some View {
     let presets = draft.tipPresets
-    let choice = AdjustmentChoice.binding(
-      amount: $draft.tip, isCustom: $isTipCustom, presets: presets)
     let field = ReceiptEditField.amount(.adjustment(.tip))
+    let choice = Binding(
+      get: { AdjustmentChoice(percentage: draft.tipPercentage, presets: presets) },
+      set: { draft.setTipPercentage($0.percentage) }
+    ).focusingCustom(field, in: focusedField)
     return VStack(alignment: .leading, spacing: 12) {
       AdjustmentAmountRow(
         title: ReceiptTotalAdjustment.tip.title, amount: $draft.tip,
@@ -183,10 +188,10 @@ struct ReceiptTotalsSection: View {
       ) {
         adjustmentLabel(.tip)
       }
-      .choosesCustomAmount(choice, focusing: field, in: focusedField)
+      .choosesCustomAmount(choice)
       AdjustmentChoicePicker(
         title: "Tip Amount", presets: presets, choice: choice.animation(.settle))
-      if let caption = draft.tipCaption(for: draft.tip) {
+      if let caption = draft.tipCaption(for: draft.tip, percentage: draft.tipPercentage) {
         Text(
           canReorderAdjustments
             ? "\(caption). Press and drag to reorder; the tip is based on what’s above it."
@@ -202,9 +207,8 @@ struct ReceiptTotalsSection: View {
   private func addAdjustmentRow(_ adjustment: ReceiptTotalAdjustment) -> some View {
     Button {
       withAnimation(.settle) {
-        if adjustment == .tip {
-          isTipCustom = false
-          draft.addAdjustment(.tip, amount: draft.tipPresets.middle?.amount ?? 0)
+        if adjustment == .tip, let percentage = draft.tipPresets.middle?.percentage {
+          draft.setTipPercentage(percentage)
         } else {
           draft.addAdjustment(adjustment)
         }
@@ -256,6 +260,7 @@ struct ReceiptTotalsSection: View {
 
   private func perform(_ action: ReceiptBalanceNotice.Action) {
     focusedField.wrappedValue = nil
+    draft.endEditing()
     switch action {
     case .addItem(let amount):
       onAddItem(amount)
@@ -292,7 +297,8 @@ struct ReceiptTotalsSection: View {
       )
       .multilineTextAlignment(.trailing)
       .fontWeight(isEmphasized ? .semibold : .regular)
-      .frame(minWidth: 100, idealWidth: 115, maxWidth: 130)
+      .fixedSize(horizontal: true, vertical: false)
+      .frame(minWidth: 100, alignment: .trailing)
       .focused(focusedField, equals: .amount(field))
       .accessibilityLabel(title)
     } label: {

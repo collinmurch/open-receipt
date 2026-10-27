@@ -34,6 +34,11 @@ enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiab
   var sign: Double {
     self == .savings ? -1 : 1
   }
+
+  /// `amount` as it moves the total, or back from that: savings change sign.
+  func signed(_ amount: Double) -> Double {
+    amount == 0 ? 0 : amount * sign
+  }
 }
 
 enum ReceiptAdjustmentSplitMethod: String, CaseIterable, Codable, Identifiable, Sendable {

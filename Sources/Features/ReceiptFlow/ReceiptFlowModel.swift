@@ -228,7 +228,7 @@ final class ReceiptFlowModel {
       let isUnread = document.recognition.status != .succeeded
       if isUnread {
         let draft = ReceiptDraft(
-          receipt: ParsedReceipt(),
+          receipt: ParsedReceipt(currency: CurrencySettings.defaultCode()),
           id: document.id,
           owner: await owner(),
           backgroundStyle: document.presentation.backgroundStyle)

@@ -46,7 +46,13 @@ extension ReceiptDraft {
   /// What the tip is a percentage of: the subtotal, with the tax and savings listed above it.
   /// Savings already in the subtotal are in it wherever they're listed.
   var tipBaseAmount: Double {
-    tipBaseAmount(in: adjustmentOrder)
+    tipBaseAmount(for: tipPercentage)
+  }
+
+  /// What a tip of `percentage` is worked out on, or what the tip is a percentage of when it's
+  /// `nil`.
+  func tipBaseAmount(for percentage: Int?) -> Double {
+    tipBaseAmount(at: tipPlacement(for: percentage))
   }
 
   /// Whether the tip is worked out after tax.
@@ -56,47 +62,87 @@ extension ReceiptDraft {
 
   /// Whether the tip is worked out after savings, or `nil` when the receipt has none.
   var isTipAfterSavings: Bool? {
-    guard savings > 0 else { return nil }
-    return adjustments(above: .tip, in: adjustmentOrder).contains(.savings)
-      || !balance.subtractsSavingsFromSubtotal
+    isTipAfterSavings(at: tipPlacement(for: tipPercentage))
   }
 
-  /// The suggested tips, as percentages of `tipBaseAmount`.
+  /// The suggested tips, as percentages of `tipBaseAmount`, along with the one the tip was chosen
+  /// as if it's no longer suggested.
   var tipPresets: [AdjustmentPreset] {
-    AdjustmentPreset.tips(of: tipBaseAmount, currencyCode: displayCurrency)
-  }
-
-  /// The line under a tip of `amount` that says what it's a percentage of.
-  func tipCaption(for amount: Double) -> String? {
-    TipBaseCaption.text(
-      tip: amount, base: tipBaseAmount, isAfterTax: isTipAfterTax,
-      isAfterSavings: isTipAfterSavings, currencyCode: displayCurrency)
-  }
-
-  /// Lists the adjustments in `order`. A tip at one of `percentages` of its old base becomes that
-  /// percentage of the new one; any other tip keeps its amount.
-  func setAdjustmentOrder(
-    _ order: [ReceiptTotalAdjustment],
-    percentages: [Int] = TipSettings.percentages()
-  ) {
-    guard order != adjustmentOrder, ReceiptTotalAdjustment.validOrder(order) != nil else { return }
-    let suggestion = AdjustmentPreset.tips(
-      of: tipBaseAmount, percentages: percentages, currencyCode: displayCurrency
-    ).first(matching: tip)
-    let base = tipBaseAmount(in: order)
-    adjustmentOrder = order
-    if adjustments.contains(.tip), let percentage = suggestion?.percentage {
-      tip = AdjustmentPreset.percentage(percentage, of: base, currencyCode: displayCurrency).amount
+    var percentages = TipSettings.percentages()
+    if let tipPercentage, !percentages.contains(tipPercentage) {
+      percentages = (percentages + [tipPercentage]).sorted()
+    }
+    return percentages.map { percentage in
+      AdjustmentPreset.percentage(
+        percentage, of: tipBaseAmount(for: percentage), currencyCode: displayCurrency)
     }
   }
 
-  private func tipBaseAmount(in order: [ReceiptTotalAdjustment]) -> Double {
+  /// The suggested percentage the tip comes to, or `nil` when it's none or more than one of them.
+  var suggestedTipPercentage: Int? {
+    let units = ReceiptCurrency.minorUnits(tip, code: displayCurrency)
+    let matches = tipPresets.filter {
+      ReceiptCurrency.minorUnits($0.amount, code: displayCurrency) == units
+    }
+    return matches.count == 1 ? matches[0].percentage : nil
+  }
+
+  /// The line under a tip of `amount` that says what it's a percentage of, for a tip chosen as
+  /// `percentage` or entered when it's `nil`.
+  func tipCaption(for amount: Double, percentage: Int?) -> String? {
+    let placement = tipPlacement(for: percentage)
+    return TipBaseCaption.text(
+      tip: amount, base: tipBaseAmount(at: placement),
+      isAfterTax: isTipAfterTax, isAfterSavings: isTipAfterSavings(at: placement),
+      currencyCode: displayCurrency)
+  }
+
+  /// Lists the adjustments in `order`. A tip chosen as a percentage becomes that percentage of
+  /// its new base; any other tip keeps its amount.
+  func setAdjustmentOrder(_ order: [ReceiptTotalAdjustment]) {
+    guard order != adjustmentOrder, ReceiptTotalAdjustment.validOrder(order) != nil else { return }
+    keepingBalance { adjustmentOrder = order }
+  }
+
+  /// Where savings are read to work out a tip of `percentage`, or an entered tip when it's `nil`.
+  /// A tip that follows its base is worked out where the receipt is best explained with the tip
+  /// each placement would give, so the tip can't move the base it's a percentage of. A receipt
+  /// that adds up works any other percentage out where its tip is now, since its total will
+  /// follow the tip.
+  private func tipPlacement(for percentage: Int?) -> ReceiptBalance.SavingsPlacement {
+    guard let percentage else { return balance.placement }
+    if percentage != tipPercentage, balance.totalDifferenceUnits == 0 {
+      return tipPlacement(for: tipPercentage)
+    }
+    return tipPlacement(for: percentage) {
+      ReceiptBalance(splitInput) { placement in
+        var input = splitInput
+        input.adjustments[.tip] = tipAmount(percentage, at: placement)
+        return input
+      }.placement
+    }
+  }
+
+  private func tipAmount(_ percentage: Int, at placement: ReceiptBalance.SavingsPlacement) -> Double
+  {
+    AdjustmentPreset.percentage(
+      percentage, of: tipBaseAmount(at: placement), currencyCode: displayCurrency
+    ).amount
+  }
+
+  private func tipBaseAmount(at placement: ReceiptBalance.SavingsPlacement) -> Double {
     let balance = balance
-    let above = adjustments(above: .tip, in: order)
+    let above = adjustments(above: .tip, in: adjustmentOrder)
     let tax = above.contains(.tax) ? tax : 0
     let savings =
-      above.contains(.savings) && balance.subtractsSavingsFromSubtotal ? savings : 0
+      above.contains(.savings) && balance.subtractsSavingsFromSubtotal(at: placement) ? savings : 0
     return rounded(balance.subtotal + tax - savings)
+  }
+
+  private func isTipAfterSavings(at placement: ReceiptBalance.SavingsPlacement) -> Bool? {
+    guard savings > 0 else { return nil }
+    return adjustments(above: .tip, in: adjustmentOrder).contains(.savings)
+      || !balance.subtractsSavingsFromSubtotal(at: placement)
   }
 
   private func adjustments(
@@ -106,23 +152,39 @@ extension ReceiptDraft {
     Set(order.prefix { $0 != adjustment })
   }
 
+  /// Sets a tip chosen as a percentage to that percentage of its base, reading savings at
+  /// `placement`, or where `tipPlacement(for:)` reads them when it's `nil`.
+  func followTipBase(at placement: ReceiptBalance.SavingsPlacement? = nil) {
+    guard let tipPercentage else { return }
+    let amount = tipAmount(tipPercentage, at: placement ?? tipPlacement(for: tipPercentage))
+    if adjustments[.tip] != amount { adjustments[.tip] = amount }
+  }
+
+  /// The savings as a percentage of the subtotal, at most all of it.
   var savingsPercentage: Double {
     get {
-      guard itemsTotal > 0 else { return 0 }
-      return savings / itemsTotal * 100
+      let subtotal = balance.subtotal
+      guard subtotal > 0 else { return 0 }
+      return savings / subtotal * 100
     }
     set {
-      savings = rounded(max(0, itemsTotal * newValue / 100))
+      savings = rounded(balance.subtotal * min(max(newValue, 0), 100) / 100)
     }
   }
 
   /// Makes `change`, keeping a total that added up adding up: a receipt whose amounts were right
   /// has its total follow a new tax, tip, savings, or subtotal. A total that didn't add up is left
-  /// as printed, since the change may be what fixes it.
-  func keepingBalance(_ change: () -> Void) {
-    let before = balance
+  /// as printed, since the change may be what fixes it. A change typed into `field` is judged by
+  /// how the receipt balanced when typing began, and a tip chosen as a percentage follows its base.
+  func keepingBalance(_ field: ReceiptAmountField? = nil, _ change: () -> Void) {
+    let typing = amountEditing.flatMap { $0.field == field ? $0 : nil }
+    defer { amountEditing = typing }
+    let before = typing?.balance ?? balance
+    let tipPlacement = tipPlacement(for: tipPercentage)
     change()
-    guard before.totalDifferenceUnits == 0 else { return }
+    let follows = before.totalDifferenceUnits == 0
+    followTipBase(at: follows ? tipPlacement : nil)
+    guard follows else { return }
     let after = ReceiptBalance(splitInput, placement: before.placement)
     if after.totalDifferenceUnits != 0 {
       total = after.calculatedTotal
@@ -131,7 +193,7 @@ extension ReceiptDraft {
 
   /// Sets the printed subtotal, which a total that added up follows.
   func setSubtotal(_ amount: Double) {
-    keepingBalance { subtotal = amount }
+    keepingBalance(.subtotal) { subtotal = amount }
   }
 
   /// Sets the subtotal to what the items come to.
@@ -145,7 +207,10 @@ extension ReceiptDraft {
     total = balance.calculatedTotal
   }
 
+  /// Adds `adjustment` at `amount`, or sets it to `amount` when the receipt has it. A tip is entered
+  /// as an amount.
   func addAdjustment(_ adjustment: ReceiptTotalAdjustment, amount: Double = 0) {
+    if adjustment == .tip { setTipPercentage(nil) }
     keepingBalance {
       adjustments.add(adjustment)
       adjustments[adjustment] = amount

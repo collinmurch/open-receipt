@@ -18,6 +18,14 @@ final class IMessageRequestTests: XCTestCase {
     XCTAssertEqual(body, "Could you pay me $12.50 when you get a chance?")
   }
 
+  func testFormatsAmountForLocale() throws {
+    let body = try XCTUnwrap(
+      IMessageRequest.body(
+        amount: 1234.5, currency: "EUR", context: "", locale: Locale(identifier: "de_DE")))
+
+    XCTAssertEqual(body, "Could you pay me 1.234,50\u{00A0}€ when you get a chance?")
+  }
+
   func testRejectsZeroAmount() {
     XCTAssertNil(IMessageRequest.body(amount: 0, currency: "USD", context: "Receipt split"))
   }

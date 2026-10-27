@@ -13,7 +13,9 @@ struct ReceiptItemsSection: View {
   /// Where the rows are, for a two-finger sweep to find the item under the fingers.
   let rowFrames: ReceiptItemRowFrames
   let onSelectItem: (ReceiptDraftItem.ID) -> Void
-  /// Focuses an item, noting whether it was pressed into focus and so is already bulging.
+  /// Focuses an item, noting whether it was pressed into focus and so is already bulging. Rows
+  /// skip redrawing when unrelated state changes, so this checks whether an item can be focused
+  /// against the current state rather than the row's.
   let onFocusItem: (_ id: ReceiptDraftItem.ID, _ isPressed: Bool) -> Void
   let onFocusedRowFrameChange: (CGRect) -> Void
 
@@ -31,7 +33,7 @@ struct ReceiptItemsSection: View {
           isLiftedOut: item.id == focusedItemID && isFocusPresented,
           displayCurrency: displayCurrency,
           onTap: { tap(item.id) },
-          onFocus: { focus(item.id, isPressed: $0) },
+          onFocus: { onFocusItem(item.id, $0) },
           onFocusedFrameChange: onFocusedRowFrameChange,
           onSweepableFrameChange: { [rowFrames] in rowFrames.update($0, for: item.id) }
         )
@@ -82,11 +84,6 @@ struct ReceiptItemsSection: View {
       seededItemID = nil
     }
     haptic.play(.selection)
-  }
-
-  private func focus(_ id: ReceiptDraftItem.ID, isPressed: Bool) {
-    guard !isEditing, focusedItemID == nil else { return }
-    onFocusItem(id, isPressed)
   }
 
   private func isAssignedToSelection(_ item: ReceiptDraftItem) -> Bool {
@@ -192,6 +189,10 @@ private struct ReceiptItemRow: View, Equatable {
 
 /// What a receipt item row draws, shared by the list and the item lifted into focus.
 struct ReceiptItemRowContent: View {
+  /// The most avatars a row draws, which fit beside the checkmark on the narrowest phone. Past
+  /// that, the last one counts everyone left.
+  private static let maximumAvatarCount = 10
+
   let item: ReceiptDraftItem
   let assignedParticipants: [ReceiptParticipant]
   let isAssignedToSelection: Bool
@@ -245,14 +246,23 @@ struct ReceiptItemRowContent: View {
         .font(.caption)
         .foregroundStyle(.orange)
     } else {
+      let shownCount =
+        assignedParticipants.count > Self.maximumAvatarCount
+        ? Self.maximumAvatarCount - 1 : assignedParticipants.count
       HStack(spacing: -5) {
-        ForEach(assignedParticipants) { participant in
+        ForEach(assignedParticipants.prefix(shownCount)) { participant in
           ContactAvatarView(
             name: participant.displayName,
             contactIdentifier: participant.source.contactIdentifier,
             size: 25
           )
           .overlay(Circle().stroke(.background, lineWidth: 2))
+        }
+        if shownCount < assignedParticipants.count {
+          Text("+\(assignedParticipants.count - shownCount)")
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.leading, 11)
         }
       }
       .accessibilityElement(children: .ignore)

@@ -18,6 +18,8 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   var personIDs: Set<UUID> = []
   /// Whether anyone besides the owner was added without a saved person, and so may be one.
   var hasUnlinkedPeople = false
+  /// The contacts of everyone on the receipt besides the owner.
+  var contactIdentifiers: Set<String> = []
 
   /// The merchant's name, or "Receipt" when the receipt doesn't name one.
   var merchantTitle: String {
@@ -28,6 +30,7 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   /// Whether `person` may be on the receipt, which only its split can confirm.
   func mayInclude(_ person: Person) -> Bool {
     hasUnlinkedPeople || personIDs.contains(person.id)
+      || person.contactIdentifier.map(contactIdentifiers.contains) == true
   }
 
   /// A receipt whose stored file couldn't be read, dated by `date`.
@@ -85,7 +88,11 @@ extension ReceiptSummary {
       deferredUntil: document.recognition.status == .succeeded
         ? nil : document.recognition.deferredUntil,
       personIDs: document.split?.personIDs ?? [],
-      hasUnlinkedPeople: document.split?.hasUnlinkedPeople ?? false)
+      hasUnlinkedPeople: document.split?.hasUnlinkedPeople ?? false,
+      contactIdentifiers: Set(
+        document.split?.participants.compactMap {
+          $0.source.type == .contact ? $0.source.identifier : nil
+        } ?? []))
   }
 }
 

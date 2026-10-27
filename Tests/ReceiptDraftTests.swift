@@ -358,6 +358,28 @@ final class ReceiptDraftTests: XCTestCase {
     let rescanned = ReceiptDraft(receipt: rescannedReceipt(), replacing: previous)
 
     XCTAssertEqual(rescanned.tip, 2)
+    XCTAssertNil(rescanned.tipPercentage)
+  }
+
+  func testRescanKeepsEnteredTipInTotal() {
+    let previous = makeDraft()
+    previous.tip = 2
+
+    let rescanned = ReceiptDraft(receipt: rescannedReceipt(), replacing: previous)
+
+    XCTAssertEqual(rescanned.total, 11.75, accuracy: 0.000_1)
+    XCTAssertTrue(rescanned.balance.isBalanced)
+  }
+
+  func testRescanKeepsChosenTipPercentage() {
+    let previous = makeDraft()
+    previous.setTipPercentage(20)
+
+    let rescanned = ReceiptDraft(receipt: rescannedReceipt(), replacing: previous)
+
+    XCTAssertEqual(rescanned.tipPercentage, 20)
+    XCTAssertEqual(rescanned.tip, rescanned.tipBaseAmount * 0.2, accuracy: 0.005)
+    XCTAssertTrue(rescanned.balance.isBalanced)
   }
 
   func testRescanPrefersPrintedTip() {

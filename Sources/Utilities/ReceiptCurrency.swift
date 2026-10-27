@@ -48,9 +48,13 @@ enum ReceiptCurrency {
   }
 
   /// `amount` counted in `code`'s smallest unit, such as cents for USD or yen for JPY, or zero
-  /// when it isn't a countable amount.
+  /// when it isn't a countable amount. Halves round away from zero, so 1.005 USD is 101 cents.
   static func minorUnits(_ amount: Double, code: String) -> Int {
-    let units = (amount * minorUnitScale(code)).rounded()
+    // A Double only holds 15 significant digits faithfully, so reading the scaled amount at that
+    // precision recovers the decimal it stands for, such as 100.5 rather than 100.49999999999999
+    // for 1.005 * 100, before rounding.
+    let scaled = Double(String(format: "%.15g", amount * minorUnitScale(code))) ?? .nan
+    let units = scaled.rounded()
     return units.isFinite ? Int(exactly: units) ?? 0 : 0
   }
 

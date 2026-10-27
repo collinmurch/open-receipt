@@ -15,6 +15,8 @@ enum VenmoRequestURL {
       URLQueryItem(name: "amount", value: amount.paymentLinkAmount),
       URLQueryItem(name: "note", value: note),
     ]
+    // Venmo reads a "+" in the query as a space.
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacing("+", with: "%2B")
     return components.url
   }
 

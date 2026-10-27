@@ -77,11 +77,11 @@ final class PaymentRequester {
 
   private func attachments(for breakdowns: [ReceiptBreakdown]) async -> [IMessageAttachment] {
     guard MFMessageComposeViewController.canSendAttachments() else { return [] }
-    ReceiptBreakdownRenderer.preparePNGData(for: breakdowns)
+    let pngs = breakdowns.map { ($0, ReceiptBreakdownRenderer.png(for: $0)) }
     var attachments: [IMessageAttachment] = []
-    for breakdown in breakdowns {
-      if let attachment = await IMessageAttachment(breakdown: breakdown) {
-        attachments.append(attachment)
+    for (breakdown, png) in pngs {
+      if let data = await png.value {
+        attachments.append(IMessageAttachment(data: data, filename: "\(breakdown.fileName).png"))
       }
     }
     return attachments
@@ -91,14 +91,6 @@ final class PaymentRequester {
     composition = nil
     if sent { onComposedRequestSent?() }
     onComposedRequestSent = nil
-  }
-}
-
-extension IMessageAttachment {
-  @MainActor
-  fileprivate init?(breakdown: ReceiptBreakdown) async {
-    guard let data = await ReceiptBreakdownRenderer.pngData(for: breakdown) else { return nil }
-    self.init(data: data, filename: "\(breakdown.fileName).png")
   }
 }
 

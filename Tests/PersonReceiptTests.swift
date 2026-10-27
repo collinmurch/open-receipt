@@ -52,6 +52,39 @@ final class PersonReceiptTests: XCTestCase {
         people: [sam]))
   }
 
+  func testDeletedContactMatchesReaddedPerson() throws {
+    let deleted = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
+    let readded = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
+    let draft = makeDraft()
+    let participant = draft.addPerson(deleted)
+    draft.items[0].participantIDs = [participant.id]
+    draft.items[1].participantIDs = [draft.participants[0].id]
+
+    let receipt = try XCTUnwrap(make(draft, person: readded, people: [readded]))
+
+    XCTAssertEqual(receipt.owed ?? 0, 6.6, accuracy: 0.001)
+  }
+
+  func testOwedAddsLegacyAndLinkedParticipantsForSamePerson() throws {
+    let sam = Person.fixture(name: "Sam")
+    let draft = makeDraft()
+    let legacy = draft.addManualParticipant(named: "Sam")
+    let linked = draft.addPerson(sam)
+    draft.items[0].participantIDs = [legacy.id]
+    draft.items[1].participantIDs = [linked.id]
+    var document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+    document.split?.participants[1].personID = nil
+
+    let receipt = try XCTUnwrap(
+      PersonReceipt.make(
+        summary: makeSummary(id: draft.id),
+        document: document,
+        person: sam,
+        people: [sam]))
+
+    XCTAssertEqual(receipt.owed ?? 0, 11, accuracy: 0.001)
+  }
+
   func testCurrentUserIsNotMatched() {
     let owner = Person.fixture(name: "Alex", contactIdentifier: "me")
     let draft = makeDraft()
@@ -125,6 +158,25 @@ final class PersonReceiptTests: XCTestCase {
     let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
 
     XCTAssertFalse(try ReceiptSummary(document).mayInclude(.fixture(name: "Sam")))
+  }
+
+  func testSummaryMayIncludeReaddedPersonForSameContact() throws {
+    let draft = makeDraft()
+    draft.addPerson(.fixture(name: "Sam", contactIdentifier: "contact-1"))
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    XCTAssertTrue(
+      try ReceiptSummary(document).mayInclude(
+        .fixture(name: "Sam", contactIdentifier: "contact-1")))
+  }
+
+  func testSummaryExcludesOwnerContact() throws {
+    let draft = makeDraft()
+    draft.setOwner(ReceiptOwner(contactIdentifier: "me", displayName: "Alex"))
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    XCTAssertFalse(
+      try ReceiptSummary(document).mayInclude(.fixture(name: "Alex", contactIdentifier: "me")))
   }
 
   func testSummaryMayIncludeAnyoneWithUnlinkedParticipant() throws {

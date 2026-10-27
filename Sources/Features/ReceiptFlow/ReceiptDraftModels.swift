@@ -35,8 +35,7 @@ struct ReceiptTotalAdjustments: Equatable, Sendable {
 
   /// The amount `adjustment` adds to the total, negative for savings.
   func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
-    let amount = amounts[adjustment] ?? 0
-    return amount == 0 ? 0 : amount * adjustment.sign
+    adjustment.signed(amounts[adjustment] ?? 0)
   }
 }
 

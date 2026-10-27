@@ -91,6 +91,26 @@ final class VenmoRequestURLTests: XCTestCase {
     XCTAssertEqual(queryValue("note", in: components), "Cafe & Bakery")
   }
 
+  func testPercentEncodesPlusInNote() throws {
+    let url = try XCTUnwrap(
+      VenmoRequestURL.make(
+        recipient: recipient(.username, "sam"),
+        amount: 12.34,
+        note: "Open Receipt split for: A+B Pizza"))
+
+    XCTAssertTrue(url.absoluteString.contains("A%2BB"))
+  }
+
+  func testPercentEncodesPlusInEmailRecipient() throws {
+    let url = try XCTUnwrap(
+      VenmoRequestURL.make(
+        recipient: recipient(.emailAddress, "sam+food@example.com"),
+        amount: 12.34,
+        note: "Receipt split"))
+
+    XCTAssertTrue(url.absoluteString.contains("sam%2Bfood@example.com"))
+  }
+
   func testRejectsEmptyRecipient() {
     XCTAssertNil(
       VenmoRequestURL.make(

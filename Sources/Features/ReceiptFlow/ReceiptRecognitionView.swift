@@ -6,7 +6,7 @@ import SwiftUI
 struct ReceiptRecognitionView: View {
   let recognition: ReceiptRecognition
   let onEnterManually: () -> Void
-  @ScaledMetric(relativeTo: .caption2) private var headerHeight = ParticipantStrip.baseHeight
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -48,8 +48,12 @@ struct ReceiptRecognitionView: View {
     .animation(.smooth(duration: 0.3), value: preview.items.count)
     .animation(.smooth(duration: 0.3), value: preview.total)
     .safeAreaBar(edge: .top) {
-      ReceiptRecognitionStatusBar(recognition: recognition, height: headerHeight)
-        .receiptTopBarPadding()
+      ReceiptRecognitionStatusBar(
+        recognition: recognition,
+        height: ParticipantStrip.scaled(ParticipantStrip.baseHeight, for: dynamicTypeSize)
+      )
+      .dynamicTypeSize(...ParticipantStrip.maximumTypeSize)
+      .receiptTopBarPadding()
     }
     .receiptBottomBar {
       GlassEffectContainer {

@@ -23,14 +23,13 @@ enum ReceiptBreakdownRenderer {
 
   /// The breakdown's card encoded as a PNG.
   static func pngData(for breakdown: ReceiptBreakdown) async -> Data? {
-    await drawing(for: breakdown).png.value
+    await png(for: breakdown).value
   }
 
-  /// Starts encoding each breakdown's PNG, so encodes awaited one by one run side by side.
-  static func preparePNGData(for breakdowns: [ReceiptBreakdown]) {
-    for breakdown in breakdowns {
-      _ = drawing(for: breakdown).png
-    }
+  /// Starts encoding the breakdown's card as a PNG, so several started together encode side by
+  /// side. The task holds the card until it's done.
+  static func png(for breakdown: ReceiptBreakdown) -> Task<Data?, Never> {
+    drawing(for: breakdown).png
   }
 
   static func pdfData(for breakdown: ReceiptBreakdown) -> Data? {
@@ -72,10 +71,12 @@ enum ReceiptBreakdownRenderer {
   }
 }
 
-/// A breakdown as a cache key. A breakdown is a snapshot of everything its card shows, so an equal
-/// breakdown always draws the same image.
+/// A breakdown as a cache key. A breakdown is a snapshot of everything its card shows but the
+/// locale its amounts are written in, so an equal breakdown in the same locale always draws the
+/// same image.
 private final class DrawingKey: NSObject {
   let breakdown: ReceiptBreakdown
+  let locale = Locale.current
 
   init(_ breakdown: ReceiptBreakdown) {
     self.breakdown = breakdown
@@ -86,7 +87,8 @@ private final class DrawingKey: NSObject {
   }
 
   override func isEqual(_ object: Any?) -> Bool {
-    (object as? DrawingKey)?.breakdown == breakdown
+    guard let other = object as? DrawingKey else { return false }
+    return other.breakdown == breakdown && other.locale == locale
   }
 }
 

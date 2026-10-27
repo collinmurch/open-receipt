@@ -56,4 +56,38 @@ final class ReceiptPersonResolverTests: XCTestCase {
         for: participant,
         in: [Person.fixture(name: "Sam"), Person.fixture(name: "Sam")]))
   }
+
+  func testRelinksDeletedContactParticipantToReaddedContact() {
+    let person = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      personID: UUID(),
+      source: .contact(identifier: "contact-1"),
+      displayName: "Sam")
+
+    XCTAssertEqual(ReceiptPersonResolver.person(for: participant, in: [person]), person)
+  }
+
+  func testPrefersLinkedPersonOverSameContact() {
+    let linked = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
+    let other = Person.fixture(name: "Sam", contactIdentifier: "contact-1")
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      personID: linked.id,
+      source: .contact(identifier: "contact-1"),
+      displayName: "Sam")
+
+    XCTAssertEqual(ReceiptPersonResolver.person(for: participant, in: [other, linked]), linked)
+  }
+
+  func testDoesNotResolveOwnerByContactIdentifier() {
+    let participant = ReceiptParticipant(
+      id: UUID(),
+      source: .currentUser(contactIdentifier: "me"),
+      displayName: "Alex")
+
+    XCTAssertNil(
+      ReceiptPersonResolver.person(
+        for: participant, in: [Person.fixture(name: "Sam", contactIdentifier: "me")]))
+  }
 }

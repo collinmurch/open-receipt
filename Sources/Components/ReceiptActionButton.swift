@@ -36,12 +36,30 @@ struct GlassActionLabel: View {
   var body: some View {
     HStack(spacing: 10) {
       Text(title)
-        .lineLimit(1)
+        .buttonTitleLineLimit()
       Image(systemName: systemImage)
     }
     .font(.body.weight(.semibold))
     .padding(.horizontal, 22)
     .frame(minHeight: height)
     .contentShape(.capsule)
+  }
+}
+
+extension View {
+  /// Keeps a button's title to one line, letting it wrap, centered, at accessibility sizes where
+  /// one line would cut it off.
+  func buttonTitleLineLimit() -> some View {
+    modifier(ButtonTitleLineLimit())
+  }
+}
+
+private struct ButtonTitleLineLimit: ViewModifier {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  func body(content: Content) -> some View {
+    content
+      .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+      .multilineTextAlignment(.center)
   }
 }

@@ -2,7 +2,8 @@
   import SwiftUI
 
   /// A fixed app state that `make previews` and `make screenshot` launch into. The capture tests
-  /// pass `-ScreenshotScenario <kind>` and `-ScreenshotReceipt <path to scene JSON>`.
+  /// pass `-ScreenshotScenario <kind>` and `-ScreenshotReceipt <path to scene JSON>`, and
+  /// optionally `-ScreenshotTextSize <DynamicTypeSize case>`.
   struct ScreenshotScenario {
     enum Kind: String {
       /// A receipt partway through being read.
@@ -26,6 +27,8 @@
       case reviewEditing
       /// The review scenario's receipt being edited, typing its subtotal.
       case reviewKeyboard
+      /// The review scenario's receipt being edited, open to its first item.
+      case itemEditing
       /// A read receipt asking about its tip, as it does right after reading.
       case tip
       /// A short read receipt that missed an item, so its items are short of the subtotal.
@@ -41,6 +44,8 @@
     }
 
     let kind: Kind
+    /// The text size the app is drawn at, when it isn't the device's.
+    let dynamicTypeSize: DynamicTypeSize?
     let scene: ScreenshotScene
     /// How many rows the reading screen shows. The last one is still being written.
     let readingRowCount: Int
@@ -59,8 +64,15 @@
           scene.backgroundStyle = try ReceiptBackgroundStyle(screenshotArgument: style)
         }
         let rows = defaults.integer(forKey: "ScreenshotReadingRows")
+        let textSize = defaults.string(forKey: "ScreenshotTextSize").map { name in
+          guard let size = DynamicTypeSize.allCases.first(where: { "\($0)" == name }) else {
+            preconditionFailure("Unknown screenshot text size \(name).")
+          }
+          return size
+        }
         return ScreenshotScenario(
           kind: kind,
+          dynamicTypeSize: textSize,
           scene: scene,
           readingRowCount: rows > 0 ? rows : 8,
           breakdownsDirectory: defaults.string(forKey: "ScreenshotBreakdowns").map {
@@ -143,7 +155,7 @@
           access: ReadingAccess(
             client: .fixed(isEntitled: false), store: .memory(Set(usedReads)), isUnlocked: false))
 
-      case .review, .reviewEditing, .reviewKeyboard, .tip:
+      case .review, .reviewEditing, .reviewKeyboard, .itemEditing, .tip:
         var document = try await Self.storeRead(
           scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
         if kind != .tip {
@@ -158,7 +170,7 @@
           .receipt(
             .storedReceipt(
               document.id, backgroundStyle: scene.backgroundStyle, document: document,
-              startsInEditing: kind == .reviewEditing || kind == .reviewKeyboard))
+              startsInEditing: [.reviewEditing, .reviewKeyboard, .itemEditing].contains(kind)))
         ])
 
       case .unbalanced, .unbalancedEditing:
@@ -197,6 +209,7 @@
       switch kind {
       case .unbalanced, .unbalancedEditing: .totals
       case .reviewKeyboard: .typing(.amount(.subtotal))
+      case .itemEditing: .firstItem
       default: .top
       }
     }
@@ -441,6 +454,9 @@
         } else {
           Color.clear
         }
+      }
+      .transformEnvironment(\.dynamicTypeSize) { size in
+        if let dynamicTypeSize = scenario.dynamicTypeSize { size = dynamicTypeSize }
       }
       .task {
         do {

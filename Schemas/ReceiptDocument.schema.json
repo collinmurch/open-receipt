@@ -211,6 +211,14 @@
       ],
       "properties": {
         "adjustmentMethod": { "enum": ["proportional", "even"] },
+        "adjustmentOrder": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "enum": ["tax", "tip", "savings"] }
+        },
+        "tipPercentage": { "type": "integer", "minimum": 0 },
         "participants": {
           "type": "array",
           "items": { "$ref": "#/$defs/participant" }

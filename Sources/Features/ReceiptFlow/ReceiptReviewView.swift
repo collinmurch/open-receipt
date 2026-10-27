@@ -38,7 +38,6 @@ struct ReceiptReviewView: View {
   @State private var selectedPage: ReceiptReviewPage
   @State private var isPeoplePresented = false
   @State private var isPagesPresented = false
-  @State private var isTipCustom = false
   @FocusState private var focusedField: ReceiptEditField?
   @State private var haptic = HapticEvent()
   @Namespace private var sheetTransition
@@ -67,7 +66,8 @@ struct ReceiptReviewView: View {
       .scrollEdgeEffectHidden(true, for: .bottom)
       .receiptBottomBar { bottomBar }
       .overlay { itemFocus }
-      .navigationBarBackButtonHidden(isFocusing)
+      // Editing ends with Done, which tidies what was typed and saves it.
+      .navigationBarBackButtonHidden(isFocusing || isEditing)
       .tint(draft.backgroundStyle.accentColor(for: colorScheme))
       .navigationTitle(navigationTitle)
       .navigationBarTitleDisplayMode(.inline)
@@ -122,6 +122,7 @@ struct ReceiptReviewView: View {
     ScrollViewReader { proxy in
       itemsList
         .task {
+          if listStart == .firstItem, let item = draft.items.first { editItem(item.id) }
           guard let row = listStart.row else { return }
           // The list lays out its rows after it first appears, and builds the row it scrolls to
           // after that.
@@ -178,7 +179,6 @@ struct ReceiptReviewView: View {
       ReceiptTotalsSection(
         draft: draft,
         isEditing: isEditing,
-        isTipCustom: $isTipCustom,
         focusedField: $focusedField,
         haptic: $haptic,
         onAddItem: addMissingItem
@@ -305,7 +305,7 @@ struct ReceiptReviewView: View {
   private var editableFields: [ReceiptEditField] {
     guard isEditing else { return [] }
     return [.merchant]
-      + ReceiptTotalsSection.editableFields(of: draft, isTipCustom: isTipCustom)
+      + ReceiptTotalsSection.editableFields(of: draft)
       .map(ReceiptEditField.amount)
   }
 
@@ -428,6 +428,7 @@ struct ReceiptReviewView: View {
   }
 
   private func focusItem(_ id: ReceiptDraftItem.ID, isPressed: Bool) {
+    guard !isEditing, focusedItemID == nil else { return }
     haptic.play(.lift)
     isFocusedItemPressed = isPressed
     withAnimation(.settle) {
@@ -515,11 +516,13 @@ enum ReceiptListStart: Hashable {
   case totals
   /// Scrolled to `field`, typing in it when the receipt opens in editing.
   case typing(ReceiptEditField)
+  /// Open to the first item's editor.
+  case firstItem
 
   /// The row the list scrolls to, or `nil` when it starts at the top.
   fileprivate var row: ReceiptEditField? {
     switch self {
-    case .top: nil
+    case .top, .firstItem: nil
     case .totals: ReceiptTotalsSection.scrollID
     case .typing(let field): field
     }

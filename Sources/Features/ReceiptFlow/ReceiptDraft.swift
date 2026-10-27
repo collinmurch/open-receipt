@@ -9,18 +9,41 @@ final class ReceiptDraft {
   var merchantName: String { didSet { markPersistedChange() } }
   var date: String { didSet { markPersistedChange() } }
   var subtotal: Double { didSet { markDurableChange() } }
-  var adjustments: ReceiptTotalAdjustments { didSet { markDurableChange() } }
-  var total: Double { didSet { markDurableChange() } }
-  var currency: String { didSet { markDurableChange() } }
+  var adjustments: ReceiptTotalAdjustments {
+    didSet {
+      if !adjustments.contains(.tip) { tipPercentage = nil }
+      markDurableChange()
+    }
+  }
+  var total: Double {
+    didSet {
+      markDurableChange()
+      followTipBase()
+    }
+  }
+  var currency: String {
+    didSet {
+      markDurableChange()
+      followTipBase()
+    }
+  }
   var payment: ReceiptPayment? { didSet { markPersistedChange() } }
-  var items: [ReceiptDraftItem] { didSet { markDurableChange() } }
+  var items: [ReceiptDraftItem] {
+    didSet {
+      markDurableChange()
+      followTipBase()
+    }
+  }
   var adjustmentSplitMethod: ReceiptAdjustmentSplitMethod {
     didSet { markDurableChange() }
   }
   /// The order tax, tip, and savings are listed in. The tip is a percentage of the subtotal with
-  /// whatever is listed above it. Change it with `setAdjustmentOrder(_:percentages:)` to carry a
-  /// suggested tip's percentage over.
+  /// whatever is listed above it. Change it with `setAdjustmentOrder(_:)` so a tip chosen as a
+  /// percentage follows its new base.
   var adjustmentOrder: [ReceiptTotalAdjustment] { didSet { markPersistedChange() } }
+  /// The percentage of `tipBaseAmount` the tip was chosen as, which it follows as the base
+  /// changes. `nil` for a tip entered as an amount or read from the receipt.
+  private(set) var tipPercentage: Int? { didSet { markPersistedChange() } }
   private(set) var isCompleted: Bool
   /// The tax and tip still to ask about, in the order they're asked.
   private(set) var unconfirmedAdjustments: [ReceiptTotalAdjustment] {
@@ -34,6 +57,11 @@ final class ReceiptDraft {
   /// observes them.
   private var durableRevision = 0
   @ObservationIgnored private var issuesCache: (revision: Int, issues: [ReceiptIssue])?
+  @ObservationIgnored private var tipPlacementCache:
+    (revision: Int, placements: [Int: ReceiptBalance.SavingsPlacement]) = (0, [:])
+  /// The amount being typed into and how the receipt balanced when typing began. Any change
+  /// besides typing into it ends the typing.
+  @ObservationIgnored var amountEditing: (field: ReceiptAmountField, balance: ReceiptBalance)?
 
   init(
     receipt: ParsedReceipt,
@@ -59,21 +87,26 @@ final class ReceiptDraft {
     items = receipt.items.map { ReceiptDraftItem(item: $0) }
     self.adjustmentSplitMethod = adjustmentSplitMethod
     self.adjustmentOrder = adjustmentOrder
+    tipPercentage = nil
     isCompleted = false
     unconfirmedAdjustments = []
     participants = [.currentUser(owner: owner)]
   }
 
   /// Creates a draft from a new recognition of `previous`'s receipt. People, colors, the split
-  /// method, the adjustments' order, and an entered tip carry over; items, printed totals, and
-  /// assignments are replaced.
+  /// method, the adjustments' order, and an entered tip carry over, the tip as the percentage it
+  /// was chosen as; items, printed totals, and assignments are replaced.
   convenience init(receipt: ParsedReceipt, replacing previous: ReceiptDraft) {
-    self.init(receipt: receipt, id: previous.id, backgroundStyle: previous.backgroundStyle)
+    self.init(
+      receipt: receipt, id: previous.id, backgroundStyle: previous.backgroundStyle,
+      adjustmentSplitMethod: previous.adjustmentSplitMethod,
+      adjustmentOrder: previous.adjustmentOrder)
     participants = previous.participants
-    adjustmentSplitMethod = previous.adjustmentSplitMethod
-    adjustmentOrder = previous.adjustmentOrder
-    if !adjustments.contains(.tip), let tip = previous.adjustments[.tip] {
-      adjustments[.tip] = tip
+    guard !adjustments.contains(.tip), let tip = previous.adjustments[.tip] else { return }
+    if let percentage = previous.tipPercentage {
+      setTipPercentage(percentage)
+    } else {
+      addAdjustment(.tip, amount: tip)
     }
   }
 
@@ -91,25 +124,31 @@ final class ReceiptDraft {
     items = state.items
     adjustmentSplitMethod = state.adjustmentSplitMethod
     adjustmentOrder = state.adjustmentOrder
+    tipPercentage = state.tipPercentage
     isCompleted = state.isCompleted
     unconfirmedAdjustments = state.unconfirmedAdjustments
     participants = state.participants
+    if state.isTipPercentageUnknown { tipPercentage = suggestedTipPercentage }
   }
 
   /// The tax. Setting it moves a total that added up along with it, as do `tip` and `savings`.
   var tax: Double {
     get { adjustments[.tax] ?? 0 }
-    set { keepingBalance { adjustments[.tax] = newValue } }
+    set { keepingBalance(.adjustment(.tax)) { adjustments[.tax] = newValue } }
   }
 
+  /// The tip. Setting it enters it as an amount, which no longer follows a percentage.
   var tip: Double {
     get { adjustments[.tip] ?? 0 }
-    set { keepingBalance { adjustments[.tip] = newValue } }
+    set {
+      tipPercentage = nil
+      keepingBalance(.adjustment(.tip)) { adjustments[.tip] = newValue }
+    }
   }
 
   var savings: Double {
     get { adjustments[.savings] ?? 0 }
-    set { keepingBalance { adjustments[.savings] = newValue } }
+    set { keepingBalance(.adjustment(.savings)) { adjustments[.savings] = newValue } }
   }
 
   /// What needs fixing in the current values. Totals that don't add up aren't an issue, because
@@ -127,9 +166,23 @@ final class ReceiptDraft {
   var splitCalculation: ReceiptSplitCalculation {
     _ = durableRevision
     if let splitCalculationCache { return splitCalculationCache }
-    let calculation = ReceiptSplitCalculator.calculate(splitInput)
+    let calculation = ReceiptSplitCalculator.calculate(splitInput, balance: balance)
     splitCalculationCache = calculation
     return calculation
+  }
+
+  /// Where savings are read for a tip of `percentage`, worked out with `place` once for each
+  /// change to the receipt.
+  func tipPlacement(
+    for percentage: Int,
+    place: () -> ReceiptBalance.SavingsPlacement
+  ) -> ReceiptBalance.SavingsPlacement {
+    let revision = persistenceRevision
+    if tipPlacementCache.revision != revision { tipPlacementCache = (revision, [:]) }
+    if let cached = tipPlacementCache.placements[percentage] { return cached }
+    let placement = place()
+    tipPlacementCache.placements[percentage] = placement
+    return placement
   }
 
   /// How the receipt's amounts add up.
@@ -274,9 +327,41 @@ final class ReceiptDraft {
     stopAsking(about: adjustment)
   }
 
+  /// Records a tip of `percentage` and stops asking about it.
+  func confirmTip(percentage: Int) {
+    setTipPercentage(percentage)
+    stopAsking(about: .tip)
+  }
+
   /// Stops asking about `adjustment` without recording an amount, for a receipt that has none.
   func stopAsking(about adjustment: ReceiptTotalAdjustment) {
     unconfirmedAdjustments.removeAll { $0 == adjustment }
+  }
+
+  /// Chooses the tip as `percentage` of `tipBaseAmount`, adding one if there's none, so it
+  /// follows the base from then on. `nil` keeps the tip's amount as an entered one. A total that
+  /// added up follows the tip.
+  func setTipPercentage(_ percentage: Int?) {
+    guard percentage != tipPercentage else { return }
+    guard let percentage else {
+      tipPercentage = nil
+      return
+    }
+    keepingBalance {
+      adjustments.add(.tip)
+      tipPercentage = percentage
+    }
+  }
+
+  /// Starts typing into `field`. Until `endEditing()` or any other change, whether the total
+  /// follows each change to it is decided by how the receipt balanced now, so an amount that adds
+  /// up partway through typing doesn't move a printed total that didn't.
+  func beginEditing(_ field: ReceiptAmountField) {
+    amountEditing = (field, balance)
+  }
+
+  func endEditing() {
+    amountEditing = nil
   }
 
   func complete() {
@@ -287,6 +372,7 @@ final class ReceiptDraft {
 
   /// A change to what the split is calculated from, which also needs saving.
   private func markDurableChange() {
+    amountEditing = nil
     splitCalculationCache = nil
     balanceCache = nil
     durableRevision &+= 1

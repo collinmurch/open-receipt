@@ -10,30 +10,26 @@ struct PersonReceipt: Identifiable, Sendable {
 
   var id: ReceiptSummary.ID { summary.id }
 
-  /// The receipt as `person` is on it, or `nil` when they aren't on it. Participants without a
-  /// saved person are matched against `people`.
+  /// The receipt as `person` is on it, or `nil` when they aren't on it. Participants are matched
+  /// against `people`, and everything they owe on it adds up.
   static func make(
     summary: ReceiptSummary,
     document: ReceiptDocument,
     person: Person,
     people: [Person]
   ) -> PersonReceipt? {
-    guard let split = document.split,
-      split.hasUnlinkedPeople || split.personIDs.contains(person.id),
-      let state = try? ReceiptDraftPersistenceState(document: document)
-    else { return nil }
+    guard let state = try? ReceiptDraftPersistenceState(document: document) else { return nil }
     let input = state.splitInput
     let calculation = ReceiptSplitCalculator.calculate(input)
-    guard
-      let share = calculation.participantShares.first(where: {
-        !$0.participant.source.isCurrentUser
-          && ReceiptPersonResolver.person(for: $0.participant, in: people)?.id == person.id
-      })
-    else { return nil }
+    let shares = calculation.participantShares.filter {
+      !$0.participant.source.isCurrentUser
+        && ReceiptPersonResolver.person(for: $0.participant, in: people)?.id == person.id
+    }
+    guard !shares.isEmpty else { return nil }
     return PersonReceipt(
       summary: summary,
       document: document,
-      owed: calculation.unassignedItemCount == 0 ? share.total : nil,
+      owed: calculation.unassignedItemCount == 0 ? shares.reduce(0) { $0 + $1.total } : nil,
       currency: input.currency)
   }
 

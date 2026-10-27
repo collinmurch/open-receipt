@@ -1,8 +1,8 @@
 import XCTest
 
 /// Captures one app screen for checking UI work. Run through `make screenshot`, which passes
-/// `SCREENSHOTS_SCENARIO`, `SCREENSHOTS_NAME`, `SCREENSHOTS_APPEARANCE`, `SCREENSHOTS_OUTPUT`, and
-/// `SCREENSHOTS_RECEIPT`. It writes `<name>-<appearance>.png` for each appearance and `<name>.txt`
+/// `SCREENSHOTS_SCENARIO`, `SCREENSHOTS_NAME`, `SCREENSHOTS_APPEARANCE`, `SCREENSHOTS_TEXT_SIZE`,
+/// `SCREENSHOTS_OUTPUT`, and `SCREENSHOTS_RECEIPT`. It writes `<name>-<appearance>.png` for each appearance and `<name>.txt`
 /// with the app's accessibility tree.
 final class DevScreenshot: ScenarioTestCase {
   @MainActor
@@ -25,8 +25,10 @@ final class DevScreenshot: ScenarioTestCase {
     let appearances = try Self.appearances(environment["SCREENSHOTS_APPEARANCE"] ?? "")
 
     let highlights = directory.appending(path: ".\(name).highlights.json")
+    let textSize = environment["SCREENSHOTS_TEXT_SIZE"].flatMap { $0.isEmpty ? nil : $0 }
     let app = launch(
-      scenario: scenario, receipt: receipt, highlights: highlights, appearance: appearances[0])
+      scenario: scenario, receipt: receipt, highlights: highlights, appearance: appearances[0],
+      arguments: textSize.map { ["-ScreenshotTextSize", $0] } ?? [])
     defer {
       app.terminate()
       try? FileManager.default.removeItem(at: highlights)
