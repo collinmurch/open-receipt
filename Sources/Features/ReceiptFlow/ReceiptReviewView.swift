@@ -36,6 +36,8 @@ struct ReceiptReviewView: View {
   @State private var isFocusedItemPressed = false
   @State private var participantStripFrame: CGRect?
   @State private var selectedPage: ReceiptReviewPage
+  /// Whether the receipt's list stays built while the payments page shows.
+  @State private var keepsReceiptList = false
   @State private var isPeoplePresented = false
   @State private var isPagesPresented = false
   @FocusState private var focusedField: ReceiptEditField?
@@ -95,12 +97,16 @@ struct ReceiptReviewView: View {
       .task { await ReceiptCurrencyPicker.prepareCatalog() }
   }
 
-  /// Both pages of a completed receipt stay built, and switching only changes which one shows.
-  /// Rebuilding a page on every switch stalls the frame that starts the switcher's animation.
+  /// Both pages of a completed receipt stay built while switching, so a switch only changes which
+  /// one shows: rebuilding a page stalls the frame that starts the switcher's animation. The
+  /// receipt's list is let go once the payments page has settled, since hiding a list leaves its
+  /// rows visible to accessibility.
   private var reviewContent: some View {
     ZStack {
-      receiptList
-        .pageVisibility(!showsPayments)
+      if !showsPayments || keepsReceiptList {
+        receiptList
+          .pageVisibility(!showsPayments)
+      }
       if draft.isCompleted {
         ReceiptRequestsView(
           draft: draft,
@@ -111,6 +117,14 @@ struct ReceiptReviewView: View {
         )
         .pageVisibility(showsPayments)
       }
+    }
+    .task(id: showsPayments) {
+      guard showsPayments else {
+        keepsReceiptList = true
+        return
+      }
+      do { try await Task.sleep(for: .seconds(1)) } catch { return }
+      keepsReceiptList = false
     }
   }
 
