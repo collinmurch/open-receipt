@@ -24,6 +24,8 @@
       case review
       /// The review scenario's receipt being edited, from the top.
       case reviewEditing
+      /// The review scenario's receipt being edited, typing its subtotal.
+      case reviewKeyboard
       /// A read receipt asking about its tip, as it does right after reading.
       case tip
       /// A short read receipt that missed an item, so its items are short of the subtotal.
@@ -100,7 +102,8 @@
           access: access,
           contacts: kind == .share ? .cards(for: scene.people) : .unavailable,
           showsUnlimitedReading: kind == .paywall,
-          receiptStartsAtTotals: kind == .unbalanced || kind == .unbalancedEditing)
+          receiptStartsAtTotals: [.unbalanced, .unbalancedEditing, .reviewKeyboard].contains(kind),
+          receiptStartingField: kind == .reviewKeyboard ? .amount(.subtotal) : nil)
       }
 
       switch kind {
@@ -141,7 +144,7 @@
           access: ReadingAccess(
             client: .fixed(isEntitled: false), store: .memory(Set(usedReads)), isUnlocked: false))
 
-      case .review, .reviewEditing, .tip:
+      case .review, .reviewEditing, .reviewKeyboard, .tip:
         var document = try await Self.storeRead(
           scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
         if kind != .tip {
@@ -156,7 +159,7 @@
           .receipt(
             .storedReceipt(
               document.id, backgroundStyle: scene.backgroundStyle, document: document,
-              startsInEditing: kind == .reviewEditing))
+              startsInEditing: kind == .reviewEditing || kind == .reviewKeyboard))
         ])
 
       case .unbalanced, .unbalancedEditing:
@@ -406,6 +409,8 @@
     let showsUnlimitedReading: Bool
     /// Whether the receipt's list starts scrolled to its totals.
     let receiptStartsAtTotals: Bool
+    /// The field a receipt that opens in editing starts typing in.
+    let receiptStartingField: ReceiptEditField?
   }
 
   /// Stages a scenario, then shows the app over it.
@@ -428,6 +433,7 @@
             .environment(\.receiptParsingClient, stage.parsing)
             .environment(\.contactClient, stage.contacts)
             .environment(\.receiptStartsAtTotals, stage.receiptStartsAtTotals)
+            .environment(\.receiptStartingField, stage.receiptStartingField)
         } else {
           Color.clear
         }

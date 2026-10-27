@@ -4,6 +4,12 @@ private enum ReceiptReviewSheet: Hashable {
   case people
 }
 
+/// A field typed in while editing a receipt.
+enum ReceiptEditField: Hashable {
+  case merchant
+  case amount(ReceiptAmountField)
+}
+
 struct ReceiptReviewView: View {
   /// How far the bottom bar slides to leave the screen while editing. It only slides: fading glass
   /// renders it against the page background, which covers the rows behind it.
@@ -32,12 +38,15 @@ struct ReceiptReviewView: View {
   @State private var selectedPage: ReceiptReviewPage
   @State private var isPeoplePresented = false
   @State private var isPagesPresented = false
+  @State private var isTipCustom = false
+  @FocusState private var focusedField: ReceiptEditField?
   @State private var haptic = HapticEvent()
   @Namespace private var sheetTransition
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.receiptStartsAtTotals) private var startsAtTotals
+  @Environment(\.receiptStartingField) private var startingField
 
   init(
     draft: ReceiptDraft,
@@ -119,6 +128,13 @@ struct ReceiptReviewView: View {
           do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
           proxy.scrollTo(ReceiptTotalsSection.scrollID, anchor: .top)
         }
+        .task {
+          guard isEditing, let startingField else { return }
+          // The field's row is built once the list has laid out and scrolled to it.
+          do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+          focusedField = startingField
+        }
+        .keyboardNavigation($focusedField, through: editableFields, scrollingWith: proxy)
         .task(id: revealedItemID) {
           guard let id = revealedItemID else { return }
           do { try await Task.sleep(for: Self.revealPause) } catch { return }
@@ -165,6 +181,8 @@ struct ReceiptReviewView: View {
       ReceiptTotalsSection(
         draft: draft,
         isEditing: isEditing,
+        isTipCustom: $isTipCustom,
+        focusedField: $focusedField,
         haptic: $haptic,
         onAddItem: addMissingItem
       )
@@ -286,6 +304,14 @@ struct ReceiptReviewView: View {
     .accessibilityHint("Show payment requests for this receipt")
   }
 
+  /// The fields typed in while editing, in the order they're listed.
+  private var editableFields: [ReceiptEditField] {
+    guard isEditing else { return [] }
+    return [.merchant]
+      + ReceiptTotalsSection.editableFields(of: draft, isTipCustom: isTipCustom)
+      .map(ReceiptEditField.amount)
+  }
+
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
     return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
@@ -314,6 +340,9 @@ struct ReceiptReviewView: View {
     Section("Receipt") {
       TextField("Merchant", text: $draft.merchantName)
         .textContentType(.organizationName)
+        .submitLabel(.next)
+        .focused($focusedField, equals: .merchant)
+        .id(ReceiptEditField.merchant)
       DatePicker("Date", selection: $draft.purchaseDate, displayedComponents: .date)
       NavigationLink {
         ReceiptCurrencyPicker(
@@ -485,6 +514,9 @@ struct ReceiptReviewView: View {
 extension EnvironmentValues {
   /// Whether a receipt's list starts scrolled to its totals, so screenshots can show them.
   @Entry var receiptStartsAtTotals = false
+  /// The field a receipt that opens in editing starts typing in, so screenshots can show the
+  /// keyboard.
+  @Entry var receiptStartingField: ReceiptEditField? = nil
 }
 
 extension View {

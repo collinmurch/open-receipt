@@ -270,8 +270,13 @@ struct ReceiptPeopleView: View {
 }
 
 private struct NewPersonView: View {
+  private enum Field: Hashable {
+    case name
+  }
+
   let onAdd: (String) -> Void
   @State private var name = ""
+  @FocusState private var focusedField: Field?
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -281,7 +286,9 @@ private struct NewPersonView: View {
           .textContentType(.name)
           .submitLabel(.done)
           .onSubmit(addPerson)
+          .focused($focusedField, equals: .name)
       }
+      .keyboardNavigation($focusedField, through: [.name])
       .navigationTitle("New Person")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

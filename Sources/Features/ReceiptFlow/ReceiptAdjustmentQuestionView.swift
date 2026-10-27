@@ -11,7 +11,7 @@ struct ReceiptAdjustmentQuestionView: View {
   private let base: Double
   @State private var amount: Double
   @State private var isCustom: Bool
-  @FocusState private var isAmountFocused: Bool
+  @FocusState private var focusedField: ReceiptAmountField?
   @Environment(\.colorScheme) private var colorScheme
 
   init(draft: ReceiptDraft, adjustment: ReceiptTotalAdjustment) {
@@ -35,14 +35,15 @@ struct ReceiptAdjustmentQuestionView: View {
     // The content rarely scrolls, so swiping can't dismiss the keyboard. Tapping anywhere the
     // controls don't handle does instead.
     .contentShape(.rect)
-    .onTapGesture { isAmountFocused = false }
+    .onTapGesture { focusedField = nil }
     .scrollBounceBehavior(.basedOnSize)
     .scrollDismissesKeyboard(.interactively)
+    .keyboardNavigation($focusedField, through: [field])
     .receiptBottomBar { addButton }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button("Skip") {
-          isAmountFocused = false
+          focusedField = nil
           draft.stopAsking(about: adjustment)
         }
       }
@@ -80,7 +81,7 @@ struct ReceiptAdjustmentQuestionView: View {
     LabeledContent {
       AdjustmentAmountValue(
         title: adjustment.title, amount: $amount, isCustom: choice.wrappedValue == .custom,
-        currencyCode: currency, isFocused: $isAmountFocused)
+        currencyCode: currency, focus: $focusedField, field: field)
     } label: {
       Text(adjustment.title)
     }
@@ -92,8 +93,12 @@ struct ReceiptAdjustmentQuestionView: View {
     .contentShape(.rect)
     .onTapGesture {
       withAnimation(.settle) { choice.wrappedValue = .custom }
-      isAmountFocused = true
+      focusedField = field
     }
+  }
+
+  private var field: ReceiptAmountField {
+    .adjustment(adjustment)
   }
 
   private var choice: Binding<AdjustmentChoice> {
@@ -123,7 +128,7 @@ struct ReceiptAdjustmentQuestionView: View {
       systemImage: "checkmark",
       tint: draft.backgroundStyle.prominentColor
     ) {
-      isAmountFocused = false
+      focusedField = nil
       draft.confirm(adjustment, amount: amount)
     }
     .disabled(amount <= 0)

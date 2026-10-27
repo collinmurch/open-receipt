@@ -99,6 +99,7 @@ struct ReceiptItemEditorView: View {
     .navigationBarTitleDisplayMode(.inline)
     .scrollDismissesKeyboard(.interactively)
     .dismissesKeyboardOnTap()
+    .keyboardNavigation($focusedField, through: [.name, .quantity, .lineTotal])
     .onAppear {
       if isNew { focusedField = .name }
     }

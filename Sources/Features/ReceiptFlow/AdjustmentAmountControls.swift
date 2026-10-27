@@ -80,8 +80,21 @@ enum AdjustmentChoice: Hashable {
   case preset(AdjustmentPreset)
   case custom
 
-  /// The choice showing `amount`: the preset it equals, unless a custom amount was chosen. Choosing
-  /// a preset sets the amount to it.
+  /// The choice showing `amount`: the preset it equals, unless a custom amount was chosen.
+  static func current(
+    amount: Double,
+    isCustom: Bool,
+    presets: [AdjustmentPreset]
+  ) -> AdjustmentChoice {
+    guard !isCustom,
+      let preset = presets.first(where: {
+        abs($0.amount - amount) < CurrencyAmountInput.tolerance
+      })
+    else { return .custom }
+    return .preset(preset)
+  }
+
+  /// The current choice, where choosing a preset sets the amount to it.
   static func binding(
     amount: Binding<Double>,
     isCustom: Binding<Bool>,
@@ -89,12 +102,8 @@ enum AdjustmentChoice: Hashable {
   ) -> Binding<AdjustmentChoice> {
     Binding(
       get: {
-        guard !isCustom.wrappedValue,
-          let preset = presets.first(where: {
-            abs($0.amount - amount.wrappedValue) < CurrencyAmountInput.tolerance
-          })
-        else { return .custom }
-        return .preset(preset)
+        current(
+          amount: amount.wrappedValue, isCustom: isCustom.wrappedValue, presets: presets)
       },
       set: { choice in
         switch choice {
@@ -128,20 +137,21 @@ struct AdjustmentChoicePicker: View {
 }
 
 /// An adjustment's amount in a row: shown as it is for a preset, and entered as an amount when
-/// custom. Choosing custom focuses the field.
-struct AdjustmentAmountValue: View {
+/// custom. Choosing custom focuses the field as `field`.
+struct AdjustmentAmountValue<Field: Hashable & Sendable>: View {
   let title: String
   @Binding var amount: Double
   let isCustom: Bool
   let currencyCode: String
-  var isFocused: FocusState<Bool>.Binding
+  let focus: FocusState<Field?>.Binding
+  let field: Field
 
   var body: some View {
     Group {
       if isCustom {
         CurrencyAmountField(value: $amount, currencyCode: currencyCode)
           .multilineTextAlignment(.trailing)
-          .focused(isFocused)
+          .focused(focus, equals: field)
           .accessibilityLabel(title)
       } else {
         Text(amount, format: .currency(code: currencyCode))
@@ -152,7 +162,7 @@ struct AdjustmentAmountValue: View {
     }
     .onChange(of: isCustom) { _, isCustom in
       // The field exists once the amount it replaces is gone.
-      if isCustom { Task { isFocused.wrappedValue = true } }
+      if isCustom { Task { focus.wrappedValue = field } }
     }
   }
 }

@@ -1,18 +1,33 @@
 import SwiftUI
 
 struct ReceiptTotalsSection: View {
-  /// The identity of the section's first row, for scrolling to it.
-  static let scrollID = "receipt-totals"
+  /// The identity of the section's first row, the subtotal, for scrolling to it.
+  static let scrollID = ReceiptEditField.amount(.subtotal)
 
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
+  /// Whether the tip is entered as an amount rather than chosen from the suggestions.
+  @Binding var isTipCustom: Bool
+  var focusedField: FocusState<ReceiptEditField?>.Binding
   @Binding var haptic: HapticEvent
   /// Adds an item for the amount the items are short, and opens it to be named.
   let onAddItem: (Double) -> Void
-  @State private var isTipCustom = false
-  @FocusState private var isTipFocused: Bool
   @State private var savingsInputMode = AdjustmentInputMode.amount
-  @FocusState private var focusedField: ReceiptAmountField?
+
+  /// The amounts typed in while editing, in the order they're listed. A tip chosen from the
+  /// suggestions has no field.
+  static func editableFields(of draft: ReceiptDraft, isTipCustom: Bool) -> [ReceiptAmountField] {
+    let tipChoice = AdjustmentChoice.current(
+      amount: draft.tip, isCustom: isTipCustom, presets: tipPresets(of: draft))
+    let adjustments = draft.adjustmentOrder.filter { adjustment in
+      draft.adjustments.contains(adjustment) && (adjustment != .tip || tipChoice == .custom)
+    }
+    return [.subtotal] + adjustments.map(ReceiptAmountField.adjustment) + [.total]
+  }
+
+  private static func tipPresets(of draft: ReceiptDraft) -> [AdjustmentPreset] {
+    AdjustmentPreset.tips(of: draft.tipBaseAmount, currencyCode: draft.displayCurrency)
+  }
 
   var body: some View {
     let balance = draft.balance
@@ -41,7 +56,6 @@ struct ReceiptTotalsSection: View {
       "Subtotal", field: .subtotal,
       value: Binding(get: { draft.subtotal }, set: { draft.setSubtotal($0) })
     )
-    .id(Self.scrollID)
     ForEach(draft.adjustmentOrder) { adjustment in
       adjustmentRow(adjustment, balance: balance)
         .moveDisabled(!canReorder(adjustment))
@@ -157,22 +171,23 @@ struct ReceiptTotalsSection: View {
   /// The tip, chosen from the suggested percentages or entered like the other amounts.
   private var tipEditor: some View {
     let base = draft.tipBaseAmount
-    let presets = AdjustmentPreset.tips(of: base, currencyCode: displayCurrency)
+    let presets = Self.tipPresets(of: draft)
     let choice = AdjustmentChoice.binding(
       amount: $draft.tip, isCustom: $isTipCustom, presets: presets)
+    let field = ReceiptEditField.amount(.adjustment(.tip))
     return VStack(alignment: .leading, spacing: 12) {
       LabeledContent {
         AdjustmentAmountValue(
           title: ReceiptTotalAdjustment.tip.title, amount: $draft.tip,
           isCustom: choice.wrappedValue == .custom, currencyCode: displayCurrency,
-          isFocused: $isTipFocused)
+          focus: focusedField, field: field)
       } label: {
         adjustmentLabel(.tip)
       }
       .contentShape(.rect)
       .onTapGesture {
         withAnimation(.settle) { choice.wrappedValue = .custom }
-        isTipFocused = true
+        focusedField.wrappedValue = field
       }
       AdjustmentChoicePicker(
         title: "Tip Amount", presets: presets, choice: choice.animation(.settle))
@@ -198,9 +213,7 @@ struct ReceiptTotalsSection: View {
       withAnimation(.settle) {
         if adjustment == .tip {
           isTipCustom = false
-          let presets = AdjustmentPreset.tips(
-            of: draft.tipBaseAmount, currencyCode: displayCurrency)
-          draft.addAdjustment(.tip, amount: presets.middle?.amount ?? 0)
+          draft.addAdjustment(.tip, amount: Self.tipPresets(of: draft).middle?.amount ?? 0)
         } else {
           draft.addAdjustment(adjustment)
         }
@@ -208,7 +221,7 @@ struct ReceiptTotalsSection: View {
       haptic.play(.selection)
       // The field exists once the row has been replaced. A tip starts at a suggestion instead.
       if adjustment != .tip {
-        Task { focusedField = .adjustment(adjustment) }
+        Task { focusedField.wrappedValue = .amount(.adjustment(adjustment)) }
       }
     } label: {
       AddRowLabel("Add \(adjustment.title)")
@@ -257,7 +270,7 @@ struct ReceiptTotalsSection: View {
   }
 
   private func perform(_ action: ReceiptBalanceNotice.Action) {
-    focusedField = nil
+    focusedField.wrappedValue = nil
     switch action {
     case .addItem(let amount):
       onAddItem(amount)
@@ -283,14 +296,15 @@ struct ReceiptTotalsSection: View {
       .multilineTextAlignment(.trailing)
       .fontWeight(isEmphasized ? .semibold : .regular)
       .frame(minWidth: 100, idealWidth: 115, maxWidth: 130)
-      .focused($focusedField, equals: field)
+      .focused(focusedField, equals: .amount(field))
       .accessibilityLabel(title)
     } label: {
       Text(title)
         .fontWeight(isEmphasized ? .semibold : .regular)
         .receiptIssues(draft.issues(at: .amount(field)))
     }
-    .focusesOnTap($focusedField, equals: field)
+    .focusesOnTap(focusedField, equals: .amount(field))
+    .id(ReceiptEditField.amount(field))
   }
 
   private func percentageAdjustmentField(
@@ -313,7 +327,7 @@ struct ReceiptTotalsSection: View {
 
         if mode.wrappedValue == .amount {
           CurrencyAmountField(value: amount, currencyCode: displayCurrency)
-            .focused($focusedField, equals: .adjustment(adjustment))
+            .focused(focusedField, equals: .amount(.adjustment(adjustment)))
             .accessibilityLabel(adjustment.title)
         } else {
           NumberField(
@@ -321,7 +335,7 @@ struct ReceiptTotalsSection: View {
             value: percentage,
             format: .number.precision(.fractionLength(0...2))
           )
-          .focused($focusedField, equals: .adjustment(adjustment))
+          .focused(focusedField, equals: .amount(.adjustment(adjustment)))
           .accessibilityLabel("\(adjustment.title) percent")
           Text("%")
             .foregroundStyle(.secondary)
@@ -331,7 +345,7 @@ struct ReceiptTotalsSection: View {
     } label: {
       adjustmentLabel(adjustment, caption: caption)
     }
-    .focusesOnTap($focusedField, equals: .adjustment(adjustment))
+    .focusesOnTap(focusedField, equals: .amount(.adjustment(adjustment)))
   }
 
   private func adjustmentField(
@@ -341,12 +355,12 @@ struct ReceiptTotalsSection: View {
     LabeledContent {
       CurrencyAmountField(value: value, currencyCode: displayCurrency)
         .multilineTextAlignment(.trailing)
-        .focused($focusedField, equals: .adjustment(adjustment))
+        .focused(focusedField, equals: .amount(.adjustment(adjustment)))
         .accessibilityLabel(adjustment.title)
     } label: {
       adjustmentLabel(adjustment)
     }
-    .focusesOnTap($focusedField, equals: .adjustment(adjustment))
+    .focusesOnTap(focusedField, equals: .amount(.adjustment(adjustment)))
   }
 
   private func adjustmentLabel(

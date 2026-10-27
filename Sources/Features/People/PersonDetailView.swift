@@ -67,6 +67,7 @@ struct PersonDetailView: View {
         LabeledContent("Name") {
           FormTextField("Name", text: $person.displayName)
             .textContentType(.name)
+            .submitLabel(editableFields.count > 1 ? .next : .done)
             .focused($focusedField, equals: .name)
         }
         .focusesOnTap($focusedField, equals: .name)
@@ -89,7 +90,7 @@ struct PersonDetailView: View {
               selection: $paymentMethods.venmoRecipient,
               customTitle: "Username")
           }
-          if person.contactIdentifier == nil || paymentMethods.venmoRecipient == nil {
+          if showsCustomField(for: paymentMethods.venmoRecipient) {
             customUsernameField
           }
         } label: {
@@ -109,7 +110,7 @@ struct PersonDetailView: View {
               selection: $paymentMethods.iMessageRecipient,
               customTitle: "Custom phone or email")
           }
-          if person.contactIdentifier == nil || paymentMethods.iMessageRecipient == nil {
+          if showsCustomField(for: paymentMethods.iMessageRecipient) {
             customIMessageField
           }
         } label: {
@@ -132,6 +133,7 @@ struct PersonDetailView: View {
     .navigationTitle(person.displayName)
     .navigationBarTitleDisplayMode(.inline)
     .dismissesKeyboardOnTap()
+    .keyboardNavigation($focusedField, through: editableFields)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button("Delete Person", systemImage: "trash", role: .destructive) {
@@ -174,6 +176,25 @@ struct PersonDetailView: View {
     .onDisappear {
       saveChanges()
     }
+  }
+
+  /// The fields typed in, in the order they're listed: the name, then the open payment method's.
+  private var editableFields: [Field] {
+    let methodField: Field? =
+      switch expandedMethod {
+      case .venmo?: showsCustomField(for: paymentMethods.venmoRecipient) ? .venmoUsername : nil
+      case .cashApp?: .cashtag
+      case .iMessage?:
+        showsCustomField(for: paymentMethods.iMessageRecipient) ? .iMessageRecipient : nil
+      default: nil
+      }
+    return [.name] + [methodField].compactMap(\.self)
+  }
+
+  /// Whether a method's own field shows: always for someone not in Contacts, and otherwise only
+  /// while none of their contact's details is picked.
+  private func showsCustomField<Recipient>(for recipient: Recipient?) -> Bool {
+    person.contactIdentifier == nil || recipient == nil
   }
 
   private var customUsernameField: some View {
