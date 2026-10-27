@@ -68,7 +68,7 @@ final class ReceiptAdjustmentQuestionTests: XCTestCase {
     draft.confirm(.tax, amount: 0.40)
 
     XCTAssertEqual(draft.total, 4.90)
-    XCTAssertNil(draft.corrections.total)
+    XCTAssertTrue(draft.balance.isBalanced)
   }
 
   func testStoppingAskingStopsAsking() {

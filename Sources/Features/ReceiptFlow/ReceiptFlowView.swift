@@ -70,7 +70,7 @@ struct ReceiptFlowView: View {
       ReceiptFlowPlaceholder()
 
     case .preparingRead, .rescanning:
-      ReceiptFlowPlaceholder(title: "Preparing Pages")
+      ReceiptFlowPlaceholder(title: "Preparing Photos")
 
     case .recognizing(let recognition):
       ReceiptRecognitionView(recognition: recognition, onEnterManually: stopReading)

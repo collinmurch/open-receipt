@@ -28,10 +28,33 @@ enum AdjustmentSplitSettings {
   }
 }
 
+/// What suggested tips are a percentage of.
+enum TipBase: String, CaseIterable, Codable, Identifiable, Sendable {
+  case beforeTax
+  case afterTax
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .beforeTax: "Before Tax"
+    case .afterTax: "After Tax"
+    }
+  }
+}
+
 enum TipSettings {
   static let percentageKeys = ["tipPercentageLow", "tipPercentageMiddle", "tipPercentageHigh"]
   static let initialPercentages = [18, 20, 22]
   static let percentageRange = 1...100
+  static let baseKey = "tipBase"
+  static let initialBase = TipBase.beforeTax
+
+  /// What new receipts suggest tips as a percentage of, or the subtotal before tax when none valid
+  /// is stored.
+  static func base(in defaults: UserDefaults = .standard) -> TipBase {
+    defaults.string(forKey: baseKey).flatMap(TipBase.init(rawValue:)) ?? initialBase
+  }
 
   /// The tip percentages offered, lowest first and without repeats, using the initial one in
   /// place of any that isn't stored validly.

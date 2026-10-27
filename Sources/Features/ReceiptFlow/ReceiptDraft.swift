@@ -17,6 +17,10 @@ final class ReceiptDraft {
   var adjustmentSplitMethod: ReceiptAdjustmentSplitMethod {
     didSet { markDurableChange() }
   }
+  /// The order tax, tip, and savings are listed in. The tip is a percentage of the subtotal with
+  /// whatever is listed above it. Change it with `setAdjustmentOrder(_:percentages:)` to carry a
+  /// suggested tip's percentage over.
+  var adjustmentOrder: [ReceiptTotalAdjustment] { didSet { markPersistedChange() } }
   private(set) var isCompleted: Bool
   /// The tax and tip still to ask about, in the order they're asked.
   private(set) var unconfirmedAdjustments: [ReceiptTotalAdjustment] {
@@ -33,7 +37,9 @@ final class ReceiptDraft {
     id: UUID = UUID(),
     owner: ReceiptOwner? = nil,
     backgroundStyle: ReceiptBackgroundStyle = .random(),
-    adjustmentSplitMethod: ReceiptAdjustmentSplitMethod = AdjustmentSplitSettings.defaultMethod()
+    adjustmentSplitMethod: ReceiptAdjustmentSplitMethod = AdjustmentSplitSettings.defaultMethod(),
+    adjustmentOrder: [ReceiptTotalAdjustment] = ReceiptTotalAdjustment.order(
+      tipBase: TipSettings.base())
   ) {
     self.id = id
     self.backgroundStyle = backgroundStyle
@@ -49,17 +55,19 @@ final class ReceiptDraft {
     payment = receipt.payment
     items = receipt.items.map { ReceiptDraftItem(item: $0) }
     self.adjustmentSplitMethod = adjustmentSplitMethod
+    self.adjustmentOrder = adjustmentOrder
     isCompleted = false
     unconfirmedAdjustments = []
     participants = [.currentUser(owner: owner)]
   }
 
   /// Creates a draft from a new recognition of `previous`'s receipt. People, colors, the split
-  /// method, and an entered tip carry over; items, printed totals, and assignments are replaced.
+  /// method, the adjustments' order, and an entered tip carry over; items, printed totals, and assignments are replaced.
   convenience init(receipt: ParsedReceipt, replacing previous: ReceiptDraft) {
     self.init(receipt: receipt, id: previous.id, backgroundStyle: previous.backgroundStyle)
     participants = previous.participants
     adjustmentSplitMethod = previous.adjustmentSplitMethod
+    adjustmentOrder = previous.adjustmentOrder
     if !adjustments.contains(.tip), let tip = previous.adjustments[.tip] {
       adjustments[.tip] = tip
     }
@@ -78,28 +86,30 @@ final class ReceiptDraft {
     payment = state.payment
     items = state.items
     adjustmentSplitMethod = state.adjustmentSplitMethod
+    adjustmentOrder = state.adjustmentOrder
     isCompleted = state.isCompleted
     unconfirmedAdjustments = state.unconfirmedAdjustments
     participants = state.participants
   }
 
+  /// The tax. Setting it moves a total that added up along with it, as do `tip` and `savings`.
   var tax: Double {
     get { adjustments[.tax] ?? 0 }
-    set { adjustments[.tax] = newValue }
+    set { keepingBalance { adjustments[.tax] = newValue } }
   }
 
   var tip: Double {
     get { adjustments[.tip] ?? 0 }
-    set { adjustments[.tip] = newValue }
+    set { keepingBalance { adjustments[.tip] = newValue } }
   }
 
   var savings: Double {
     get { adjustments[.savings] ?? 0 }
-    set { adjustments[.savings] = newValue }
+    set { keepingBalance { adjustments[.savings] = newValue } }
   }
 
   /// What needs fixing in the current values. Totals that don't add up aren't an issue, because
-  /// the totals section shows its own correction.
+  /// the totals section explains them with a `ReceiptBalanceNotice`.
   var issues: [ReceiptIssue] {
     let revision = persistenceRevision
     if let issuesCache, issuesCache.revision == revision {
@@ -235,7 +245,7 @@ final class ReceiptDraft {
   /// Asks about the tax and tip a read didn't find. A read that found no items has nothing to
   /// work them out from, so it asks nothing and the receipt opens to be fixed.
   func askAboutMissingAdjustments() {
-    guard expectedSubtotal > 0 else {
+    guard itemsTotal > 0 else {
       unconfirmedAdjustments = []
       return
     }
@@ -247,9 +257,7 @@ final class ReceiptDraft {
   /// Records `amount` of `adjustment` and stops asking about it. A total that added up keeps
   /// adding up, so a tip left after the receipt was printed raises it.
   func confirm(_ adjustment: ReceiptTotalAdjustment, amount: Double) {
-    let addedUp = corrections.total == nil
-    adjustments[adjustment] = amount
-    if addedUp { fixTotal() }
+    addAdjustment(adjustment, amount: amount)
     stopAsking(about: adjustment)
   }
 

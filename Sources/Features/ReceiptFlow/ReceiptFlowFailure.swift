@@ -72,10 +72,10 @@ extension ReceiptFlowModel.Failure {
   /// A rescan held back because reading the new pages needs unlimited reading.
   static func rescanNotRead(retry: Retry) -> Self {
     Self(
-      title: "New Pages Not Read",
+      title: "New Photos Not Read",
       systemImage: "doc.text.viewfinder",
       isError: false,
-      description: "Read this receipt again to update it from its new pages.",
+      description: "Read this receipt again to update it from its new photos.",
       retry: retry,
       allowsManualEntry: true,
       manualEntryTitle: backToReceipt,

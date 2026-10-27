@@ -38,6 +38,36 @@ struct AdjustmentPreset: Hashable {
   }
 }
 
+/// The line under a tip that says what it's a percentage of, such as "20% of $44.70 before tax".
+enum TipBaseCaption {
+  /// `isAfterSavings` says whether `base` has the receipt's savings taken off, and is `nil` when
+  /// the receipt has none.
+  static func text(
+    tip: Double,
+    base: Double,
+    isAfterTax: Bool,
+    isAfterSavings: Bool? = nil,
+    currencyCode: String
+  ) -> String? {
+    guard tip > 0, base > 0 else { return nil }
+    let percentage = (tip / base).formatted(.percent.precision(.fractionLength(0...1)))
+    let amount = base.formatted(.currency(code: currencyCode))
+    return
+      "\(percentage) of \(amount) \(phrase(isAfterTax: isAfterTax, isAfterSavings: isAfterSavings))"
+  }
+
+  private static func phrase(isAfterTax: Bool, isAfterSavings: Bool?) -> String {
+    switch (isAfterTax, isAfterSavings) {
+    case (false, nil): "before tax"
+    case (false, false): "before tax and savings"
+    case (false, true): "after savings, before tax"
+    case (true, nil): "after tax"
+    case (true, true): "after tax and savings"
+    case (true, false): "after tax, before savings"
+    }
+  }
+}
+
 extension [AdjustmentPreset] {
   /// The preset in the middle, which is chosen to start with.
   var middle: AdjustmentPreset? {
@@ -97,32 +127,22 @@ struct AdjustmentChoicePicker: View {
   }
 }
 
-/// An adjustment's amount in a row: shown as it is for a preset, and entered as an amount or a
-/// percentage of `base` when custom. Choosing custom focuses the field.
+/// An adjustment's amount in a row: shown as it is for a preset, and entered as an amount when
+/// custom. Choosing custom focuses the field.
 struct AdjustmentAmountValue: View {
   let title: String
   @Binding var amount: Double
   let isCustom: Bool
-  let base: Double
   let currencyCode: String
   var isFocused: FocusState<Bool>.Binding
-  @State private var mode = AdjustmentInputMode.amount
 
   var body: some View {
     Group {
       if isCustom {
-        HStack {
-          Picker("\(title) format", selection: $mode) {
-            ForEach(AdjustmentInputMode.allCases) { mode in
-              Text(mode.label(currencyCode: currencyCode)).tag(mode)
-            }
-          }
-          .pickerStyle(.segmented)
-          .frame(minWidth: 82)
-          .fixedSize()
-          field
-        }
-        .multilineTextAlignment(.trailing)
+        CurrencyAmountField(value: $amount, currencyCode: currencyCode)
+          .multilineTextAlignment(.trailing)
+          .focused(isFocused)
+          .accessibilityLabel(title)
       } else {
         Text(amount, format: .currency(code: currencyCode))
           .monospacedDigit()
@@ -134,30 +154,5 @@ struct AdjustmentAmountValue: View {
       // The field exists once the amount it replaces is gone.
       if isCustom { Task { isFocused.wrappedValue = true } }
     }
-    .onChange(of: mode) {
-      Task { isFocused.wrappedValue = true }
-    }
-  }
-
-  @ViewBuilder
-  private var field: some View {
-    switch mode {
-    case .amount:
-      CurrencyAmountField(value: $amount, currencyCode: currencyCode)
-        .focused(isFocused)
-        .accessibilityLabel(title)
-    case .percentage:
-      NumberField("Percent", value: percentage, format: .number.precision(.fractionLength(0...2)))
-        .focused(isFocused)
-        .accessibilityLabel("\(title) percent")
-      Text("%")
-        .foregroundStyle(.secondary)
-    }
-  }
-
-  private var percentage: Binding<Double> {
-    Binding(
-      get: { base > 0 ? amount / base * 100 : 0 },
-      set: { amount = ReceiptCurrency.rounded(max(0, base * $0 / 100), code: currencyCode) })
   }
 }

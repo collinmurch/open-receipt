@@ -37,6 +37,7 @@ struct ReceiptReviewView: View {
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.receiptStartsAtTotals) private var startsAtTotals
 
   init(
     draft: ReceiptDraft,
@@ -112,6 +113,12 @@ struct ReceiptReviewView: View {
   private var receiptList: some View {
     ScrollViewReader { proxy in
       itemsList
+        .task {
+          guard startsAtTotals else { return }
+          // The list lays out its rows after it first appears.
+          do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+          proxy.scrollTo(ReceiptTotalsSection.scrollID, anchor: .top)
+        }
         .task(id: revealedItemID) {
           guard let id = revealedItemID else { return }
           do { try await Task.sleep(for: Self.revealPause) } catch { return }
@@ -158,7 +165,8 @@ struct ReceiptReviewView: View {
       ReceiptTotalsSection(
         draft: draft,
         isEditing: isEditing,
-        haptic: $haptic
+        haptic: $haptic,
+        onAddItem: addMissingItem
       )
     }
     .scrollContentBackground(.hidden)
@@ -291,7 +299,7 @@ struct ReceiptReviewView: View {
       }
     } else if !isFocusing {
       ToolbarTitleMenu {
-        Button("View & Edit Pages", systemImage: "doc.viewfinder") { isPagesPresented = true }
+        Button("Receipt Photos", systemImage: "doc.viewfinder") { isPagesPresented = true }
       }
 
       if !showsPayments {
@@ -306,13 +314,6 @@ struct ReceiptReviewView: View {
     Section("Receipt") {
       TextField("Merchant", text: $draft.merchantName)
         .textContentType(.organizationName)
-      Picker("Split Tax/Tip", selection: $draft.adjustmentSplitMethod) {
-        ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
-          Text(method.title)
-            .tag(method)
-        }
-      }
-      .pickerStyle(.menu)
       DatePicker("Date", selection: $draft.purchaseDate, displayedComponents: .date)
       NavigationLink {
         ReceiptCurrencyPicker(
@@ -326,6 +327,20 @@ struct ReceiptReviewView: View {
             .receiptIssues(draft.issues(at: .currency))
         }
       }
+      Button {
+        isPagesPresented = true
+      } label: {
+        HStack {
+          Text("Photos")
+          Spacer()
+          Text(pages.pages.count, format: .number)
+            .foregroundStyle(.secondary)
+          Image(systemName: "chevron.forward")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .tint(.primary)
     }
   }
 
@@ -370,6 +385,13 @@ struct ReceiptReviewView: View {
   private func editItem(_ id: ReceiptDraftItem.ID) {
     beginEditing()
     selectedItemID = id
+  }
+
+  /// Adds an item for what the items are short of the subtotal, and opens it to be named.
+  private func addMissingItem(lineTotal: Double) {
+    let id = withAnimation(.settle) { draft.addItem(lineTotal: lineTotal) }
+    haptic.play(.selection)
+    editItem(id)
   }
 
   /// Switches to the receipt and lifts the first item no one shares, ready to assign.
@@ -458,6 +480,11 @@ struct ReceiptReviewView: View {
     removeMissingParticipantSelections()
     Task { await onFlush() }
   }
+}
+
+extension EnvironmentValues {
+  /// Whether a receipt's list starts scrolled to its totals, so screenshots can show them.
+  @Entry var receiptStartsAtTotals = false
 }
 
 extension View {

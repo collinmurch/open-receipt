@@ -214,6 +214,47 @@ final class ReceiptSplitCalculatorTests: XCTestCase {
     XCTAssertEqual(calculation.participantShares[0].adjustments[0].amount, -2)
   }
 
+  func testSavingsAlreadyInItemPricesAreNotTakenOffAgain() throws {
+    let draft = ReceiptDraft(
+      receipt: ParsedReceipt(
+        subtotal: 10, savings: 2, total: 10,
+        items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)]))
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].total, 10)
+    XCTAssertTrue(calculation.participantShares[0].adjustments.isEmpty)
+  }
+
+  func testReceiptWithoutSubtotalSharesNoSubtotalAdjustment() throws {
+    let draft = ReceiptDraft(
+      receipt: ParsedReceipt(
+        tax: 1, total: 11,
+        items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)]))
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].adjustments.map(\.id), ["tax"])
+  }
+
+  func testItemsShortOfSubtotalAreSharedAsSubtotalAdjustment() throws {
+    let draft = ReceiptDraft(
+      receipt: ParsedReceipt(
+        subtotal: 12, total: 12,
+        items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)]))
+    let currentUserID = try XCTUnwrap(draft.participants.first?.id)
+    draft.items[0].participantIDs = [currentUserID]
+
+    let calculation = calculate(draft, .proportional)
+
+    XCTAssertEqual(calculation.participantShares[0].adjustments.map(\.id), ["subtotal-adjustment"])
+    XCTAssertEqual(calculation.participantShares[0].total, 12)
+  }
+
   func testUnassignedItemsAreReported() {
     let draft = makeDraft(
       items: [ReceiptItem(description: "Pizza", quantity: 1, lineTotal: 10)], total: 10)

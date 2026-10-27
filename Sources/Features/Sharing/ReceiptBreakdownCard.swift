@@ -177,8 +177,8 @@ private struct GroupBreakdown: View {
 
     Text(
       breakdown.adjustmentMethod == .proportional
-        ? "Tax and tip split proportionally by each person’s item share."
-        : "Tax and tip split equally."
+        ? "Extras like tax and tip split proportionally by each person’s item share."
+        : "Extras like tax and tip split equally."
     )
     .font(.footnote)
     .foregroundStyle(.secondary)

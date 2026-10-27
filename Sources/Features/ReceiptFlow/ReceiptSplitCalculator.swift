@@ -164,27 +164,28 @@ enum ReceiptSplitCalculator {
     }
   }
 
-  /// The amounts between the item subtotal and the total that everyone shares: a printed
-  /// subtotal that differs from the items, each adjustment, and anything else the total
-  /// includes. They are counted in whole units, so together with the items they add up to
-  /// exactly the total.
+  /// The amounts between the items and the total that everyone shares: a printed subtotal that
+  /// differs from the items, each adjustment, and anything else the total includes. Savings
+  /// already taken off the item prices aren't taken off again. They are counted in whole units,
+  /// so together with the items they add up to exactly the total.
   private static func adjustmentComponents(of input: ReceiptSplitInput) -> [AdjustmentComponent] {
     func units(_ amount: Double) -> Int {
       ReceiptCurrency.minorUnits(amount, code: input.currency)
     }
+    let balance = ReceiptBalance(input)
     var components: [AdjustmentComponent] = []
-    let subtotalUnits = units(input.subtotal)
-    let itemUnits = input.items.reduce(0) { $0 + units($1.lineTotal) }
-    if subtotalUnits != itemUnits {
+    var knownUnits = input.items.reduce(0) { $0 + units($1.lineTotal) }
+    if balance.subtotalDifferenceUnits != 0 {
+      knownUnits += balance.subtotalDifferenceUnits
       components.append(
         AdjustmentComponent(
           id: "subtotal-adjustment",
           title: "Subtotal adjustment",
-          units: subtotalUnits - itemUnits))
+          units: balance.subtotalDifferenceUnits))
     }
 
-    var knownUnits = subtotalUnits
     for adjustment in ReceiptTotalAdjustment.allCases {
+      if adjustment == .savings, !balance.subtractsSavingsFromItems { continue }
       let adjustmentUnits = units(input.adjustments.signedAmount(of: adjustment))
       knownUnits += adjustmentUnits
       guard adjustmentUnits != 0 else { continue }

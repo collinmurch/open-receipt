@@ -7,6 +7,8 @@ struct ReceiptAdjustmentQuestionView: View {
   @Bindable var draft: ReceiptDraft
   let adjustment: ReceiptTotalAdjustment
   private let presets: [AdjustmentPreset]
+  /// What the amount is a percentage of.
+  private let base: Double
   @State private var amount: Double
   @State private var isCustom: Bool
   @FocusState private var isAmountFocused: Bool
@@ -15,8 +17,10 @@ struct ReceiptAdjustmentQuestionView: View {
   init(draft: ReceiptDraft, adjustment: ReceiptTotalAdjustment) {
     self.draft = draft
     self.adjustment = adjustment
-    let presets = Self.presets(for: adjustment, in: draft)
+    let base = adjustment == .tip ? draft.tipBaseAmount : draft.itemsTotal
+    let presets = Self.presets(for: adjustment, in: draft, base: base)
     self.presets = presets
+    self.base = base
     _amount = State(initialValue: presets.middle?.amount ?? 0)
     _isCustom = State(initialValue: presets.isEmpty)
   }
@@ -76,7 +80,7 @@ struct ReceiptAdjustmentQuestionView: View {
     LabeledContent {
       AdjustmentAmountValue(
         title: adjustment.title, amount: $amount, isCustom: choice.wrappedValue == .custom,
-        base: itemsTotal, currencyCode: currency, isFocused: $isAmountFocused)
+        currencyCode: currency, isFocused: $isAmountFocused)
     } label: {
       Text(adjustment.title)
     }
@@ -128,13 +132,14 @@ struct ReceiptAdjustmentQuestionView: View {
 
   private static func presets(
     for adjustment: ReceiptTotalAdjustment,
-    in draft: ReceiptDraft
+    in draft: ReceiptDraft,
+    base: Double
   ) -> [AdjustmentPreset] {
     switch adjustment {
     case .tax:
       draft.impliedTax.map { [AdjustmentPreset(title: "Auto (From Total)", amount: $0)] } ?? []
     case .tip:
-      AdjustmentPreset.tips(of: draft.expectedSubtotal, currencyCode: draft.displayCurrency)
+      AdjustmentPreset.tips(of: base, currencyCode: draft.displayCurrency)
     case .savings:
       []
     }
@@ -144,10 +149,16 @@ struct ReceiptAdjustmentQuestionView: View {
     if adjustment == .tax, case .preset = choice.wrappedValue {
       return "The total is \(formatted(amount)) more than the items."
     }
-    guard itemsTotal > 0, amount > 0 else { return nil }
-    let percentage = (amount / itemsTotal * 100).formatted(
+    if adjustment == .tip {
+      return TipBaseCaption.text(
+        tip: amount, base: base, isAfterTax: draft.isTipAfterTax,
+        isAfterSavings: draft.isTipAfterSavings, currencyCode: currency
+      ).map { "\(formatted(amount)) is \($0)." }
+    }
+    guard base > 0, amount > 0 else { return nil }
+    let percentage = (amount / base * 100).formatted(
       .percent.scale(1).precision(.fractionLength(0...1)))
-    return "\(formatted(amount)) is \(percentage) of \(formatted(itemsTotal)) in items."
+    return "\(formatted(amount)) is \(percentage) of \(formatted(base)) in items."
   }
 
   private var title: String {
@@ -172,10 +183,6 @@ struct ReceiptAdjustmentQuestionView: View {
     case .tip: "heart.circle"
     case .savings: "tag"
     }
-  }
-
-  private var itemsTotal: Double {
-    draft.expectedSubtotal
   }
 
   private var currency: String {

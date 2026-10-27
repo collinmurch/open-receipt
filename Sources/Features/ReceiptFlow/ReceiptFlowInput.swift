@@ -17,6 +17,8 @@ struct ReceiptFlowInput: Identifiable, Hashable {
   /// The stored receipt, when it was loaded before the screen opened, so the receipt shows on the
   /// first frame instead of loading during the transition.
   var preloadedDocument: ReceiptDocument?
+  /// Whether a preloaded receipt opens ready to edit.
+  var startsInEditing = false
 
   static func create(
     id: UUID = UUID(),
@@ -28,13 +30,15 @@ struct ReceiptFlowInput: Identifiable, Hashable {
   static func storedReceipt(
     _ id: UUID,
     backgroundStyle: ReceiptBackgroundStyle? = nil,
-    document: ReceiptDocument? = nil
+    document: ReceiptDocument? = nil,
+    startsInEditing: Bool = false
   ) -> ReceiptFlowInput {
     ReceiptFlowInput(
       id: id,
       source: .storedReceipt,
       backgroundStyle: backgroundStyle,
-      preloadedDocument: document)
+      preloadedDocument: document,
+      startsInEditing: startsInEditing)
   }
 
   @MainActor

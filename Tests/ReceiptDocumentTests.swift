@@ -59,6 +59,31 @@ final class ReceiptDocumentTests: XCTestCase {
     XCTAssertEqual(loadedDraft.adjustmentSplitMethod, .even)
   }
 
+  func testDraftRoundTripPreservesAdjustmentOrder() throws {
+    let draft = makeDraft()
+    draft.setAdjustmentOrder([.savings, .tax, .tip])
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+
+    let loadedDraft = try ReceiptDraft(document: document)
+
+    XCTAssertEqual(loadedDraft.adjustmentOrder, [.savings, .tax, .tip])
+  }
+
+  func testSplitWithoutAdjustmentOrderDecodesWithNone() throws {
+    let draft = makeDraft()
+    let document = ReceiptDocument.pending(id: draft.id).updating(from: draft)
+    let data = try encoder.encode(document)
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var split = try XCTUnwrap(json["split"] as? [String: Any])
+    split.removeValue(forKey: "adjustmentOrder")
+    json["split"] = split
+
+    let legacyData = try JSONSerialization.data(withJSONObject: json)
+    let decoded = try decoder.decode(ReceiptDocument.self, from: legacyData)
+
+    XCTAssertNil(decoded.split?.adjustmentOrder)
+  }
+
   func testDraftRoundTripPreservesCompletion() throws {
     let draft = makeDraft()
     draft.complete()

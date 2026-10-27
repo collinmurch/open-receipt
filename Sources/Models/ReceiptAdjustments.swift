@@ -11,6 +11,17 @@ enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiab
 
   var id: Self { self }
 
+  /// The order the adjustments are listed in when a tip is suggested on `tipBase`: the tip above
+  /// tax for a tip before tax, and savings last.
+  static func order(tipBase: TipBase) -> [ReceiptTotalAdjustment] {
+    tipBase == .beforeTax ? [.tip, .tax, .savings] : [.tax, .tip, .savings]
+  }
+
+  /// `order` when it lists every adjustment once, or `nil` when it doesn't.
+  static func validOrder(_ order: [ReceiptTotalAdjustment]) -> [ReceiptTotalAdjustment]? {
+    order.count == allCases.count && Set(order) == Set(allCases) ? order : nil
+  }
+
   var title: String {
     switch self {
     case .tax: "Tax"

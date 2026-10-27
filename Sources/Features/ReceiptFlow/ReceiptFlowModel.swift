@@ -78,7 +78,7 @@ final class ReceiptFlowModel {
       phase = .storing(scan)
     }
     if let document = input.preloadedDocument, document.id == input.id {
-      open(document)
+      open(document, startsInEditing: input.startsInEditing)
     }
   }
 
@@ -418,14 +418,14 @@ final class ReceiptFlowModel {
   }
 
   /// Shows a loaded receipt: its review when it was read, or its unread state.
-  private func open(_ document: ReceiptDocument) {
+  private func open(_ document: ReceiptDocument, startsInEditing: Bool = false) {
     backgroundStyle = document.presentation.backgroundStyle
     guard document.recognition.status == .succeeded else {
       phase = .failed(.unread(document))
       return
     }
     do {
-      try review(document)
+      try review(document, startsInEditing: startsInEditing)
     } catch {
       phase = .failed(Failure(description: error.localizedDescription, retry: nil))
     }

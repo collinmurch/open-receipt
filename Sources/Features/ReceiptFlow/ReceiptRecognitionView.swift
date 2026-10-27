@@ -128,7 +128,7 @@ private struct ReceiptRecognitionStatusBar: View {
       return "Reading resumes when you’re back online."
     case .reading, .saving, .finished:
       guard !preview.items.isEmpty else {
-        return String(inflecting: "^[\(recognition.pageCount) page](inflect: true)")
+        return String(inflecting: "^[\(recognition.pageCount) photo](inflect: true)")
       }
       let currency = ReceiptCurrency.displayCode(preview.currency)
       let items = String(inflecting: "^[\(preview.items.count) item](inflect: true)")

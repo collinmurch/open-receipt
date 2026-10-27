@@ -65,7 +65,7 @@ struct ReceiptPagesView: View {
         }
       }
       .receiptBackground(style)
-      .navigationTitle("Pages")
+      .navigationTitle("Photos")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
@@ -116,14 +116,14 @@ struct ReceiptPagesView: View {
       photoItems = []
       addPages { await ReceiptPhotoImporter.pages(from: items) }
     }
-    .errorAlert("Couldn’t Update Pages", message: $errorDescription)
+    .errorAlert("Couldn’t Update Photos", message: $errorDescription)
   }
 
   private var footnote: String? {
     if editor.needsRescan {
-      return rescanUnavailableReason ?? "Read the receipt again to update it from these pages."
+      return rescanUnavailableReason ?? "Read the receipt again to update it from these photos."
     }
-    if editor.pages.count > 1 { return "Touch and hold a page to reorder or delete it." }
+    if editor.pages.count > 1 { return "Touch and hold a photo to reorder or delete it." }
     return nil
   }
 
@@ -133,9 +133,9 @@ struct ReceiptPagesView: View {
     case .limitReached(let resetDate, _):
       let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
       return
-        "Today’s reading limit is reached. Read it again \(resumption), or edit the items to match the updated pages."
+        "Today’s reading limit is reached. Read it again \(resumption), or edit the items to match the updated photos."
     case .unavailable(let reason):
-      return "\(reason) Edit the items to match the updated pages."
+      return "\(reason) Edit the items to match the updated photos."
     case .available, .approachingLimit:
       return nil
     }
@@ -174,13 +174,13 @@ struct ReceiptPagesView: View {
         onReorder: { haptic.play(.selection) })
     )
     .contextMenu {
-      Button("Delete Page", systemImage: "trash", role: .destructive) {
+      Button("Delete Photo", systemImage: "trash", role: .destructive) {
         delete(page)
       }
       .disabled(editor.pages.count == 1)
     }
-    .accessibilityLabel("Page \(number)")
-    .accessibilityHint("Shows the full page")
+    .accessibilityLabel("Photo \(number)")
+    .accessibilityHint("Shows the full photo")
   }
 
   private var addTile: some View {
@@ -238,7 +238,7 @@ struct ReceiptPagesView: View {
       isRescanConfirmationPresented = true
     }
     .disabled(rescanUnavailableReason != nil)
-    .accessibilityHint("Reads the receipt again from the current pages")
+    .accessibilityHint("Reads the receipt again from the current photos")
     .confirmationDialog(
       "Read Receipt Again?",
       isPresented: $isRescanConfirmationPresented,
@@ -250,7 +250,7 @@ struct ReceiptPagesView: View {
       }
     } message: {
       Text(
-        "Items and totals are read again from these pages. People stay on the receipt, but item assignments are cleared."
+        "Items and totals are read again from these photos. People stay on the receipt, but item assignments are cleared."
       )
     }
   }

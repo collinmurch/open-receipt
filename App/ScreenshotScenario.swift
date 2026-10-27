@@ -22,8 +22,14 @@
       case paywall
       /// A read receipt's items, before anyone is added to it.
       case review
+      /// The review scenario's receipt being edited, from the top.
+      case reviewEditing
       /// A read receipt asking about its tip, as it does right after reading.
       case tip
+      /// A short read receipt that missed an item, so its items are short of the subtotal.
+      case unbalanced
+      /// A short read receipt being edited, whose misread tax leaves its total off.
+      case unbalancedEditing
       /// The saved people, after splitting the requests scenario's receipt with them.
       case people
       /// Settings.
@@ -93,7 +99,8 @@
           recognitions: recognitions,
           access: access,
           contacts: kind == .share ? .cards(for: scene.people) : .unavailable,
-          showsUnlimitedReading: kind == .paywall)
+          showsUnlimitedReading: kind == .paywall,
+          receiptStartsAtTotals: kind == .unbalanced || kind == .unbalancedEditing)
       }
 
       switch kind {
@@ -134,10 +141,10 @@
           access: ReadingAccess(
             client: .fixed(isEntitled: false), store: .memory(Set(usedReads)), isUnlocked: false))
 
-      case .review, .tip:
+      case .review, .reviewEditing, .tip:
         var document = try await Self.storeRead(
           scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-        if kind == .review {
+        if kind != .tip {
           let draft = try ReceiptDraft(document: document)
           for adjustment in draft.unconfirmedAdjustments {
             draft.stopAsking(about: adjustment)
@@ -147,7 +154,25 @@
         }
         return stage([
           .receipt(
-            .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
+            .storedReceipt(
+              document.id, backgroundStyle: scene.backgroundStyle, document: document,
+              startsInEditing: kind == .reviewEditing))
+        ])
+
+      case .unbalanced, .unbalancedEditing:
+        let read = try await Self.storeRead(
+          unbalancedReceipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
+        let draft = try ReceiptDraft(document: read)
+        for adjustment in draft.unconfirmedAdjustments {
+          draft.stopAsking(about: adjustment)
+        }
+        let document = read.updating(from: draft)
+        try await storage.save(document)
+        return stage([
+          .receipt(
+            .storedReceipt(
+              document.id, backgroundStyle: scene.backgroundStyle, document: document,
+              startsInEditing: kind == .unbalancedEditing))
         ])
 
       case .people:
@@ -166,6 +191,29 @@
       }
     }
 
+    /// The scene's first three items with the city's sales tax, read with a mistake: the
+    /// unbalanced scenario misses the second item, and the editing one misreads the tax on a
+    /// receipt with a printed tip.
+    private var unbalancedReceipt: ParsedReceipt {
+      var receipt = scene.receipt
+      let items = Array(receipt.items.prefix(3))
+      let subtotal = items.reduce(0) { $0 + $1.lineTotal }
+      let tax = ReceiptCurrency.rounded(subtotal * 0.08875, code: receipt.currency)
+      receipt.subtotal = subtotal
+      if kind == .unbalanced {
+        receipt.items = items.enumerated().filter { $0.offset != 1 }.map(\.element)
+        receipt.tax = tax
+        receipt.total = subtotal + tax
+      } else {
+        let tip = ReceiptCurrency.rounded(subtotal * 0.2, code: receipt.currency)
+        receipt.items = items
+        receipt.tax = tax - 0.45
+        receipt.tip = tip
+        receipt.total = subtotal + tax + tip
+      }
+      return receipt
+    }
+
     /// Writes the overview slip and each person's slip as transparent PNGs, then
     /// `breakdowns.json` listing them in order, which tells the capture test they're done.
     @MainActor
@@ -173,7 +221,8 @@
       guard let directory = breakdownsDirectory else {
         throw ScreenshotSceneError.missingBreakdownsDirectory
       }
-      guard let breakdowns = try ReceiptDraft(document: document).allBreakdowns(accentScheme: .light)
+      guard
+        let breakdowns = try ReceiptDraft(document: document).allBreakdowns(accentScheme: .light)
       else { throw ScreenshotSceneError.unassignedItems }
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       var names: [String] = []
@@ -307,7 +356,6 @@
       }
       if let tip = scene.addedTip {
         draft.tip = tip
-        draft.fixTotal()
       }
       for adjustment in draft.unconfirmedAdjustments {
         draft.stopAsking(about: adjustment)
@@ -356,6 +404,8 @@
     let contacts: ContactClient
     /// Whether the unlimited reading purchase opens over the screen.
     let showsUnlimitedReading: Bool
+    /// Whether the receipt's list starts scrolled to its totals.
+    let receiptStartsAtTotals: Bool
   }
 
   /// Stages a scenario, then shows the app over it.
@@ -377,6 +427,7 @@
             .environment(\.peopleStorageClient, stage.people)
             .environment(\.receiptParsingClient, stage.parsing)
             .environment(\.contactClient, stage.contacts)
+            .environment(\.receiptStartsAtTotals, stage.receiptStartsAtTotals)
         } else {
           Color.clear
         }

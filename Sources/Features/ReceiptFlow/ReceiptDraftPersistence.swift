@@ -12,6 +12,7 @@ struct ReceiptDraftPersistenceState {
   let payment: ReceiptPayment?
   let items: [ReceiptDraftItem]
   let adjustmentSplitMethod: ReceiptAdjustmentSplitMethod
+  let adjustmentOrder: [ReceiptTotalAdjustment]
   let isCompleted: Bool
   let unconfirmedAdjustments: [ReceiptTotalAdjustment]
   let participants: [ReceiptParticipant]
@@ -53,6 +54,9 @@ struct ReceiptDraftPersistenceState {
         participantIDs: assignments[item.id, default: []])
     }
     adjustmentSplitMethod = split.adjustmentMethod
+    adjustmentOrder =
+      split.adjustmentOrder.flatMap(ReceiptTotalAdjustment.validOrder)
+      ?? ReceiptTotalAdjustment.order(tipBase: TipSettings.base())
     isCompleted = document.presentation.isCompleted
     unconfirmedAdjustments = document.presentation.unconfirmedAdjustments ?? []
     participants = split.participants.map { participant in
@@ -136,6 +140,7 @@ extension ReceiptDocument {
       })
     document.split = Split(
       adjustmentMethod: draft.adjustmentSplitMethod,
+      adjustmentOrder: draft.adjustmentOrder,
       participants: draft.participants.map {
         Participant(
           id: $0.id,

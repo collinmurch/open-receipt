@@ -7,6 +7,7 @@ struct SettingsView: View {
     CurrencySettings.initialDefaultCode
   @AppStorage(AdjustmentSplitSettings.defaultMethodKey) private var defaultAdjustmentSplitMethod =
     AdjustmentSplitSettings.initialDefaultMethod
+  @AppStorage(TipSettings.baseKey) private var tipBase = TipSettings.initialBase
   @State private var isUnlockPresented = false
   @State private var restoreMessage: String?
   @State private var isRemoveConfirmationPresented = false
@@ -15,7 +16,7 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section {
-        Picker("Split Tax/Tip", selection: $defaultAdjustmentSplitMethod) {
+        Picker("Split Extras", selection: $defaultAdjustmentSplitMethod) {
           ForEach(ReceiptAdjustmentSplitMethod.allCases) { method in
             Text(method.title)
               .tag(method)
@@ -24,6 +25,8 @@ struct SettingsView: View {
         .pickerStyle(.menu)
       } header: {
         Text("Default Split")
+      } footer: {
+        Text("Extras are the tax, tip, savings, and anything else on a receipt’s total.")
       }
 
       Section {
@@ -59,8 +62,16 @@ struct SettingsView: View {
           key, initial in
           TipPercentageStepper(key: key, initial: initial)
         }
+        Picker("Based On", selection: $tipBase) {
+          ForEach(TipBase.allCases) { base in
+            Text(base.title).tag(base)
+          }
+        }
+        .pickerStyle(.menu)
       } header: {
         Text("Tip Suggestions")
+      } footer: {
+        Text(tipBaseFooter)
       }
 
       UnlimitedReadingSection(
@@ -109,6 +120,17 @@ struct SettingsView: View {
     }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var tipBaseFooter: String {
+    switch tipBase {
+    case .beforeTax:
+      "New receipts suggest tips as a percentage of the subtotal, before tax. To change one "
+        + "receipt, drag Tip below Tax while editing it."
+    case .afterTax:
+      "New receipts suggest tips as a percentage of the total with tax. To change one receipt, "
+        + "drag Tip above Tax while editing it."
+    }
   }
 }
 

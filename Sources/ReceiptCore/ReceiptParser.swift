@@ -38,9 +38,9 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
     case .timedOut:
       "Reading the receipt took too long. Try again."
     case .refused:
-      "These pages couldn’t be read as a receipt. Try reading the receipt again."
+      "These photos couldn’t be read as a receipt. Try reading the receipt again."
     case .tooManyPages:
-      "These pages are too large to read together. Remove a page and try again."
+      "These photos are too large to read together. Remove a photo and try again."
     case .invalidResponse(let message):
       "The receipt response was invalid: \(message)"
     }

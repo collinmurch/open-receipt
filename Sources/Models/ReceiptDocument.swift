@@ -111,6 +111,9 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
 
   struct Split: Codable, Equatable, Sendable {
     var adjustmentMethod: ReceiptAdjustmentSplitMethod
+    /// The order tax, tip, and savings are listed in. Absent in receipts saved before they could
+    /// be reordered.
+    var adjustmentOrder: [ReceiptTotalAdjustment]? = nil
     var participants: [Participant]
     var itemAssignments: [ItemAssignment]
 

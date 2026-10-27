@@ -266,13 +266,13 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.issues(at: .currency), [.invalidCurrency])
   }
 
-  func testExpectedTotalUsesItemsAndSubtractsSavings() {
+  func testAdjustmentsMoveTotalThatAddedUp() {
     let draft = makeDraft()
     draft.tax = 1
     draft.tip = 2
     draft.savings = 0.50
 
-    XCTAssertEqual(draft.expectedTotal, 7, accuracy: 0.000_1)
+    XCTAssertEqual(draft.total, 7, accuracy: 0.000_1)
   }
 
   func testSavingsPercentageUpdatesDollarSavings() {
@@ -302,12 +302,10 @@ final class ReceiptDraftEditingTests: XCTestCase {
     XCTAssertEqual(draft.items.map(\.lineTotal), [334, 333, 333])
   }
 
-  func testFixTotalRoundsToCents() {
+  func testFollowingTotalRoundsToCents() {
     let draft = makeDraft()
-    draft.adjustments.add(.tip)
-    draft.tip = 0.8125
 
-    draft.fixTotal()
+    draft.tip = 0.8125
 
     XCTAssertEqual(draft.total, 5.31)
   }
@@ -318,19 +316,17 @@ final class ReceiptDraftEditingTests: XCTestCase {
     draft.tip = 0.8125
     draft.total = 5.31
 
-    XCTAssertNil(draft.corrections.total)
+    XCTAssertTrue(draft.balance.isBalanced)
   }
 
-  func testFixTotalMatchesExpectedTotal() {
+  func testMatchTotalSetsWhatAmountsComeTo() {
     let draft = makeDraft()
-    draft.adjustments.add(.tax)
-    draft.tax = 0.40
-    XCTAssertEqual(draft.corrections.total ?? 0, 4.90, accuracy: 0.000_1)
+    draft.total = 6
 
-    draft.fixTotal()
+    draft.matchTotal()
 
-    XCTAssertEqual(draft.total, 4.90, accuracy: 0.000_1)
-    XCTAssertNil(draft.corrections.total)
+    XCTAssertEqual(draft.total, 4.50, accuracy: 0.000_1)
+    XCTAssertTrue(draft.balance.isBalanced)
   }
 
   func testReceiptMutationAdvancesPersistenceRevision() {
