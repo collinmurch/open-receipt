@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ReceiptTotalsSection: View {
   /// The identity of the section's first row, the subtotal, for scrolling to it.
-  static let scrollID = ReceiptEditField.amount(.subtotal)
+  nonisolated static let scrollID = ReceiptEditField.amount(.subtotal)
 
   @Bindable var draft: ReceiptDraft
   let isEditing: Bool
@@ -18,15 +18,11 @@ struct ReceiptTotalsSection: View {
   /// suggestions has no field.
   static func editableFields(of draft: ReceiptDraft, isTipCustom: Bool) -> [ReceiptAmountField] {
     let tipChoice = AdjustmentChoice.current(
-      amount: draft.tip, isCustom: isTipCustom, presets: tipPresets(of: draft))
+      amount: draft.tip, isCustom: isTipCustom, presets: draft.tipPresets)
     let adjustments = draft.adjustmentOrder.filter { adjustment in
       draft.adjustments.contains(adjustment) && (adjustment != .tip || tipChoice == .custom)
     }
     return [.subtotal] + adjustments.map(ReceiptAmountField.adjustment) + [.total]
-  }
-
-  private static func tipPresets(of draft: ReceiptDraft) -> [AdjustmentPreset] {
-    AdjustmentPreset.tips(of: draft.tipBaseAmount, currencyCode: draft.displayCurrency)
   }
 
   var body: some View {
@@ -56,14 +52,17 @@ struct ReceiptTotalsSection: View {
       "Subtotal", field: .subtotal,
       value: Binding(get: { draft.subtotal }, set: { draft.setSubtotal($0) })
     )
+    .id(Self.scrollID)
     ForEach(draft.adjustmentOrder) { adjustment in
       adjustmentRow(adjustment, balance: balance)
+        .id(ReceiptEditField.amount(.adjustment(adjustment)))
         .moveDisabled(!canReorder(adjustment))
         .accessibilityActions { reorderActions(for: adjustment) }
     }
     .onMove(perform: moveAdjustments)
     splitPicker
     amountField("Total", field: .total, value: $draft.total, isEmphasized: true)
+      .id(ReceiptEditField.amount(.total))
   }
 
   @ViewBuilder
@@ -155,7 +154,9 @@ struct ReceiptTotalsSection: View {
   ) -> some View {
     switch adjustment {
     case .tax:
-      adjustmentField(.tax, value: $draft.tax)
+      amountField(ReceiptTotalAdjustment.tax.title, field: .adjustment(.tax), value: $draft.tax) {
+        adjustmentLabel(.tax)
+      }
     case .tip:
       tipEditor
     case .savings:
@@ -170,32 +171,22 @@ struct ReceiptTotalsSection: View {
 
   /// The tip, chosen from the suggested percentages or entered like the other amounts.
   private var tipEditor: some View {
-    let base = draft.tipBaseAmount
-    let presets = Self.tipPresets(of: draft)
+    let presets = draft.tipPresets
     let choice = AdjustmentChoice.binding(
       amount: $draft.tip, isCustom: $isTipCustom, presets: presets)
     let field = ReceiptEditField.amount(.adjustment(.tip))
     return VStack(alignment: .leading, spacing: 12) {
-      LabeledContent {
-        AdjustmentAmountValue(
-          title: ReceiptTotalAdjustment.tip.title, amount: $draft.tip,
-          isCustom: choice.wrappedValue == .custom, currencyCode: displayCurrency,
-          focus: focusedField, field: field)
-      } label: {
+      AdjustmentAmountRow(
+        title: ReceiptTotalAdjustment.tip.title, amount: $draft.tip,
+        isCustom: choice.wrappedValue == .custom, currencyCode: displayCurrency,
+        focus: focusedField, field: field
+      ) {
         adjustmentLabel(.tip)
       }
-      .contentShape(.rect)
-      .onTapGesture {
-        withAnimation(.settle) { choice.wrappedValue = .custom }
-        focusedField.wrappedValue = field
-      }
+      .choosesCustomAmount(choice, focusing: field, in: focusedField)
       AdjustmentChoicePicker(
         title: "Tip Amount", presets: presets, choice: choice.animation(.settle))
-      if let caption = TipBaseCaption.text(
-        tip: draft.tip, base: base, isAfterTax: draft.isTipAfterTax,
-        isAfterSavings: draft.isTipAfterSavings,
-        currencyCode: displayCurrency)
-      {
+      if let caption = draft.tipCaption(for: draft.tip) {
         Text(
           canReorderAdjustments
             ? "\(caption). Press and drag to reorder; the tip is based on what’s above it."
@@ -213,7 +204,7 @@ struct ReceiptTotalsSection: View {
       withAnimation(.settle) {
         if adjustment == .tip {
           isTipCustom = false
-          draft.addAdjustment(.tip, amount: Self.tipPresets(of: draft).middle?.amount ?? 0)
+          draft.addAdjustment(.tip, amount: draft.tipPresets.middle?.amount ?? 0)
         } else {
           draft.addAdjustment(adjustment)
         }
@@ -237,17 +228,11 @@ struct ReceiptTotalsSection: View {
     caption: String? = nil
   ) -> some View {
     HStack(alignment: .firstTextBaseline) {
-      VStack(alignment: .leading, spacing: 2) {
+      rowTitle(
         Text(label)
           .foregroundStyle(isEmphasized ? .primary : .secondary)
-          .fontWeight(isEmphasized ? .semibold : .regular)
-          .receiptIssues(draft.issues(at: .amount(field)))
-        if let caption {
-          Text(caption)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-        }
-      }
+          .fontWeight(isEmphasized ? .semibold : .regular),
+        field: field, caption: caption)
       Spacer()
       Text(value, format: .currency(code: displayCurrency))
         .font(.body.monospacedDigit())
@@ -289,6 +274,18 @@ struct ReceiptTotalsSection: View {
     value: Binding<Double>,
     isEmphasized: Bool = false
   ) -> some View {
+    amountField(title, field: field, value: value, isEmphasized: isEmphasized) {
+      rowTitle(Text(title).fontWeight(isEmphasized ? .semibold : .regular), field: field)
+    }
+  }
+
+  private func amountField(
+    _ title: String,
+    field: ReceiptAmountField,
+    value: Binding<Double>,
+    isEmphasized: Bool = false,
+    @ViewBuilder label: () -> some View
+  ) -> some View {
     LabeledContent {
       CurrencyAmountField(
         value: value, currencyCode: displayCurrency, isEmphasized: isEmphasized
@@ -299,12 +296,9 @@ struct ReceiptTotalsSection: View {
       .focused(focusedField, equals: .amount(field))
       .accessibilityLabel(title)
     } label: {
-      Text(title)
-        .fontWeight(isEmphasized ? .semibold : .regular)
-        .receiptIssues(draft.issues(at: .amount(field)))
+      label()
     }
     .focusesOnTap(focusedField, equals: .amount(field))
-    .id(ReceiptEditField.amount(field))
   }
 
   private func percentageAdjustmentField(
@@ -314,7 +308,8 @@ struct ReceiptTotalsSection: View {
     mode: Binding<AdjustmentInputMode>,
     caption: String?
   ) -> some View {
-    LabeledContent {
+    let field = ReceiptEditField.amount(.adjustment(adjustment))
+    return LabeledContent {
       HStack {
         Picker("\(adjustment.title) format", selection: mode) {
           ForEach(AdjustmentInputMode.allCases) { option in
@@ -327,7 +322,7 @@ struct ReceiptTotalsSection: View {
 
         if mode.wrappedValue == .amount {
           CurrencyAmountField(value: amount, currencyCode: displayCurrency)
-            .focused(focusedField, equals: .amount(.adjustment(adjustment)))
+            .focused(focusedField, equals: field)
             .accessibilityLabel(adjustment.title)
         } else {
           NumberField(
@@ -335,7 +330,7 @@ struct ReceiptTotalsSection: View {
             value: percentage,
             format: .number.precision(.fractionLength(0...2))
           )
-          .focused(focusedField, equals: .amount(.adjustment(adjustment)))
+          .focused(focusedField, equals: field)
           .accessibilityLabel("\(adjustment.title) percent")
           Text("%")
             .foregroundStyle(.secondary)
@@ -345,22 +340,7 @@ struct ReceiptTotalsSection: View {
     } label: {
       adjustmentLabel(adjustment, caption: caption)
     }
-    .focusesOnTap(focusedField, equals: .amount(.adjustment(adjustment)))
-  }
-
-  private func adjustmentField(
-    _ adjustment: ReceiptTotalAdjustment,
-    value: Binding<Double>
-  ) -> some View {
-    LabeledContent {
-      CurrencyAmountField(value: value, currencyCode: displayCurrency)
-        .multilineTextAlignment(.trailing)
-        .focused(focusedField, equals: .amount(.adjustment(adjustment)))
-        .accessibilityLabel(adjustment.title)
-    } label: {
-      adjustmentLabel(adjustment)
-    }
-    .focusesOnTap(focusedField, equals: .amount(.adjustment(adjustment)))
+    .focusesOnTap(focusedField, equals: field)
   }
 
   private func adjustmentLabel(
@@ -379,14 +359,23 @@ struct ReceiptTotalsSection: View {
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .foregroundStyle(.red)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(adjustment.title)
-          .receiptIssues(draft.issues(at: .amount(.adjustment(adjustment))))
-        if let caption {
-          Text(caption)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-        }
+      rowTitle(Text(adjustment.title), field: .adjustment(adjustment), caption: caption)
+    }
+  }
+
+  /// A row's title, marked with the field's issues, over its caption.
+  private func rowTitle(
+    _ title: Text,
+    field: ReceiptAmountField,
+    caption: String? = nil
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      title
+        .receiptIssues(draft.issues(at: .amount(field)))
+      if let caption {
+        Text(caption)
+          .font(.caption)
+          .foregroundStyle(.tertiary)
       }
     }
   }

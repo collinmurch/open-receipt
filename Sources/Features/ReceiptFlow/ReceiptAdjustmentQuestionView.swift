@@ -7,8 +7,6 @@ struct ReceiptAdjustmentQuestionView: View {
   @Bindable var draft: ReceiptDraft
   let adjustment: ReceiptTotalAdjustment
   private let presets: [AdjustmentPreset]
-  /// What the amount is a percentage of.
-  private let base: Double
   @State private var amount: Double
   @State private var isCustom: Bool
   @FocusState private var focusedField: ReceiptAmountField?
@@ -17,10 +15,8 @@ struct ReceiptAdjustmentQuestionView: View {
   init(draft: ReceiptDraft, adjustment: ReceiptTotalAdjustment) {
     self.draft = draft
     self.adjustment = adjustment
-    let base = adjustment == .tip ? draft.tipBaseAmount : draft.itemsTotal
-    let presets = Self.presets(for: adjustment, in: draft, base: base)
+    let presets = Self.presets(for: adjustment, in: draft)
     self.presets = presets
-    self.base = base
     _amount = State(initialValue: presets.middle?.amount ?? 0)
     _isCustom = State(initialValue: presets.isEmpty)
   }
@@ -78,11 +74,10 @@ struct ReceiptAdjustmentQuestionView: View {
 
   /// The amount, drawn like a row of the receipt's list.
   private var amountRow: some View {
-    LabeledContent {
-      AdjustmentAmountValue(
-        title: adjustment.title, amount: $amount, isCustom: choice.wrappedValue == .custom,
-        currencyCode: currency, focus: $focusedField, field: field)
-    } label: {
+    AdjustmentAmountRow(
+      title: adjustment.title, amount: $amount, isCustom: choice.wrappedValue == .custom,
+      currencyCode: currency, focus: $focusedField, field: field
+    ) {
       Text(adjustment.title)
     }
     .padding(.horizontal, 20)
@@ -90,11 +85,7 @@ struct ReceiptAdjustmentQuestionView: View {
     .background(
       Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 28, style: .continuous)
     )
-    .contentShape(.rect)
-    .onTapGesture {
-      withAnimation(.settle) { choice.wrappedValue = .custom }
-      focusedField = field
-    }
+    .choosesCustomAmount(choice, focusing: field, in: $focusedField)
   }
 
   private var field: ReceiptAmountField {
@@ -137,14 +128,13 @@ struct ReceiptAdjustmentQuestionView: View {
 
   private static func presets(
     for adjustment: ReceiptTotalAdjustment,
-    in draft: ReceiptDraft,
-    base: Double
+    in draft: ReceiptDraft
   ) -> [AdjustmentPreset] {
     switch adjustment {
     case .tax:
       draft.impliedTax.map { [AdjustmentPreset(title: "Auto (From Total)", amount: $0)] } ?? []
     case .tip:
-      AdjustmentPreset.tips(of: base, currencyCode: draft.displayCurrency)
+      draft.tipPresets
     case .savings:
       []
     }
@@ -155,11 +145,9 @@ struct ReceiptAdjustmentQuestionView: View {
       return "The total is \(formatted(amount)) more than the items."
     }
     if adjustment == .tip {
-      return TipBaseCaption.text(
-        tip: amount, base: base, isAfterTax: draft.isTipAfterTax,
-        isAfterSavings: draft.isTipAfterSavings, currencyCode: currency
-      ).map { "\(formatted(amount)) is \($0)." }
+      return draft.tipCaption(for: amount).map { "\(formatted(amount)) is \($0)." }
     }
+    let base = draft.itemsTotal
     guard base > 0, amount > 0 else { return nil }
     let percentage = (amount / base * 100).formatted(
       .percent.scale(1).precision(.fractionLength(0...1)))

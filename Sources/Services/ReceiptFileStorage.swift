@@ -617,7 +617,7 @@ enum ReceiptStorageError: Error, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .emptyScan:
-      "The receipt does not contain any pages."
+      "The receipt does not contain any photos."
     case .receiptAlreadyExists:
       "A receipt with this identifier already exists."
     case .receiptAlreadyDeleted:
@@ -625,13 +625,13 @@ enum ReceiptStorageError: Error, LocalizedError {
     case .identifierMismatch:
       "The receipt identifier does not match its storage directory."
     case .cannotEncodePage:
-      "A receipt page could not be encoded."
+      "A receipt photo could not be encoded."
     case .unreadablePage(let name):
-      "The receipt page \(name) could not be opened."
+      "The receipt photo \(name) could not be opened."
     case .lastPage:
-      "A receipt needs at least one page."
+      "A receipt needs at least one photo."
     case .pagesChanged:
-      "The receipt pages changed while they were being reordered. Try again."
+      "The receipt photos changed while they were being reordered. Try again."
     }
   }
 }

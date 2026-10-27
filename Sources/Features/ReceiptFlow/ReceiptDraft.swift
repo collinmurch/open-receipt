@@ -29,7 +29,10 @@ final class ReceiptDraft {
   private(set) var participants: [ReceiptParticipant]
   private(set) var persistenceRevision = 0
   @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
-  private var splitCalculationRevision = 0
+  @ObservationIgnored private var balanceCache: ReceiptBalance?
+  /// Counts changes to what the split and balance are worked out from, so reading either
+  /// observes them.
+  private var durableRevision = 0
   @ObservationIgnored private var issuesCache: (revision: Int, issues: [ReceiptIssue])?
 
   init(
@@ -62,7 +65,8 @@ final class ReceiptDraft {
   }
 
   /// Creates a draft from a new recognition of `previous`'s receipt. People, colors, the split
-  /// method, the adjustments' order, and an entered tip carry over; items, printed totals, and assignments are replaced.
+  /// method, the adjustments' order, and an entered tip carry over; items, printed totals, and
+  /// assignments are replaced.
   convenience init(receipt: ParsedReceipt, replacing previous: ReceiptDraft) {
     self.init(receipt: receipt, id: previous.id, backgroundStyle: previous.backgroundStyle)
     participants = previous.participants
@@ -121,11 +125,20 @@ final class ReceiptDraft {
   }
 
   var splitCalculation: ReceiptSplitCalculation {
-    _ = splitCalculationRevision
+    _ = durableRevision
     if let splitCalculationCache { return splitCalculationCache }
     let calculation = ReceiptSplitCalculator.calculate(splitInput)
     splitCalculationCache = calculation
     return calculation
+  }
+
+  /// How the receipt's amounts add up.
+  var balance: ReceiptBalance {
+    _ = durableRevision
+    if let balanceCache { return balanceCache }
+    let balance = ReceiptBalance(splitInput)
+    balanceCache = balance
+    return balance
   }
 
   @discardableResult
@@ -275,7 +288,8 @@ final class ReceiptDraft {
   /// A change to what the split is calculated from, which also needs saving.
   private func markDurableChange() {
     splitCalculationCache = nil
-    splitCalculationRevision &+= 1
+    balanceCache = nil
+    durableRevision &+= 1
     markPersistedChange()
   }
 

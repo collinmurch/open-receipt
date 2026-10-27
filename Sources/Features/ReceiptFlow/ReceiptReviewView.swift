@@ -45,8 +45,7 @@ struct ReceiptReviewView: View {
   @Environment(\.contactClient) private var contactClient
   @Environment(\.peopleStorageClient) private var peopleStorage
   @Environment(\.colorScheme) private var colorScheme
-  @Environment(\.receiptStartsAtTotals) private var startsAtTotals
-  @Environment(\.receiptStartingField) private var startingField
+  @Environment(\.receiptListStart) private var listStart
 
   init(
     draft: ReceiptDraft,
@@ -123,16 +122,14 @@ struct ReceiptReviewView: View {
     ScrollViewReader { proxy in
       itemsList
         .task {
-          guard startsAtTotals else { return }
-          // The list lays out its rows after it first appears.
+          guard let row = listStart.row else { return }
+          // The list lays out its rows after it first appears, and builds the row it scrolls to
+          // after that.
           do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
-          proxy.scrollTo(ReceiptTotalsSection.scrollID, anchor: .top)
-        }
-        .task {
-          guard isEditing, let startingField else { return }
-          // The field's row is built once the list has laid out and scrolled to it.
-          do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-          focusedField = startingField
+          proxy.scrollTo(row, anchor: .top)
+          guard isEditing, case .typing(let field) = listStart else { return }
+          do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+          focusedField = field
         }
         .keyboardNavigation($focusedField, through: editableFields, scrollingWith: proxy)
         .task(id: revealedItemID) {
@@ -511,12 +508,26 @@ struct ReceiptReviewView: View {
   }
 }
 
+/// Where a receipt's list starts, so screenshots can show more than its first screen.
+enum ReceiptListStart: Hashable {
+  case top
+  /// Scrolled to the totals.
+  case totals
+  /// Scrolled to `field`, typing in it when the receipt opens in editing.
+  case typing(ReceiptEditField)
+
+  /// The row the list scrolls to, or `nil` when it starts at the top.
+  fileprivate var row: ReceiptEditField? {
+    switch self {
+    case .top: nil
+    case .totals: ReceiptTotalsSection.scrollID
+    case .typing(let field): field
+    }
+  }
+}
+
 extension EnvironmentValues {
-  /// Whether a receipt's list starts scrolled to its totals, so screenshots can show them.
-  @Entry var receiptStartsAtTotals = false
-  /// The field a receipt that opens in editing starts typing in, so screenshots can show the
-  /// keyboard.
-  @Entry var receiptStartingField: ReceiptEditField? = nil
+  @Entry var receiptListStart = ReceiptListStart.top
 }
 
 extension View {

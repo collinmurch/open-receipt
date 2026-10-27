@@ -225,7 +225,7 @@ enum ReceiptDocumentError: Error, LocalizedError, Equatable {
     case .invalidDecimal(let value):
       "The saved receipt contains an invalid decimal value: \(value)."
     case .invalidPagePath(let path):
-      "The saved receipt contains an invalid page path: \(path)."
+      "The saved receipt contains an invalid photo path: \(path)."
     }
   }
 }

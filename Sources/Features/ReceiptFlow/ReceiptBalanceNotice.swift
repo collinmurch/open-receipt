@@ -40,20 +40,17 @@ struct ReceiptBalanceNotice: Equatable {
     let subtotalUnits = balance.subtotalDifferenceUnits
     let totalUnits = balance.totalDifferenceUnits
 
-    if subtotalUnits != 0, subtotalUnits == -totalUnits,
-      let printed = balance.printedSubtotal, let calculated = balance.calculatedSubtotal
-    {
-      return ReceiptBalanceNotice(
-        kind: .subtotal,
-        title: "Subtotal doesn’t match",
-        message: "The items and the total agree, but the subtotal reads \(formatted(printed)). "
-          + "It may have been misread.",
-        actions: [.setSubtotal(calculated)])
-    }
-
     if subtotalUnits != 0, let printed = balance.printedSubtotal,
       let calculated = balance.calculatedSubtotal
     {
+      if subtotalUnits == -totalUnits {
+        return ReceiptBalanceNotice(
+          kind: .subtotal,
+          title: "Subtotal doesn’t match",
+          message: "The items and the total agree, but the subtotal reads "
+            + "\(formatted(printed)). It may have been misread.",
+          actions: [.setSubtotal(calculated)])
+      }
       let difference = abs(balance.subtotalDifference)
       let isShort = subtotalUnits > 0
       return ReceiptBalanceNotice(

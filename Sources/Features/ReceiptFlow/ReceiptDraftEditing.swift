@@ -32,10 +32,6 @@ extension ReceiptDraft {
     items.reduce(0) { $0 + $1.lineTotal }
   }
 
-  var balance: ReceiptBalance {
-    ReceiptBalance(splitInput)
-  }
-
   /// The tax a receipt that doesn't show any most likely charged: what its total has beyond a
   /// printed subtotal that matches the items. `nil` when the subtotal doesn't back that up, since
   /// the difference could then be an item that wasn't read.
@@ -65,6 +61,18 @@ extension ReceiptDraft {
       || !balance.subtractsSavingsFromSubtotal
   }
 
+  /// The suggested tips, as percentages of `tipBaseAmount`.
+  var tipPresets: [AdjustmentPreset] {
+    AdjustmentPreset.tips(of: tipBaseAmount, currencyCode: displayCurrency)
+  }
+
+  /// The line under a tip of `amount` that says what it's a percentage of.
+  func tipCaption(for amount: Double) -> String? {
+    TipBaseCaption.text(
+      tip: amount, base: tipBaseAmount, isAfterTax: isTipAfterTax,
+      isAfterSavings: isTipAfterSavings, currencyCode: displayCurrency)
+  }
+
   /// Lists the adjustments in `order`. A tip at one of `percentages` of its old base becomes that
   /// percentage of the new one; any other tip keeps its amount.
   func setAdjustmentOrder(
@@ -72,17 +80,13 @@ extension ReceiptDraft {
     percentages: [Int] = TipSettings.percentages()
   ) {
     guard order != adjustmentOrder, ReceiptTotalAdjustment.validOrder(order) != nil else { return }
-    let oldAmount = tipBaseAmount
-    let newAmount = tipBaseAmount(in: order)
-    let percentage = percentages.first {
-      abs(
-        AdjustmentPreset.percentage($0, of: oldAmount, currencyCode: displayCurrency).amount - tip)
-        < CurrencyAmountInput.tolerance
-    }
+    let suggestion = AdjustmentPreset.tips(
+      of: tipBaseAmount, percentages: percentages, currencyCode: displayCurrency
+    ).first(matching: tip)
+    let base = tipBaseAmount(in: order)
     adjustmentOrder = order
-    if adjustments.contains(.tip), let percentage {
-      tip =
-        AdjustmentPreset.percentage(percentage, of: newAmount, currencyCode: displayCurrency).amount
+    if adjustments.contains(.tip), let percentage = suggestion?.percentage {
+      tip = AdjustmentPreset.percentage(percentage, of: base, currencyCode: displayCurrency).amount
     }
   }
 

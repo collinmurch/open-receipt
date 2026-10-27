@@ -20,6 +20,8 @@ enum AdjustmentInputMode: CaseIterable, Identifiable {
 struct AdjustmentPreset: Hashable {
   let title: String
   let amount: Double
+  /// The percentage of a base the preset is, or `nil` when it isn't one.
+  var percentage: Int? = nil
 
   /// `percentage` percent of `base`, rounded to the currency.
   static func percentage(
@@ -29,12 +31,17 @@ struct AdjustmentPreset: Hashable {
   ) -> AdjustmentPreset {
     AdjustmentPreset(
       title: Double(percentage).formatted(.percent.scale(1)),
-      amount: ReceiptCurrency.rounded(base * Double(percentage) / 100, code: currencyCode))
+      amount: ReceiptCurrency.rounded(base * Double(percentage) / 100, code: currencyCode),
+      percentage: percentage)
   }
 
-  /// The suggested tips, as percentages of `base`.
-  static func tips(of base: Double, currencyCode: String) -> [AdjustmentPreset] {
-    TipSettings.percentages().map { percentage($0, of: base, currencyCode: currencyCode) }
+  /// The suggested tips, as `percentages` of `base`.
+  static func tips(
+    of base: Double,
+    percentages: [Int] = TipSettings.percentages(),
+    currencyCode: String
+  ) -> [AdjustmentPreset] {
+    percentages.map { percentage($0, of: base, currencyCode: currencyCode) }
   }
 }
 
@@ -73,6 +80,11 @@ extension [AdjustmentPreset] {
   var middle: AdjustmentPreset? {
     isEmpty ? nil : self[count / 2]
   }
+
+  /// The preset whose amount is `amount`.
+  func first(matching amount: Double) -> AdjustmentPreset? {
+    first { abs($0.amount - amount) < CurrencyAmountInput.tolerance }
+  }
 }
 
 /// A choice between an adjustment's presets and a custom amount.
@@ -86,11 +98,7 @@ enum AdjustmentChoice: Hashable {
     isCustom: Bool,
     presets: [AdjustmentPreset]
   ) -> AdjustmentChoice {
-    guard !isCustom,
-      let preset = presets.first(where: {
-        abs($0.amount - amount) < CurrencyAmountInput.tolerance
-      })
-    else { return .custom }
+    guard !isCustom, let preset = presets.first(matching: amount) else { return .custom }
     return .preset(preset)
   }
 
@@ -136,33 +144,57 @@ struct AdjustmentChoicePicker: View {
   }
 }
 
-/// An adjustment's amount in a row: shown as it is for a preset, and entered as an amount when
-/// custom. Choosing custom focuses the field as `field`.
-struct AdjustmentAmountValue<Field: Hashable & Sendable>: View {
+/// An adjustment's row: its amount shown as it is for a preset, and entered when custom. Choosing
+/// custom focuses the field as `field`.
+struct AdjustmentAmountRow<Field: Hashable & Sendable, Label: View>: View {
   let title: String
   @Binding var amount: Double
   let isCustom: Bool
   let currencyCode: String
   let focus: FocusState<Field?>.Binding
   let field: Field
+  @ViewBuilder let label: Label
 
   var body: some View {
-    Group {
-      if isCustom {
-        CurrencyAmountField(value: $amount, currencyCode: currencyCode)
-          .multilineTextAlignment(.trailing)
-          .focused(focus, equals: field)
-          .accessibilityLabel(title)
-      } else {
-        Text(amount, format: .currency(code: currencyCode))
-          .monospacedDigit()
-          .foregroundStyle(.secondary)
-          .contentTransition(.numericText(value: amount))
-      }
+    LabeledContent {
+      value
+    } label: {
+      label
     }
     .onChange(of: isCustom) { _, isCustom in
       // The field exists once the amount it replaces is gone.
       if isCustom { Task { focus.wrappedValue = field } }
     }
+  }
+
+  @ViewBuilder
+  private var value: some View {
+    if isCustom {
+      CurrencyAmountField(value: $amount, currencyCode: currencyCode)
+        .multilineTextAlignment(.trailing)
+        .focused(focus, equals: field)
+        .accessibilityLabel(title)
+    } else {
+      Text(amount, format: .currency(code: currencyCode))
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .contentTransition(.numericText(value: amount))
+    }
+  }
+}
+
+extension View {
+  /// Makes a tap anywhere on the view choose a custom amount and focus `field`, so a row's padding
+  /// answers the tap too.
+  func choosesCustomAmount<Field: Hashable & Sendable>(
+    _ choice: Binding<AdjustmentChoice>,
+    focusing field: Field,
+    in focus: FocusState<Field?>.Binding
+  ) -> some View {
+    contentShape(.rect)
+      .onTapGesture {
+        withAnimation(.settle) { choice.wrappedValue = .custom }
+        focus.wrappedValue = field
+      }
   }
 }

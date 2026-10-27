@@ -12,6 +12,16 @@ final class ReceiptDraftBalanceTests: XCTestCase {
     XCTAssertEqual(draft.total, 32.50, accuracy: 0.000_1)
   }
 
+  func testBalanceFollowsItemEditedInPlace() {
+    let draft = makeDraft()
+    XCTAssertTrue(draft.balance.isBalanced)
+
+    draft.items[0].lineTotal = 12
+
+    XCTAssertEqual(draft.balance.itemsTotal, 32, accuracy: 0.000_1)
+    XCTAssertFalse(draft.balance.isBalanced)
+  }
+
   func testTaxLeavesTotalThatDidNotAddUp() {
     let draft = makeDraft(total: 32.50)
 

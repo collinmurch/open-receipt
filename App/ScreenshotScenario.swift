@@ -102,8 +102,7 @@
           access: access,
           contacts: kind == .share ? .cards(for: scene.people) : .unavailable,
           showsUnlimitedReading: kind == .paywall,
-          receiptStartsAtTotals: [.unbalanced, .unbalancedEditing, .reviewKeyboard].contains(kind),
-          receiptStartingField: kind == .reviewKeyboard ? .amount(.subtotal) : nil)
+          receiptListStart: receiptListStart)
       }
 
       switch kind {
@@ -191,6 +190,14 @@
           try await storage.delete(receipt.id)
         }
         return stage([.recentlyDeleted])
+      }
+    }
+
+    private var receiptListStart: ReceiptListStart {
+      switch kind {
+      case .unbalanced, .unbalancedEditing: .totals
+      case .reviewKeyboard: .typing(.amount(.subtotal))
+      default: .top
       }
     }
 
@@ -407,10 +414,8 @@
     let contacts: ContactClient
     /// Whether the unlimited reading purchase opens over the screen.
     let showsUnlimitedReading: Bool
-    /// Whether the receipt's list starts scrolled to its totals.
-    let receiptStartsAtTotals: Bool
-    /// The field a receipt that opens in editing starts typing in.
-    let receiptStartingField: ReceiptEditField?
+    /// Where the receipt's list starts.
+    let receiptListStart: ReceiptListStart
   }
 
   /// Stages a scenario, then shows the app over it.
@@ -432,8 +437,7 @@
             .environment(\.peopleStorageClient, stage.people)
             .environment(\.receiptParsingClient, stage.parsing)
             .environment(\.contactClient, stage.contacts)
-            .environment(\.receiptStartsAtTotals, stage.receiptStartsAtTotals)
-            .environment(\.receiptStartingField, stage.receiptStartingField)
+            .environment(\.receiptListStart, stage.receiptListStart)
         } else {
           Color.clear
         }
