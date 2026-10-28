@@ -25,7 +25,6 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
     Coordinator(onCapture: onCapture, onCancel: onCancel, onFailure: onFailure)
   }
 
-  @MainActor
   final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
     var onCapture: (ReceiptScan) -> Void
     var onCancel: () -> Void
@@ -52,15 +51,13 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
     }
 
     /// Pages are full-resolution images, so they are read off the main actor.
-    private static func pages(of scan: VNDocumentCameraScan) async -> [ReceiptPage] {
-      await Task.detached(priority: .userInitiated) {
-        (0..<scan.pageCount).compactMap { index -> ReceiptPage? in
-          let image = scan.imageOfPage(at: index)
-          guard let cgImage = image.cgImage else { return nil }
-          return ReceiptPage(
-            image: cgImage, orientation: CGImagePropertyOrientation(image.imageOrientation))
-        }
-      }.value
+    @concurrent private static func pages(of scan: VNDocumentCameraScan) async -> [ReceiptPage] {
+      (0..<scan.pageCount).compactMap { index -> ReceiptPage? in
+        let image = scan.imageOfPage(at: index)
+        guard let cgImage = image.cgImage else { return nil }
+        return ReceiptPage(
+          image: cgImage, orientation: CGImagePropertyOrientation(image.imageOrientation))
+      }
     }
 
     func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
@@ -76,7 +73,7 @@ struct ReceiptScannerView: UIViewControllerRepresentable {
   }
 }
 
-extension CGImagePropertyOrientation {
+nonisolated extension CGImagePropertyOrientation {
   fileprivate init(_ orientation: UIImage.Orientation) {
     switch orientation {
     case .up: self = .up

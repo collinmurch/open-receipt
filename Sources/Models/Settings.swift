@@ -1,11 +1,11 @@
 import Foundation
 
-enum PaymentSettings {
+nonisolated enum PaymentSettings {
   static let defaultMethodKey = "defaultPaymentMethod"
   static let initialDefaultMethod = PaymentMethod.venmo
 }
 
-enum CurrencySettings {
+nonisolated enum CurrencySettings {
   static let defaultCodeKey = "defaultCurrency"
   static let initialDefaultCode = "USD"
 
@@ -17,7 +17,7 @@ enum CurrencySettings {
   }
 }
 
-enum AdjustmentSplitSettings {
+nonisolated enum AdjustmentSplitSettings {
   static let defaultMethodKey = "defaultAdjustmentSplitMethod"
   static let initialDefaultMethod = ReceiptAdjustmentSplitMethod.proportional
 
@@ -29,7 +29,7 @@ enum AdjustmentSplitSettings {
 }
 
 /// What suggested tips are a percentage of.
-enum TipBase: String, CaseIterable, Codable, Identifiable, Sendable {
+nonisolated enum TipBase: String, CaseIterable, Codable, Identifiable, Sendable {
   case beforeTax
   case afterTax
 
@@ -43,7 +43,7 @@ enum TipBase: String, CaseIterable, Codable, Identifiable, Sendable {
   }
 }
 
-enum TipSettings {
+nonisolated enum TipSettings {
   static let percentageKeys = ["tipPercentageLow", "tipPercentageMiddle", "tipPercentageHigh"]
   static let initialPercentages = [18, 20, 22]
   static let percentageRange = 1...100
@@ -69,7 +69,7 @@ enum TipSettings {
 
 /// Whether reads use the sample receipt instead of Private Cloud Compute, so the simulator and
 /// testers can read without PCC or its quota. Only testing builds can; it starts on in development.
-enum SampleReceipts {
+nonisolated enum SampleReceipts {
   static let key = "TestingSampleReceipts"
 
   static var isEnabled: Bool {

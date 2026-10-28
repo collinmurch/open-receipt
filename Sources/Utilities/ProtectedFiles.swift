@@ -1,6 +1,6 @@
 import Foundation
 
-extension FileManager {
+nonisolated extension FileManager {
   /// `name` within the app's folder in Application Support.
   func openReceiptDirectory(_ name: String) throws -> URL {
     try url(
@@ -19,7 +19,7 @@ extension FileManager {
   }
 }
 
-extension Data {
+nonisolated extension Data {
   /// Writes atomically to `url`, readable once the device is first unlocked.
   func writeProtected(to url: URL) throws {
     try write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])

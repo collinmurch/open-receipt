@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ReceiptStorageClient: Sendable {
+nonisolated struct ReceiptStorageClient: Sendable {
   var create: @Sendable (ReceiptScan, ReceiptBackgroundStyle) async throws -> ReceiptDocument
   var createBlank: @Sendable (UUID, ReceiptBackgroundStyle) async throws -> ReceiptDocument
   var list: @Sendable () async throws -> [ReceiptSummary]

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Whether an adjustment is entered as an amount or as a percentage of the items.
-enum AdjustmentInputMode: CaseIterable, Identifiable {
+nonisolated enum AdjustmentInputMode: CaseIterable, Identifiable {
   case amount
   case percentage
 
@@ -17,16 +17,16 @@ enum AdjustmentInputMode: CaseIterable, Identifiable {
 
 /// A ready-made amount offered for an adjustment, such as a tip percentage or the tax a total
 /// implies.
-struct AdjustmentPreset: Hashable {
+nonisolated struct AdjustmentPreset: Hashable {
   let title: String
-  let amount: Double
+  let amount: Money
   /// The percentage of a base the preset is, or `nil` when it isn't one.
   var percentage: Int? = nil
 
   /// `percentage` percent of `base`, rounded to the currency.
   static func percentage(
     _ percentage: Int,
-    of base: Double,
+    of base: Money,
     currencyCode: String
   ) -> AdjustmentPreset {
     AdjustmentPreset(
@@ -37,18 +37,18 @@ struct AdjustmentPreset: Hashable {
 }
 
 /// The line under a tip that says what it's a percentage of, such as "20% of $44.70 before tax".
-enum TipBaseCaption {
+nonisolated enum TipBaseCaption {
   /// `isAfterSavings` says whether `base` has the receipt's savings taken off, and is `nil` when
   /// the receipt has none.
   static func text(
-    tip: Double,
-    base: Double,
+    tip: Money,
+    base: Money,
     isAfterTax: Bool,
     isAfterSavings: Bool? = nil,
     currencyCode: String
   ) -> String? {
     guard tip > 0, base > 0 else { return nil }
-    let percentage = (tip / base).formatted(.percent.precision(.fractionLength(0...1)))
+    let percentage = tip.fraction(of: base).formatted(.percent.precision(.fractionLength(0...1)))
     let amount = base.formatted(.currency(code: currencyCode))
     return
       "\(percentage) of \(amount) \(phrase(isAfterTax: isAfterTax, isAfterSavings: isAfterSavings))"
@@ -66,7 +66,7 @@ enum TipBaseCaption {
   }
 }
 
-extension [AdjustmentPreset] {
+nonisolated extension [AdjustmentPreset] {
   /// The preset in the middle, which is chosen to start with.
   var middle: AdjustmentPreset? {
     isEmpty ? nil : self[count / 2]
@@ -74,7 +74,7 @@ extension [AdjustmentPreset] {
 }
 
 /// A choice between an adjustment's presets and a custom amount.
-enum AdjustmentChoice: Hashable {
+nonisolated enum AdjustmentChoice: Hashable {
   case preset(AdjustmentPreset)
   case custom
 
@@ -95,7 +95,6 @@ enum AdjustmentChoice: Hashable {
 
 extension Binding<AdjustmentChoice> {
   /// The choice, focusing `field` when custom is chosen, once its field has replaced the amount.
-  @MainActor
   func focusingCustom<Field: Hashable & Sendable>(
     _ field: Field,
     in focus: FocusState<Field?>.Binding
@@ -104,7 +103,7 @@ extension Binding<AdjustmentChoice> {
       get: { wrappedValue },
       set: { choice, transaction in
         self.transaction(transaction).wrappedValue = choice
-        if choice == .custom { Task { @MainActor in focus.wrappedValue = field } }
+        if choice == .custom { Task { focus.wrappedValue = field } }
       })
   }
 }
@@ -132,7 +131,7 @@ struct AdjustmentChoicePicker: View {
 /// custom.
 struct AdjustmentAmountRow<Field: Hashable & Sendable, Label: View>: View {
   let title: String
-  @Binding var amount: Double
+  @Binding var amount: Money
   let isCustom: Bool
   let currencyCode: String
   let focus: FocusState<Field?>.Binding
@@ -155,10 +154,10 @@ struct AdjustmentAmountRow<Field: Hashable & Sendable, Label: View>: View {
         .focused(focus, equals: field)
         .accessibilityLabel(title)
     } else {
-      Text(amount, format: .currency(code: currencyCode))
+      Text(amount.decimal, format: .currency(code: currencyCode))
         .monospacedDigit()
         .foregroundStyle(.secondary)
-        .contentTransition(.numericText(value: amount))
+        .contentTransition(.numericText(value: Double(amount)))
     }
   }
 }

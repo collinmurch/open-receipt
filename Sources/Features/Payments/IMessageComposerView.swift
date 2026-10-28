@@ -49,7 +49,6 @@ struct IMessageComposerView: UIViewControllerRepresentable {
       self.onFinish = onFinish
     }
 
-    @MainActor
     func messageComposeViewController(
       _ controller: MFMessageComposeViewController,
       didFinishWith result: MessageComposeResult

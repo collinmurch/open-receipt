@@ -2,7 +2,7 @@ import Foundation
 
 /// A person's payment methods as they're edited. Venmo and iMessage can use one of the contact's
 /// phone numbers or email addresses, or what's typed in its place.
-struct PaymentMethodsDraft {
+nonisolated struct PaymentMethodsDraft {
   var venmoRecipient: Person.Venmo.Recipient?
   var venmoUsername: String
   var cashtag: String
@@ -31,7 +31,7 @@ struct PaymentMethodsDraft {
       venmoRecipient = contact.defaultRecipient(Person.Venmo.Recipient.self)
     }
     if saved.iMessage == nil, iMessageRecipient == nil,
-      customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      customIMessageRecipient.trimmed.isEmpty
     {
       iMessageRecipient = contact.defaultRecipient(Person.IMessage.Recipient.self)
     }
@@ -46,7 +46,7 @@ struct PaymentMethodsDraft {
       Person.CashApp.normalizedCashtag(cashtag).isEmpty
     case .iMessage:
       iMessageRecipient == nil
-        && customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && customIMessageRecipient.trimmed.isEmpty
     case .none:
       false
     }
@@ -54,21 +54,12 @@ struct PaymentMethodsDraft {
 
   /// Writes the edited methods into `methods`, removing those left blank.
   func apply(to methods: inout Person.PaymentMethods) {
-    let username = Person.Venmo.normalizedUsername(venmoUsername)
-    if let venmoRecipient {
-      methods.venmo = .init(
-        recipient: venmoRecipient, customUsername: username.isEmpty ? nil : username)
-    } else {
-      methods.venmo = username.isEmpty ? nil : .init(username: username)
-    }
-    let cashtag = Person.CashApp.normalizedCashtag(cashtag)
-    methods.cashApp = cashtag.isEmpty ? nil : .init(cashtag: cashtag)
-    if let iMessageRecipient {
-      methods.iMessage = .init(recipient: iMessageRecipient)
-    } else {
-      let recipient = customIMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines)
-      methods.iMessage =
-        recipient.isEmpty ? nil : .init(recipient: .init(kind: .custom, value: recipient))
-    }
+    methods.venmo =
+      venmoRecipient.map { .init(recipient: $0, customUsername: venmoUsername) }
+      ?? .init(username: venmoUsername)
+    methods.cashApp = .init(cashtag: cashtag)
+    methods.iMessage = .init(
+      recipient: iMessageRecipient ?? .init(kind: .custom, value: customIMessageRecipient))
+    methods.normalize()
   }
 }

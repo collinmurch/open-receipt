@@ -15,6 +15,7 @@ struct ReceiptLab {
 
   private static func run(_ rawArgs: [String]) async {
     var format: ReportFormat = .text
+    var root = "Fixtures/Receipts"
     var cache = ".build/receiptlab-cache"
     var cachedOnly = false
     var quiet = false
@@ -24,6 +25,7 @@ struct ReceiptLab {
     while let argument = iterator.next() {
       switch argument {
       case "--format": format = parseFormat(iterator.next())
+      case "--root": root = required(iterator.next(), flag: "--root")
       case "--cache": cache = required(iterator.next(), flag: "--cache")
       case "--cached": cachedOnly = true
       case "--quiet": quiet = true
@@ -32,12 +34,12 @@ struct ReceiptLab {
       default: positional.append(argument)
       }
     }
-    guard positional.count == 1 else {
+    guard positional.count <= 1 else {
       printUsage()
       exit(64)
     }
 
-    let inputURL = URL(filePath: positional[0])
+    let inputURL = input(positional.first, root: URL(filePath: root, directoryHint: .isDirectory))
     let runner = ReceiptLabRunner(
       cacheDirectory: URL(filePath: cache, directoryHint: .isDirectory),
       cachedOnly: cachedOnly,
@@ -45,24 +47,21 @@ struct ReceiptLab {
       respond: ReceiptModelClient.privateCloudCompute(configuration: configuration))
     if format == .text && !quiet {
       write(
-        ReceiptLabReporter.streamHeader(
+        ReceiptLabReporter.header(
           inputPath: inputURL.path, variant: configuration.variantDescription))
     }
     do {
       let report = try await runner.run(at: inputURL) { fixture, index, total in
-        if format == .text && !quiet {
-          write(ReceiptLabReporter.streamFixture(fixture, index: index, total: total))
-        } else if format == .summary && !quiet {
-          write(ReceiptLabReporter.streamSummaryFixture(fixture))
+        guard !quiet else { return }
+        switch format {
+        case .text: write(ReceiptLabReporter.fixture(fixture, index: index, total: total))
+        case .summary: write(ReceiptLabReporter.summaryLine(fixture))
+        case .json: break
         }
       }
-      if format != .json && !quiet {
-        write(ReceiptLabReporter.streamSummary(report))
-      } else {
-        let output = ReceiptLabReporter.render(report, format: format)
-        write(output)
-        if !output.hasSuffix("\n") { write("\n") }
-      }
+      write(
+        format == .json ? ReceiptLabReporter.json(report) + "\n" : ReceiptLabReporter.footer(report)
+      )
       if report.fixtures.contains(where: { $0.parseError != nil || $0.evaluation?.passed == false })
       {
         exit(1)
@@ -73,8 +72,29 @@ struct ReceiptLab {
     }
   }
 
+  /// What `argument` names: a path, a fixture or folder under `root`, or `name/n`, the sample of
+  /// fixture `name` whose file is called `n`. Every fixture under `root` when it's `nil`.
+  private static func input(_ argument: String?, root: URL) -> URL {
+    guard let argument else { return root }
+    let fileManager = FileManager.default
+    for url in [URL(filePath: argument), root.appending(path: argument)]
+    where fileManager.fileExists(atPath: url.path) {
+      return url
+    }
+    let name = (argument as NSString).deletingLastPathComponent
+    let sample = (argument as NSString).lastPathComponent
+    let samples = root.appending(path: name).appending(path: "fixtures")
+    let files = (try? fileManager.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil))
+    let matches = (files ?? []).filter { $0.deletingPathExtension().lastPathComponent == sample }
+    guard matches.count == 1 else {
+      usageError(
+        matches.isEmpty ? "Not found: \(argument)" : "More than one fixture matches: \(argument)")
+    }
+    return matches[0]
+  }
+
   private static func parseFormat(_ raw: String?) -> ReportFormat {
-    guard let raw, let format = ReportFormat(raw) else {
+    guard let raw, let format = ReportFormat(rawValue: raw.lowercased()) else {
       usageError("Invalid/missing value for --format")
     }
     return format
@@ -119,7 +139,8 @@ struct ReceiptLab {
       ReceiptLab — multimodal receipt evaluation
 
       USAGE
-        ReceiptLab run <path> [--format text|json|summary] [--cached] [--quiet]
+        ReceiptLab run [<fixture|fixture/n|path>] [--root <fixtures>]
+                       [--format text|json|summary] [--cached] [--quiet]
                        [--reasoning \(reasoningLevels(separator: "|"))] [--max-pixels N]
 
       Prefer `make receipts` over invoking this binary directly.

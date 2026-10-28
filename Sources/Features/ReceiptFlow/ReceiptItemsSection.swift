@@ -93,7 +93,6 @@ struct ReceiptItemsSection: View {
 
 /// Where each item row sits on screen while a sweep could cross it. It isn't observed, so rows
 /// moving as the list scrolls never redraw anything.
-@MainActor
 final class ReceiptItemRowFrames {
   /// How far past its content a row reaches, covering half the gap to its neighbors.
   private static let rowOverhang: CGFloat = 12
@@ -163,9 +162,6 @@ private struct ReceiptItemRow: View, Equatable {
       onSweepableFrameChange(frame)
     }
     .onDisappear { onSweepableFrameChange(nil) }
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(.isButton)
-    .accessibilityAction(.default, onTap)
     .accessibilityHint(accessibilityHint)
     .accessibilityActions {
       if !isEditing {
@@ -212,9 +208,9 @@ struct ReceiptItemRowContent: View {
         }
         .receiptIssues(item.issues)
         Spacer()
-        Text(item.lineTotal, format: .currency(code: displayCurrency))
+        Text(item.lineTotal.decimal, format: .currency(code: displayCurrency))
           .font(.body.monospacedDigit())
-          .contentTransition(.numericText(value: item.lineTotal))
+          .contentTransition(.numericText(value: Double(item.lineTotal)))
 
         if isEditing {
           Image(systemName: "chevron.forward")

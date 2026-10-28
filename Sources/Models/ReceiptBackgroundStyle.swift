@@ -1,6 +1,6 @@
 import Foundation
 
-enum ReceiptThemeColor: String, CaseIterable, Codable, Equatable, Sendable {
+nonisolated enum ReceiptThemeColor: String, CaseIterable, Codable, Equatable, Sendable {
   case blue
   case mint
   case peach
@@ -11,7 +11,7 @@ enum ReceiptThemeColor: String, CaseIterable, Codable, Equatable, Sendable {
   case indigo
 }
 
-struct ReceiptBackgroundStyle: Codable, Equatable, Sendable {
+nonisolated struct ReceiptBackgroundStyle: Codable, Equatable, Sendable {
   let primary: ReceiptThemeColor
   let secondary: ReceiptThemeColor
 
@@ -36,7 +36,7 @@ struct ReceiptBackgroundStyle: Codable, Equatable, Sendable {
   }
 }
 
-extension ReceiptThemeColor {
+nonisolated extension ReceiptThemeColor {
   fileprivate var partnerColors: [ReceiptThemeColor] {
     switch self {
     case .blue: [.amber, .rose, .peach, .mint]

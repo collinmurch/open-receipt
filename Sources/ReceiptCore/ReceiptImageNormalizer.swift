@@ -1,7 +1,7 @@
 import CoreGraphics
 import ImageIO
 
-enum ReceiptImageNormalizer {
+nonisolated enum ReceiptImageNormalizer {
   /// Returns an image whose pixels include the supplied display orientation.
   static func normalized(
     _ image: CGImage,

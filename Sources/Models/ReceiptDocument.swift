@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
   static let currentSchemaVersion = 4
 
   var schemaVersion: Int
@@ -171,7 +171,7 @@ struct ReceiptDocument: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
-struct DecimalString: Codable, Equatable, Sendable {
+nonisolated struct DecimalString: Codable, Equatable, Sendable {
   let value: String
 
   /// `value` in plain decimal notation, such as "0.00001" rather than "1e-05", with the fewest
@@ -180,14 +180,22 @@ struct DecimalString: Codable, Equatable, Sendable {
     self.value = Self.plainNotation(String(value))
   }
 
-  var doubleValue: Double? {
-    Double(value).flatMap { $0.isFinite ? $0 : nil }
+  init(_ amount: Money) {
+    value = amount.description
   }
 
-  /// `doubleValue`, throwing when the string isn't a finite decimal.
+  /// The number the string writes, throwing when it isn't a finite decimal.
   func requiredDouble() throws -> Double {
-    guard let doubleValue else { throw ReceiptDocumentError.invalidDecimal(value) }
-    return doubleValue
+    guard let number = Double(value), number.isFinite else {
+      throw ReceiptDocumentError.invalidDecimal(value)
+    }
+    return number
+  }
+
+  /// The amount the string writes, throwing when it isn't a finite decimal.
+  func requiredMoney() throws -> Money {
+    guard let amount = Money(value) else { throw ReceiptDocumentError.invalidDecimal(value) }
+    return amount
   }
 
   init(from decoder: Decoder) throws {
@@ -233,7 +241,7 @@ struct DecimalString: Codable, Equatable, Sendable {
   }
 }
 
-enum ReceiptDocumentError: Error, LocalizedError, Equatable {
+nonisolated enum ReceiptDocumentError: Error, LocalizedError, Equatable {
   case unsupportedSchemaVersion(Int)
   case missingReceipt
   case invalidDecimal(String)

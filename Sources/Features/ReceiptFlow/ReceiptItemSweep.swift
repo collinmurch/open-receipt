@@ -3,7 +3,7 @@ import Foundation
 /// A two-finger sweep across a receipt's items. Every item from the one the sweep started on
 /// through the one under the fingers gets the selected people, or loses them when the first item
 /// already had them all. Items the sweep pulls back from return to how they were.
-struct ReceiptItemSweep {
+nonisolated struct ReceiptItemSweep {
   let participantIDs: Set<ReceiptParticipant.ID>
   /// Whether the sweep adds the people to items, rather than removing them.
   let assigns: Bool

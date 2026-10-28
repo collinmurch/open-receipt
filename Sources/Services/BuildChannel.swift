@@ -3,7 +3,7 @@ import StoreKit
 
 /// Where the running build came from. Development and TestFlight builds show testing tools and
 /// can read sample receipts; App Store builds never do.
-enum BuildChannel: Equatable, Sendable {
+nonisolated enum BuildChannel: Equatable, Sendable {
   /// A Debug build, a simulator build, or a Release build run with a StoreKit configuration file.
   case development
   /// TestFlight and App Review, where purchases go through the sandbox.

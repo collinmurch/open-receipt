@@ -3,14 +3,14 @@ import Network
 import Synchronization
 
 /// Waits for a usable network path, so a read that failed offline can resume on its own.
-struct ReceiptConnectivity: Sendable {
+nonisolated struct ReceiptConnectivity: Sendable {
   var waitUntilConnected: @Sendable () async -> Void
 
   static let live = ReceiptConnectivity { await NetworkPathObserver.shared.waitUntilConnected() }
   static let immediate = ReceiptConnectivity {}
 }
 
-private final class NetworkPathObserver: Sendable {
+private nonisolated final class NetworkPathObserver: Sendable {
   static let shared = NetworkPathObserver()
 
   private struct State {

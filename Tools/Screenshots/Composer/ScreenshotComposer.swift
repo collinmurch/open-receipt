@@ -10,7 +10,6 @@ import UniformTypeIdentifiers
 ///     ScreenshotComposer --captures <dir> --assets <dir> --output <dir> [--only <name>]
 @main
 struct ScreenshotComposer {
-  @MainActor
   static func main() {
     do {
       let options = try Options(CommandLine.arguments.dropFirst())
@@ -26,6 +25,7 @@ struct ScreenshotComposer {
         }
       }
 
+      let photo = try loadImage(options.photo)
       for appearance in StoreAppearance.allCases {
         let captures = options.captures.appending(path: appearance.rawValue)
         let output = options.output.appending(path: appearance.rawValue)
@@ -36,30 +36,28 @@ struct ScreenshotComposer {
           let frame = StoreFrame(
             shot: shot,
             capture: capture,
-            backdrop: try loadImage(options.assets.appending(path: shot.backdrop)),
+            backdrop: photo,
             swatches: try (palette ?? capture).edgeSwatches(rows: 3),
             appearance: appearance)
-          let url = output.appending(path: "\(shot.name).png")
-          try writeOpaquePNG(try render(frame, size: StoreFrame.size, name: shot.name), to: url)
-          print("Wrote \(url.path(percentEncoded: false))")
+          try write(
+            render(frame, size: StoreFrame.size, name: shot.name),
+            to: output.appending(path: "\(shot.name).png"))
         }
       }
 
       let artworkOutput = options.output.appending(path: "artwork")
       try FileManager.default.createDirectory(at: artworkOutput, withIntermediateDirectories: true)
       for piece in artwork {
-        let url = artworkOutput.appending(path: "\(piece.rawValue).png")
-        try writeOpaquePNG(try piece.render(options), to: url)
-        print("Wrote \(url.path(percentEncoded: false))")
+        try write(piece.render(options), to: artworkOutput.appending(path: "\(piece.rawValue).png"))
       }
 
       let review = options.output.appending(path: "review")
       try FileManager.default.createDirectory(at: review, withIntermediateDirectories: true)
       for name in reviewShots {
         let capture = options.captures.appending(path: StoreAppearance.light.rawValue)
-        let url = review.appending(path: "\(name).png")
-        try writeOpaquePNG(try loadImage(capture.appending(path: "\(name).png")), to: url)
-        print("Wrote \(url.path(percentEncoded: false))")
+        try write(
+          loadImage(capture.appending(path: "\(name).png")),
+          to: review.appending(path: "\(name).png"))
       }
     } catch {
       FileHandle.standardError.write(Data("ScreenshotComposer: \(error)\n".utf8))
@@ -67,7 +65,6 @@ struct ScreenshotComposer {
     }
   }
 
-  @MainActor
   static func render(_ view: some View, size: CGSize, name: String) throws -> CGImage {
     let renderer = ImageRenderer(content: view)
     renderer.scale = 1
@@ -77,8 +74,8 @@ struct ScreenshotComposer {
     return image
   }
 
-  /// App Store Connect rejects screenshots with an alpha channel.
-  private static func writeOpaquePNG(_ image: CGImage, to url: URL) throws {
+  /// Writes `image` as a PNG without an alpha channel, which App Store Connect rejects.
+  private static func write(_ image: CGImage, to url: URL) throws {
     guard
       let space = CGColorSpace(name: CGColorSpace.sRGB),
       let context = CGContext(
@@ -96,6 +93,7 @@ struct ScreenshotComposer {
     guard CGImageDestinationFinalize(destination) else {
       throw ComposerError.render(url.lastPathComponent)
     }
+    print("Wrote \(url.path(percentEncoded: false))")
   }
 }
 
@@ -104,7 +102,6 @@ private enum Artwork: String, CaseIterable {
   case header
   case search
 
-  @MainActor
   func render(_ options: Options) throws -> CGImage {
     switch self {
     case .header:
@@ -120,7 +117,7 @@ private enum Artwork: String, CaseIterable {
       let captures = options.captures.appending(path: StoreAppearance.light.rawValue)
       let artwork = SearchArtwork(
         capture: try Capture(directory: captures, name: "search"),
-        photo: try loadImage(options.assets.appending(path: "Receipts/example-receipt.jpg")))
+        photo: try loadImage(options.photo))
       return try ScreenshotComposer.render(artwork, size: SearchArtwork.size, name: rawValue)
     }
   }
@@ -148,6 +145,11 @@ private struct Options {
     self.assets = URL(filePath: assets, directoryHint: .isDirectory)
     self.output = URL(filePath: output, directoryHint: .isDirectory)
     only = values["only"].flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  /// The receipt photo under the screenshots and the search artwork.
+  var photo: URL {
+    assets.appending(path: "Receipts/example-receipt.jpg")
   }
 
   enum OptionsError: Error, CustomStringConvertible {

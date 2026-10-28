@@ -2,45 +2,14 @@ import Darwin
 import Foundation
 import ReceiptKit
 
-enum ReportFormat {
+enum ReportFormat: String {
   case text
   case json
   case summary
-
-  init?(_ raw: String) {
-    switch raw.lowercased() {
-    case "text", "txt": self = .text
-    case "json": self = .json
-    case "summary", "short": self = .summary
-    default: return nil
-    }
-  }
 }
 
 enum ReceiptLabReporter {
-  static func render(_ report: ReceiptLabReport, format: ReportFormat) -> String {
-    switch format {
-    case .text: return renderText(report, color: Color.active)
-    case .json: return renderJSON(report)
-    case .summary: return renderSummary(report)
-    }
-  }
-
-  static func renderSummary(_ report: ReceiptLabReport) -> String {
-    let color = Color.active
-    var out = report.fixtures.map { summaryLine($0, color: color, showsCache: false) }.joined()
-    let passed = report.fixtures.filter { $0.evaluation?.passed == true }.count
-    let failed = report.fixtures.filter { $0.evaluation?.passed == false }.count
-    let errored = report.fixtures.filter { $0.parseError != nil }.count
-    out += color.dim(String(repeating: "─", count: 40)) + "\n"
-    out += "\(report.fixtures.count) fixtures  "
-    out += "\(color.green("\(passed) pass"))  "
-    out += "\(failed > 0 ? color.red("\(failed) fail") : "0 fail")  "
-    out += "\(errored > 0 ? color.yellow("\(errored) err") : "0 err")\n"
-    return out
-  }
-
-  static func streamHeader(inputPath: String, variant: String? = nil) -> String {
+  static func header(inputPath: String, variant: String? = nil) -> String {
     let color = Color.active
     let title =
       variant.map { "ReceiptLab — \(inputPath) (\($0))" }
@@ -49,21 +18,24 @@ enum ReceiptLabReporter {
       + color.dim(String(repeating: "─", count: 60)) + "\n"
   }
 
-  static func streamFixture(
-    _ fixture: FixtureRunResult,
-    index: Int,
-    total: Int
-  ) -> String {
+  /// A fixture's result with its parsed totals and every check, numbered `index` of `total`.
+  static func fixture(_ fixture: FixtureRunResult, index: Int, total: Int) -> String {
     let color = Color.active
     let progress = color.dim("[\(index)/\(total)]") + " "
     return progress + renderFixtureText(fixture, color: color) + "\n"
   }
 
-  static func streamSummaryFixture(_ fixture: FixtureRunResult) -> String {
-    summaryLine(fixture, color: Color.active, showsCache: true)
+  /// A fixture's result on one line.
+  static func summaryLine(_ fixture: FixtureRunResult) -> String {
+    let color = Color.active
+    let duration = String(format: "%.2fs", fixture.durationSeconds)
+    let cache = fixture.wasCached ? ", cached" : ""
+    let badge = Self.badge(for: fixture, color: color)
+    return "\(badge) \(fixture.label) \(color.dim("(\(duration)\(cache))"))\n"
   }
 
-  static func streamSummary(_ report: ReceiptLabReport) -> String {
+  /// How many fixtures ran, passed, and failed to parse.
+  static func footer(_ report: ReceiptLabReport) -> String {
     let color = Color.active
     var out = color.dim(String(repeating: "─", count: 60)) + "\n"
     out += "Fixtures: \(report.fixtures.count)\n"
@@ -78,27 +50,6 @@ enum ReceiptLabReporter {
       out += color.yellow("Errors: \(errored)") + "\n"
     }
     return out
-  }
-
-  private static func renderText(_ report: ReceiptLabReport, color: Color) -> String {
-    var out = streamHeader(inputPath: report.inputPath)
-    for fixture in report.fixtures {
-      out += renderFixtureText(fixture, color: color)
-      out += "\n"
-    }
-    out += streamSummary(report)
-    return out
-  }
-
-  private static func summaryLine(
-    _ fixture: FixtureRunResult,
-    color: Color,
-    showsCache: Bool
-  ) -> String {
-    let duration = String(format: "%.2fs", fixture.durationSeconds)
-    let cache = showsCache && fixture.wasCached ? ", cached" : ""
-    let badge = Self.badge(for: fixture, color: color)
-    return "\(badge) \(fixture.label) \(color.dim("(\(duration)\(cache))"))\n"
   }
 
   /// The fixture's outcome, or RAN when it has no expected result to compare against.
@@ -170,10 +121,11 @@ enum ReceiptLabReporter {
   private static func formatTotals(_ receipt: ParsedReceipt) -> String {
     String(
       format: "currency=%@ subtotal=%.2f tax=%.2f tip=%.2f total=%.2f",
-      receipt.currency, receipt.subtotal, receipt.tax, receipt.tip, receipt.total)
+      receipt.currency, Double(receipt.subtotal), Double(receipt.tax), Double(receipt.tip),
+      Double(receipt.total))
   }
 
-  private static func renderJSON(_ report: ReceiptLabReport) -> String {
+  static func json(_ report: ReceiptLabReport) -> String {
     let payload = JSONReport(
       inputPath: report.inputPath,
       fixtureCount: report.fixtures.count,
@@ -204,7 +156,7 @@ enum ReceiptLabReporter {
     let items: [JSONItem]
     let warnings: [String]
     let parseError: String?
-    let evaluation: JSONEvaluation?
+    let evaluation: FixtureEvaluation?
     let cached: Bool
 
     init(_ fixture: FixtureRunResult) {
@@ -217,7 +169,7 @@ enum ReceiptLabReporter {
       items = fixture.receipt?.items.map(JSONItem.init) ?? []
       warnings = fixture.receipt?.warnings ?? []
       parseError = fixture.parseError
-      evaluation = fixture.evaluation.map(JSONEvaluation.init)
+      evaluation = fixture.evaluation
       cached = fixture.wasCached
     }
   }
@@ -230,10 +182,10 @@ enum ReceiptLabReporter {
     let total: Double
     init(_ receipt: ParsedReceipt) {
       currency = receipt.currency
-      subtotal = receipt.subtotal
-      tax = receipt.tax
-      tip = receipt.tip
-      total = receipt.total
+      subtotal = Double(receipt.subtotal)
+      tax = Double(receipt.tax)
+      tip = Double(receipt.tip)
+      total = Double(receipt.total)
     }
   }
 
@@ -244,31 +196,7 @@ enum ReceiptLabReporter {
     init(_ item: ReceiptItem) {
       description = item.description
       quantity = item.quantity
-      lineTotal = item.lineTotal
-    }
-  }
-
-  private struct JSONEvaluation: Encodable {
-    let passed: Bool
-    let checks: [JSONCheck]
-    init(_ evaluation: FixtureEvaluation) {
-      passed = evaluation.passed
-      checks = evaluation.checks.map(JSONCheck.init)
-    }
-  }
-
-  private struct JSONCheck: Encodable {
-    let field: String
-    let status: String
-    let expected: String?
-    let actual: String?
-    let detail: String?
-    init(_ check: FixtureEvaluation.Check) {
-      field = check.field
-      status = check.status.rawValue
-      expected = check.expected
-      actual = check.actual
-      detail = check.detail
+      lineTotal = Double(item.lineTotal)
     }
   }
 }

@@ -1,21 +1,20 @@
 import Foundation
 import Observation
 
-@MainActor
 @Observable
 final class ReceiptDraft {
   let id: UUID
   let backgroundStyle: ReceiptBackgroundStyle
   var merchantName: String { didSet { markPersistedChange() } }
   var date: String { didSet { markPersistedChange() } }
-  var subtotal: Double { didSet { markDurableChange() } }
+  var subtotal: Money { didSet { markDurableChange() } }
   var adjustments: ReceiptTotalAdjustments {
     didSet {
       if !adjustments.contains(.tip) { tipPercentage = nil }
       markDurableChange()
     }
   }
-  var total: Double {
+  var total: Money {
     didSet {
       markDurableChange()
       followTipBase()
@@ -50,15 +49,16 @@ final class ReceiptDraft {
     didSet { markPersistedChange() }
   }
   private(set) var participants: [ReceiptParticipant]
+  /// Counts changes that need saving, so reading it observes the issues and tip placements cached
+  /// from them.
   private(set) var persistenceRevision = 0
-  @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
-  @ObservationIgnored private var balanceCache: ReceiptBalance?
   /// Counts changes to what the split and balance are worked out from, so reading either
   /// observes them.
   private var durableRevision = 0
-  @ObservationIgnored private var issuesCache: (revision: Int, issues: [ReceiptIssue])?
-  @ObservationIgnored private var tipPlacementCache:
-    (revision: Int, placements: [Int: ReceiptBalance.SavingsPlacement]) = (0, [:])
+  @ObservationIgnored private var splitCalculationCache: ReceiptSplitCalculation?
+  @ObservationIgnored private var balanceCache: ReceiptBalance?
+  @ObservationIgnored private var issuesCache: [ReceiptIssue]?
+  @ObservationIgnored private var tipPlacementCache: [Int: ReceiptBalance.SavingsPlacement] = [:]
   /// The amount being typed into and how the receipt balanced when typing began. Any change
   /// besides typing into it ends the typing.
   @ObservationIgnored var amountEditing: (field: ReceiptAmountField, balance: ReceiptBalance)?
@@ -132,13 +132,13 @@ final class ReceiptDraft {
   }
 
   /// The tax. Setting it moves a total that added up along with it, as do `tip` and `savings`.
-  var tax: Double {
+  var tax: Money {
     get { adjustments[.tax] ?? 0 }
     set { keepingBalance(.adjustment(.tax)) { adjustments[.tax] = newValue } }
   }
 
   /// The tip. Setting it enters it as an amount, which no longer follows a percentage.
-  var tip: Double {
+  var tip: Money {
     get { adjustments[.tip] ?? 0 }
     set {
       tipPercentage = nil
@@ -146,7 +146,7 @@ final class ReceiptDraft {
     }
   }
 
-  var savings: Double {
+  var savings: Money {
     get { adjustments[.savings] ?? 0 }
     set { keepingBalance(.adjustment(.savings)) { adjustments[.savings] = newValue } }
   }
@@ -154,12 +154,10 @@ final class ReceiptDraft {
   /// What needs fixing in the current values. Totals that don't add up aren't an issue, because
   /// the totals section explains them with a `ReceiptBalanceNotice`.
   var issues: [ReceiptIssue] {
-    let revision = persistenceRevision
-    if let issuesCache, issuesCache.revision == revision {
-      return issuesCache.issues
-    }
+    _ = persistenceRevision
+    if let issuesCache { return issuesCache }
     let issues = uncachedIssues()
-    issuesCache = (revision, issues)
+    issuesCache = issues
     return issues
   }
 
@@ -177,11 +175,10 @@ final class ReceiptDraft {
     for percentage: Int,
     place: () -> ReceiptBalance.SavingsPlacement
   ) -> ReceiptBalance.SavingsPlacement {
-    let revision = persistenceRevision
-    if tipPlacementCache.revision != revision { tipPlacementCache = (revision, [:]) }
-    if let cached = tipPlacementCache.placements[percentage] { return cached }
+    _ = persistenceRevision
+    if let cached = tipPlacementCache[percentage] { return cached }
     let placement = place()
-    tipPlacementCache.placements[percentage] = placement
+    tipPlacementCache[percentage] = placement
     return placement
   }
 
@@ -294,15 +291,15 @@ final class ReceiptDraft {
 
   /// Trims what was typed, assigning only fields that change so an untouched receipt isn't saved.
   func normalizeEditableFields() {
-    let merchantName = self.merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let merchantName = self.merchantName.trimmed
     if merchantName != self.merchantName { self.merchantName = merchantName }
-    let date = self.date.trimmingCharacters(in: .whitespacesAndNewlines)
+    let date = self.date.trimmed
     if date != self.date { self.date = date }
     let currency = normalizedCurrency
     if currency != self.currency { self.currency = currency }
     let items = self.items.map { item in
       var item = item
-      item.description = item.description.trimmingCharacters(in: .whitespacesAndNewlines)
+      item.description = item.description.trimmed
       return item
     }
     if items != self.items { self.items = items }
@@ -322,7 +319,7 @@ final class ReceiptDraft {
 
   /// Records `amount` of `adjustment` and stops asking about it. A total that added up keeps
   /// adding up, so a tip left after the receipt was printed raises it.
-  func confirm(_ adjustment: ReceiptTotalAdjustment, amount: Double) {
+  func confirm(_ adjustment: ReceiptTotalAdjustment, amount: Money) {
     addAdjustment(adjustment, amount: amount)
     stopAsking(about: adjustment)
   }
@@ -381,6 +378,8 @@ final class ReceiptDraft {
 
   /// A change that needs saving but leaves the split as it was.
   private func markPersistedChange() {
+    issuesCache = nil
+    tipPlacementCache = [:]
     persistenceRevision &+= 1
   }
 }

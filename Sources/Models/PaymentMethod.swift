@@ -1,6 +1,6 @@
 import Foundation
 
-enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+nonisolated enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
   case venmo
   case cashApp
   case iMessage
@@ -66,7 +66,7 @@ enum PaymentMethod: String, CaseIterable, Codable, Hashable, Identifiable, Senda
   }
 }
 
-enum PaymentDestination: Equatable, Sendable {
+nonisolated enum PaymentDestination: Equatable, Sendable {
   case venmo(Person.Venmo.Recipient)
   case cashApp(Person.CashApp)
   case iMessage(Person.IMessage.Recipient)

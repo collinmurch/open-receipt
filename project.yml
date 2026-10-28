@@ -17,6 +17,7 @@ configs:
 settings:
   base:
     SWIFT_VERSION: 6.0
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
     MARKETING_VERSION: "1.1.2"
     CURRENT_PROJECT_VERSION: "1"
 
@@ -56,6 +57,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.collinmurch.open-receipt
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Info.plist
@@ -78,7 +80,9 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: Tests
+      - path: Tests/App
+        excludes: *agentExcludes
+      - path: Tests/ReceiptKit
         excludes: *agentExcludes
     dependencies:
       - target: open-receipt

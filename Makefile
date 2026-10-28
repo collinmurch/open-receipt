@@ -1,5 +1,6 @@
 # ─── Config ───────────────────────────────────────────────────────────────────
 SHELL         := /bin/bash
+.SHELLFLAGS   := -o pipefail -c
 DEVELOPER_DIR ?= $(shell xcode-select -p)
 export DEVELOPER_DIR
 SCHEME        = open-receipt
@@ -31,7 +32,7 @@ DEV_SCREENSHOTS      = $(BUILD_DIR)/screenshots
 DEV_SCREENSHOT_KINDS = $(filter-out breakdowns,$(shell awk '/enum Kind/,/^    }/' App/ScreenshotScenario.swift | grep -oE 'case [a-zA-Z]+' | cut -d' ' -f2))
 BASE_SPEC     = project.yml
 LOCAL_SPEC    = project.local.yml
-CURRENT_TEAM  := $(shell if [ -f "$(PROJECT)/project.pbxproj" ]; then rg -o 'DEVELOPMENT_TEAM = [A-Z0-9]+' "$(PROJECT)/project.pbxproj" | head -1 | awk '{print $$3}'; elif [ -f "$(LOCAL_SPEC)" ]; then awk '/DEVELOPMENT_TEAM:/ {print $$2; exit}' "$(LOCAL_SPEC)"; fi)
+CURRENT_TEAM  := $(shell if [ -f "$(PROJECT)/project.pbxproj" ]; then grep -oE 'DEVELOPMENT_TEAM = [A-Z0-9]+' "$(PROJECT)/project.pbxproj" | head -1 | awk '{print $$3}'; elif [ -f "$(LOCAL_SPEC)" ]; then awk '/DEVELOPMENT_TEAM:/ {print $$2; exit}' "$(LOCAL_SPEC)"; fi)
 RESOLVED_TEAM := $(strip $(if $(TEAM_ID),$(TEAM_ID),$(CURRENT_TEAM)))
 TEAM_ID       ?=
 ASC_KEY_ID    ?=
@@ -47,10 +48,6 @@ configuration:
 	else \
 		echo "Configuration: Release. Signed with the PCC entitlement."; \
 	fi
-
-.PHONY: release-configuration
-release-configuration:
-	@echo "Configuration: Release. Signed with the PCC entitlement."
 
 .PHONY: help
 help: ## Show available commands
@@ -76,37 +73,13 @@ gen: ## Generate the Xcode project
 #        filter=<regex> head=<N> tail=<N>
 .PHONY: receipts
 receipts: receiptlab ## Evaluate receipt fixtures with Private Cloud Compute
-	@set -o pipefail; \
-	arg='$(of)'; \
-	root="Fixtures/Receipts"; \
-	mkdir -p "$$root"; \
-	if [ -z "$$arg" ]; then \
-		target="$$root"; \
-	elif [ -e "$$arg" ]; then \
-		target="$$arg"; \
-	elif [ -e "$$root/$$arg" ]; then \
-		target="$$root/$$arg"; \
-	else \
-		folder="$${arg%/*}"; sample="$${arg##*/}"; \
-		if [ "$$arg" != "$$folder" ] && [ -d "$$root/$$folder/fixtures" ]; then \
-			matches=("$$root/$$folder/fixtures/$$sample".*); \
-			if [ -f "$${matches[0]}" ] && [ "$${#matches[@]}" -eq 1 ]; then \
-				target="$${matches[0]}"; \
-			elif [ "$${#matches[@]}" -gt 1 ]; then \
-				echo "More than one fixture matches: $$arg" >&2; exit 64; \
-			else echo "Not found: $$arg" >&2; exit 64; fi; \
-		else \
-			echo "Not found: $$arg" >&2; exit 64; \
-		fi; \
-	fi; \
-	echo "ReceiptLab -> $$target"; \
-	flags="--cache $(BUILD_DIR)/receiptlab-cache"; \
-	$(if $(format),flags="$$flags --format $(format)";) \
-	$(if $(quiet),flags="$$flags --quiet";) \
-	$(if $(cached),flags="$$flags --cached";) \
-	$(if $(reasoning),flags="$$flags --reasoning $(reasoning)";) \
-	$(if $(max_pixels),flags="$$flags --max-pixels $(max_pixels)";) \
-	"$(RECEIPTLAB)" run "$$target" $$flags 2>&1 \
+	@"$(RECEIPTLAB)" run $(if $(of),'$(of)') \
+		$(if $(format),--format $(format)) \
+		$(if $(quiet),--quiet) \
+		$(if $(cached),--cached) \
+		$(if $(reasoning),--reasoning $(reasoning)) \
+		$(if $(max_pixels),--max-pixels $(max_pixels)) \
+		2>&1 \
 		$(if $(filter),| grep --line-buffered -E '$(filter)') \
 		$(if $(head),| head -n $(head)) \
 		$(if $(tail),| tail -n $(tail)); \
@@ -139,8 +112,7 @@ $(ASSETS)/Icons/open-receipt-iOS-%-1024@1x.png: $(ICON)/icon.json $(wildcard $(I
 # Flags: cached=1 reuses the last capture and only composes. of=reading|split|requests|share|library|paywall|header|search limits both steps.
 .PHONY: previews
 previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, header, and search artwork. cached=1 only composes.
-	@set -o pipefail; \
-	if [ -z "$(cached)" ]; then \
+	@if [ -z "$(cached)" ]; then \
 		$(if $(of),,rm -rf "$(SCREENSHOT_CAPTURES)";) \
 		mkdir -p "$(SCREENSHOT_CAPTURES)"; \
 		TEST_RUNNER_SCREENSHOTS_OUTPUT="$(abspath $(SCREENSHOT_CAPTURES))" \
@@ -156,7 +128,7 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, hea
 		echo "No capture in $(SCREENSHOT_CAPTURES). Run make previews first." >&2; exit 66; \
 	fi; \
 	swift build -c release --product ScreenshotComposer && \
-	.build/release/ScreenshotComposer \
+	$(BUILD_DIR)/release/ScreenshotComposer \
 		--captures "$(SCREENSHOT_CAPTURES)" \
 		--assets "$(ASSETS)" \
 		--output "$(SCREENSHOT_OUTPUT)" \
@@ -168,8 +140,7 @@ previews: $(if $(cached),,gen) ## Capture and compose App Store screenshots, hea
 # Writes <name>-<appearance>.png and <name>.txt (the accessibility tree) to .build/screenshots.
 .PHONY: screenshot
 screenshot: $(if $(clean),,gen) ## Capture one app screen to .build/screenshots for checking UI work. clean=1 deletes captures.
-	@set -o pipefail; \
-	dir="$(abspath $(DEV_SCREENSHOTS))"; \
+	@dir="$(abspath $(DEV_SCREENSHOTS))"; \
 	file='$(or $(name),$(of))'; \
 	captures() { for suffix in -light.png -dark.png .txt -failure.png -failure.txt; do \
 		echo "$$dir/$$file$$suffix"; done; }; \
@@ -220,20 +191,19 @@ build: configuration gen ## Build the app. Set release=1 for a signed Release bu
 		-derivedDataPath $(BUILD_DIR)/derived \
 		ARCHS=arm64 \
 		ONLY_ACTIVE_ARCH=YES \
-		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
+		2>&1 | xcbeautify
 
 .PHONY: test
-test: gen ## Run tests. fast=1 uses SPM only.
-	@if [ -n "$(fast)" ]; then \
-		swift test; \
-	else \
-		xcodebuild test \
-			-project $(PROJECT) \
-			-scheme $(SCHEME) \
-			-destination '$(SIMULATOR)' \
-			-derivedDataPath $(BUILD_DIR)/derived \
-			2>&1 | xcbeautify; exit $${PIPESTATUS[0]}; \
-	fi
+test: $(if $(fast),,gen) ## Run every test. fast=1 runs only the SPM tests.
+	swift test
+ifndef fast
+	xcodebuild test \
+		-project $(PROJECT) \
+		-scheme $(SCHEME) \
+		-destination '$(SIMULATOR)' \
+		-derivedDataPath $(BUILD_DIR)/derived \
+		2>&1 | xcbeautify
+endif
 
 # ─── Simulator ────────────────────────────────────────────────────────────────
 .PHONY: run
@@ -257,8 +227,8 @@ build-device: configuration gen ## Build for iOS hardware. Set release=1 for a s
 		-allowProvisioningUpdates \
 		-allowProvisioningDeviceRegistration \
 		CODE_SIGN_STYLE=Automatic \
-		$(if $(TEAM_ID),DEVELOPMENT_TEAM=$(TEAM_ID),) \
-		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
+		$(if $(RESOLVED_TEAM),DEVELOPMENT_TEAM=$(RESOLVED_TEAM),) \
+		2>&1 | xcbeautify
 
 .PHONY: check-device
 check-device: gen ## Compile for iOS hardware without signing or installing
@@ -270,10 +240,11 @@ check-device: gen ## Compile for iOS hardware without signing or installing
 		-derivedDataPath $(BUILD_DIR)/derived-device-check \
 		ARCHS=arm64 \
 		CODE_SIGNING_ALLOWED=NO \
-		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
+		2>&1 | xcbeautify
 
 .PHONY: archive
-archive: release-configuration gen ## Create a signed Release archive. Set build_number=N, or build_number=auto on upload.
+archive: release = 1
+archive: configuration gen ## Create a signed Release archive. Set build_number=N, or build_number=auto on upload.
 	@if [ ! -x "$(DEVELOPER_DIR)/usr/bin/xcodebuild" ]; then \
 		echo "No Xcode toolchain was found at $(DEVELOPER_DIR)." >&2; \
 		echo "Install the current Xcode release and select it with xcode-select." >&2; \
@@ -300,7 +271,7 @@ archive: release-configuration gen ## Create a signed Release archive. Set build
 		DEVELOPMENT_TEAM=$(RESOLVED_TEAM) \
 		$(if $(AUTO_BUILD_NUMBER),,$(if $(build_number),CURRENT_PROJECT_VERSION=$(build_number),)) \
 		$(ASC_AUTH_FLAGS) \
-		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
+		2>&1 | xcbeautify
 
 .PHONY: upload
 upload: archive ## Archive and upload to App Store Connect. build_number=auto picks the next number.
@@ -311,7 +282,7 @@ upload: archive ## Archive and upload to App Store Connect. build_number=auto pi
 		-exportOptionsPlist $(if $(AUTO_BUILD_NUMBER),$(AUTO_EXPORT_OPTIONS),$(EXPORT_OPTIONS)) \
 		-allowProvisioningUpdates \
 		$(ASC_AUTH_FLAGS) \
-		2>&1 | xcbeautify; exit $${PIPESTATUS[0]}
+		2>&1 | xcbeautify
 
 .PHONY: run-device
 run-device: build-device ## Build and run on iOS hardware. Set release=1 for a signed Release build.
@@ -325,13 +296,12 @@ run-device: build-device ## Build and run on iOS hardware. Set release=1 for a s
 # ─── Format / Lint / Clean ────────────────────────────────────────────────────
 .PHONY: format
 format: ## Format Swift source files
-	swift-format format --recursive --in-place Sources/ Tools/ Tests/ ToolTests/ App/
+	swift-format format --recursive --in-place Sources/ Tools/ Tests/ App/
 
 .PHONY: lint
 lint: ## Lint Swift source files
-	swift-format lint --recursive Sources/ Tools/ Tests/ ToolTests/ App/
+	swift-format lint --recursive Sources/ Tools/ Tests/ App/
 
 .PHONY: clean
 clean: ## Remove build artifacts
-	swift package clean
 	rm -rf $(BUILD_DIR)

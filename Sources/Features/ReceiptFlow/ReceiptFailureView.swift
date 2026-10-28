@@ -43,8 +43,8 @@ struct ReceiptFailureView: View {
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .tint(backgroundStyle?.prominentColor)
-            .disabled(retry.readsReceipt && !recognitions.canReadNow)
-          if retry.readsReceipt, let readingNote, readingNote != failure.description {
+            .disabled(reads(retry) && !recognitions.canReadNow)
+          if reads(retry), let readingNote, readingNote != failure.description {
             Text(readingNote)
               .font(.footnote)
               .foregroundStyle(.secondary)
@@ -85,7 +85,7 @@ struct ReceiptFailureView: View {
   }
 
   private var isRescan: Bool {
-    guard case .recognize(let recognition) = failure.retry else { return false }
+    guard case .recognizing(let recognition) = failure.retry else { return false }
     return recognition.isRescan
   }
 
@@ -97,18 +97,19 @@ struct ReceiptFailureView: View {
     }
   }
 
-  private func retryTitle(_ retry: ReceiptFlowModel.Failure.Retry) -> String {
-    switch retry {
-    case .read: "Read Receipt"
-    case .create, .load, .store, .recognize: "Try Again"
-    }
+  /// Whether trying again sends the scan to the model.
+  private func reads(_ retry: ReceiptFlowModel.Phase) -> Bool {
+    retry.kind == .preparingRead || retry.kind == .recognizing
+  }
+
+  private func retryTitle(_ retry: ReceiptFlowModel.Phase) -> String {
+    retry.kind == .preparingRead ? "Read Receipt" : "Try Again"
   }
 
   private var readingNote: String? {
     switch recognitions.modelStatus {
     case .limitReached(let resetDate, _):
-      resetDate.map { "Reading is available again \(DeferredReceiptRead.resumption(at: $0))." }
-        ?? "Reading is available again later."
+      "Reading is available again \(DeferredReceiptRead.resumption(at: resetDate))."
     case .unavailable(let reason):
       reason
     case .available, .approachingLimit:

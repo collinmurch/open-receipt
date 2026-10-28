@@ -1,6 +1,6 @@
 import Foundation
 
-extension String {
+nonisolated extension String {
   /// A localized string with automatic grammar agreement applied, so
   /// `"^[\(count) item](inflect: true)"` reads "1 item" or "2 items".
   init(inflecting value: String.LocalizationValue) {

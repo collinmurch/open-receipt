@@ -6,7 +6,7 @@ import Foundation
   import Synchronization
 #endif
 
-public enum ReceiptParserError: Error, LocalizedError, Equatable {
+public nonisolated enum ReceiptParserError: Error, LocalizedError, Equatable {
   case emptyInput
   case modelUnavailable(String)
   case unsupportedModel
@@ -54,11 +54,6 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
     }
   }
 
-  /// Whether the request failed because Private Cloud Compute could not be reached.
-  public var isConnectionFailure: Bool {
-    self == .connectionUnavailable
-  }
-
   private static func retryHint(after resetDate: Date?) -> String {
     guard let resetDate, resetDate > .now else { return "Try again later." }
     let calendar = Calendar.current
@@ -70,7 +65,7 @@ public enum ReceiptParserError: Error, LocalizedError, Equatable {
 }
 
 /// Whether receipt reading can run right now, for showing persistent status before a read.
-enum ReceiptModelStatus: Sendable, Equatable {
+nonisolated enum ReceiptModelStatus: Sendable, Equatable {
   case available
   case approachingLimit(canIncreaseLimit: Bool)
   case limitReached(resetDate: Date?, canIncreaseLimit: Bool)
@@ -79,9 +74,9 @@ enum ReceiptModelStatus: Sendable, Equatable {
 
 // The simulator runtime lacks the parser's FoundationModels symbols, so it reads sample receipts.
 #if os(macOS) || !targetEnvironment(simulator)
-  public enum ReceiptParser {
+  public nonisolated enum ReceiptParser {
     /// Parses `pages`, reporting the receipt to `onPreview` as it is read.
-    static func parse(
+    @concurrent static func parse(
       pages: [ReceiptPage],
       onPreview: @escaping @Sendable (ReceiptParsePreview) async -> Void
     ) async throws -> ParsedReceipt {
@@ -90,7 +85,7 @@ enum ReceiptModelStatus: Sendable, Equatable {
     }
 
     /// Returns the model response encoded as the JSON that `ReceiptModelContract.receipt(from:)` decodes.
-    public static func responseData(
+    @concurrent public static func responseData(
       pages: [ReceiptPage],
       configuration: ReceiptParserConfiguration = .standard
     ) async throws -> Data {
@@ -264,7 +259,7 @@ enum ReceiptModelStatus: Sendable, Equatable {
     }
   }
 
-  extension ReceiptParserConfiguration.ReasoningLevel {
+  nonisolated extension ReceiptParserConfiguration.ReasoningLevel {
     fileprivate var modelValue: ContextOptions.ReasoningLevel {
       switch self {
       case .light: .light

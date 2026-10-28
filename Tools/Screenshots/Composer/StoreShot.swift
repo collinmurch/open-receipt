@@ -11,8 +11,6 @@ struct StoreShot {
   var highlightOutset = CGSize.zero
   /// The lifted view's corner radius in points, or `nil` for a capsule.
   var highlightCornerRadius: CGFloat? = 22
-  /// A photo under the frame, relative to `Assets`.
-  var backdrop = "Receipts/example-receipt.jpg"
 
   /// Captures uploaded to App Review as they are, without a frame, such as the in-app purchase's
   /// review screenshot.

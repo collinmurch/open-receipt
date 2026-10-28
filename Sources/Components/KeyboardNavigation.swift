@@ -30,7 +30,6 @@ extension View {
   }
 }
 
-@MainActor
 private struct KeyboardNavigation<Field: Hashable & Sendable> {
   let focus: FocusState<Field?>.Binding
   let fields: [Field]

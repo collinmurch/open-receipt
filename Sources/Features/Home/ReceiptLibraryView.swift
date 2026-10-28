@@ -20,12 +20,11 @@ struct ReceiptLibraryView: View {
   @State private var chooserPhase = NewReceiptChooserPhase.hidden
   /// Follows `showsClose` in its own transaction, so only the button's symbol animates with it.
   @State private var showsCloseSymbol = false
-  @State private var importedItems: [PhotosPickerItem] = []
   @State private var isPhotoPickerPresented = false
   @State private var isImporting = false
   @State private var importErrorDescription: String?
   @State private var openingReceiptID: ReceiptSummary.ID?
-  @State private var focusedID: ReceiptSummary.ID?
+  @State private var focusedRow: ReceiptLibraryRowID?
   @State private var focusedRowFrame: CGRect?
   @State private var riseCount = 0
   @State private var isUnlockPresented = false
@@ -39,6 +38,7 @@ struct ReceiptLibraryView: View {
     let query = searchQuery
     let allSections = librarySections(reading: readingReceipts)
     let sections = query.isEmpty ? allSections : filtered(allSections, matching: query)
+    let recents = query.isEmpty ? library.recentlyOpened : []
 
     List {
       if recognitions.modelStatus != .available {
@@ -52,6 +52,21 @@ struct ReceiptLibraryView: View {
       if !access.isUnlocked, access.freeReadsLeft < ReadingAccess.freeReadLimit {
         Section {
           FreeReadsNotice { isUnlockPresented = true }
+        }
+      }
+
+      if !recents.isEmpty {
+        Section {
+          ForEach(recents) { receipt in
+            row(for: receipt, isRecent: true)
+          }
+          .onDelete { offsets in
+            for index in offsets where recents.indices.contains(index) {
+              delete(recents[index])
+            }
+          }
+        } header: {
+          Text("Recently Opened")
         }
       }
 
@@ -93,6 +108,7 @@ struct ReceiptLibraryView: View {
     // Search results update as they're typed and as search closes, like the system's, so only
     // changes to the library itself animate.
     .animation(.smooth(duration: 0.3), value: allSections)
+    .animation(.smooth(duration: 0.3), value: recents)
     .gesture(
       ListBackgroundTapGesture(
         isEnabled: isSearchPresented && !isFocusing,
@@ -107,28 +123,21 @@ struct ReceiptLibraryView: View {
     .searchFocused($isSearchFocused)
     .toolbar { libraryToolbar }
     .toolbarVisibility(isFocusing ? .hidden : .automatic, for: .bottomBar)
-    .photosPicker(
-      isPresented: $isPhotoPickerPresented,
-      selection: $importedItems,
-      maxSelectionCount: 8,
-      selectionBehavior: .ordered,
-      matching: .images
-    )
+    .receiptPhotoPicker(isPresented: $isPhotoPickerPresented) { items in
+      Task { await importImages(items) }
+    }
     .onChange(of: requestedSource, initial: true) { _, source in
       guard let source else { return }
       requestedSource = nil
       startRequested(source)
     }
-    .onChange(of: importedItems) { _, items in
-      Task { await importImages(items) }
-    }
     .onChange(of: library.receipts) { _, receipts in
       // A receipt still being read isn't stored yet, so only its read ending can remove it.
-      guard let focusedID, recognitions.recognition(for: focusedID) == nil else { return }
-      if !receipts.contains(where: { $0.id == focusedID }) { endFocus() }
+      guard let id = focusedRow?.receiptID, recognitions.recognition(for: id) == nil else { return }
+      if !receipts.contains(where: { $0.id == id }) { endFocus() }
     }
     .onChange(of: searchText) {
-      if focusedID != nil { endFocus() }
+      if isFocusing { endFocus() }
     }
     .onChange(of: isSearchPresented) { _, isPresented in
       if isPresented {
@@ -253,11 +262,9 @@ struct ReceiptLibraryView: View {
   /// Starts `source` at once, putting away the chooser and any lifted row without animating them
   /// out, since the app is only just showing.
   private func startRequested(_ source: NewReceiptSource) {
-    var transaction = Transaction()
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
+    withTransaction(\.disablesAnimations, true) {
       chooserPhase = .hidden
-      focusedID = nil
+      focusedRow = nil
       focusedRowFrame = nil
     }
     start(from: source)
@@ -276,17 +283,18 @@ struct ReceiptLibraryView: View {
     }
   }
 
-  private func row(for receipt: ReceiptSummary) -> some View {
-    let isFocused = receipt.id == focusedID
+  private func row(for receipt: ReceiptSummary, isRecent: Bool = false) -> some View {
+    let rowID = ReceiptLibraryRowID(receiptID: receipt.id, isRecent: isRecent)
+    let isFocused = rowID == focusedRow
     return ReceiptLibraryListRow(
       receipt: receipt,
       recognition: recognitions.recognition(for: receipt.id),
       transition: receipt.isUnavailable
-        ? nil : (id: HomeZoomSource.row(receipt.id), namespace: transitionNamespace),
+        ? nil : (id: HomeZoomSource.row(rowID), namespace: transitionNamespace),
       isFocused: isFocused,
       isLiftedOut: isFocused && focusedRowFrame != nil,
-      onTap: { open(receipt) },
-      onFocus: { focus(receipt) },
+      onTap: { open(receipt, from: rowID) },
+      onFocus: { focus(rowID) },
       onDelete: { delete(receipt) },
       onFocusedFrameChange: { focusedRowFrame = $0 }
     )
@@ -295,8 +303,10 @@ struct ReceiptLibraryView: View {
 
   @ViewBuilder
   private func libraryFocus(in sections: [ReceiptLibrarySection]) -> some View {
-    if let focusedID, let focusedRowFrame,
-      let receipt = sections.lazy.flatMap(\.receipts).first(where: { $0.id == focusedID })
+    if let focusedRow, let focusedRowFrame,
+      let receipt = sections.lazy.flatMap(\.receipts).first(where: {
+        $0.id == focusedRow.receiptID
+      })
     {
       ReceiptRowFocusView(
         row: ReceiptLibraryRow(
@@ -304,7 +314,7 @@ struct ReceiptLibraryView: View {
         rowFrame: focusedRowFrame,
         startsPressed: true,
         deleteAction: .init(title: "Delete", systemImage: "trash") { delete(receipt) },
-        onTap: receipt.isUnavailable ? nil : { open(receipt) },
+        onTap: receipt.isUnavailable ? nil : { open(receipt, from: focusedRow) },
         onDismiss: endFocus
       )
       // The focus view animates its own arrival, starting over the row it copies.
@@ -312,38 +322,32 @@ struct ReceiptLibraryView: View {
     }
   }
 
-  private var isFocusing: Bool { focusedID != nil }
+  private var isFocusing: Bool { focusedRow != nil }
 
-  private func focus(_ receipt: ReceiptSummary) {
+  private func focus(_ row: ReceiptLibraryRowID) {
     guard !isFocusing else { return }
     haptic.play(.lift)
     withAnimation(.settle) {
-      focusedID = receipt.id
+      focusedRow = row
     }
   }
 
   private func endFocus() {
     withAnimation(.settle) {
-      focusedID = nil
+      focusedRow = nil
       focusedRowFrame = nil
     }
   }
 
-  /// Opens a receipt once its document has loaded, so the receipt is complete on the transition's
-  /// first frame.
-  private func open(_ receipt: ReceiptSummary) {
+  private func open(_ receipt: ReceiptSummary, from row: ReceiptLibraryRowID) {
     guard !receipt.isUnavailable, openingReceiptID == nil else { return }
-    if let recognition = recognitions.recognition(for: receipt.id) {
-      push(.receipt(.recognition(recognition), zoomingFrom: .row(receipt.id)))
-      return
-    }
     openingReceiptID = receipt.id
     Task {
       defer { openingReceiptID = nil }
-      let document = try? await storage.load(receipt.id)
-      let input = ReceiptFlowInput.storedReceipt(
-        receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)
-      push(.receipt(input, zoomingFrom: .row(receipt.id)))
+      let input = await ReceiptFlowInput.opening(
+        receipt, storage: storage, recognitions: recognitions)
+      push(.receipt(input, zoomingFrom: .row(row)))
+      library.markOpened(receipt.id)
     }
   }
 
@@ -365,16 +369,14 @@ struct ReceiptLibraryView: View {
   }
 
   private func closeSearch() {
-    var transaction = Transaction()
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
+    withTransaction(\.disablesAnimations, true) {
       searchText = ""
       isSearchPresented = false
     }
   }
 
   private var searchQuery: String {
-    searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    searchText.trimmed
   }
 
   /// New receipts being read that storage has not listed yet, newest first.
@@ -426,15 +428,11 @@ struct ReceiptLibraryView: View {
   }
 
   private func importImages(_ items: [PhotosPickerItem]) async {
-    guard !items.isEmpty else { return }
     isImporting = true
-    defer {
-      isImporting = false
-      importedItems = []
-    }
+    defer { isImporting = false }
     let pages = await ReceiptPhotoImporter.pages(from: items)
     guard !pages.isEmpty else {
-      importErrorDescription = "The selected images couldn’t be opened. Select different images."
+      importErrorDescription = ReceiptPhotoImporter.unreadableDescription
       return
     }
     let scan = ReceiptScan(pages: pages, source: .photoLibrary)
@@ -459,13 +457,10 @@ private struct ReceiptLibraryListRow: View {
       .liftableRow(
         isFocused: isFocused,
         isLiftedOut: isLiftedOut,
-        onTap: onTap,
+        onTap: receipt.isUnavailable ? nil : onTap,
         onLongPress: onFocus,
         onFocusedFrameChange: onFocusedFrameChange
       )
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(receipt.isUnavailable ? [] : .isButton)
-      .accessibilityAction(.default, onTap)
       .accessibilityHint(receipt.isUnavailable ? Text("") : Text("Opens the receipt"))
       .accessibilityActions {
         Button("Delete Receipt", role: .destructive, action: onDelete)

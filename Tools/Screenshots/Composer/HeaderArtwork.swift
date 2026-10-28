@@ -48,16 +48,19 @@ struct HeaderArtwork: View {
       .shadow(
         color: ArtworkPalette.ink.opacity(isOuter ? 0.2 : 0.3),
         radius: isOuter ? 40 : 64,
-        y: isOuter ? 28 : 44)
+        y: isOuter ? 28 : 44
+      )
       .rotationEffect(.degrees(Double(offset) * tilt), anchor: .bottom)
       .position(x: Self.size.width / 2 + offset * spread, y: top + size.height / 2)
   }
 
   private static let drifting = [
-    DriftingSlip(center: CGPoint(x: 330, y: 1150), width: 430, height: 780, angle: -14, depth: 0.55),
+    DriftingSlip(
+      center: CGPoint(x: 330, y: 1150), width: 430, height: 780, angle: -14, depth: 0.55),
     DriftingSlip(center: CGPoint(x: 820, y: 230), width: 300, height: 520, angle: 9, depth: 0.9),
     DriftingSlip(center: CGPoint(x: 3480, y: 360), width: 380, height: 700, angle: 12, depth: 0.6),
-    DriftingSlip(center: CGPoint(x: 3120, y: 1420), width: 300, height: 540, angle: -7, depth: 0.95),
+    DriftingSlip(
+      center: CGPoint(x: 3120, y: 1420), width: 300, height: 540, angle: -7, depth: 0.95),
     DriftingSlip(center: CGPoint(x: 3760, y: 1350), width: 260, height: 460, angle: 18, depth: 0.3),
     DriftingSlip(center: CGPoint(x: 90, y: 300), width: 240, height: 420, angle: 6, depth: 0.25),
   ]

@@ -9,7 +9,7 @@ struct ReceiptTotalsSection: View {
   var focusedField: FocusState<ReceiptEditField?>.Binding
   @Binding var haptic: HapticEvent
   /// Adds an item for the amount the items are short, and opens it to be named.
-  let onAddItem: (Double) -> Void
+  let onAddItem: (Money) -> Void
   @State private var savingsInputMode = AdjustmentInputMode.amount
 
   /// The amounts typed in while editing, in the order they're listed. A tip chosen as a
@@ -226,7 +226,7 @@ struct ReceiptTotalsSection: View {
   private func totalRow(
     _ label: String,
     field: ReceiptAmountField,
-    value: Double,
+    value: Money,
     isEmphasized: Bool = false,
     isFlagged: Bool = false,
     caption: String? = nil
@@ -238,11 +238,11 @@ struct ReceiptTotalsSection: View {
           .fontWeight(isEmphasized ? .semibold : .regular),
         field: field, caption: caption)
       Spacer()
-      Text(value, format: .currency(code: displayCurrency))
+      Text(value.decimal, format: .currency(code: displayCurrency))
         .font(.body.monospacedDigit())
         .fontWeight(isEmphasized ? .semibold : .regular)
         .foregroundStyle(isFlagged ? AnyShapeStyle(Color.orange) : valueStyle(isEmphasized))
-        .contentTransition(.numericText(value: value))
+        .contentTransition(.numericText(value: Double(value)))
     }
   }
 
@@ -276,7 +276,7 @@ struct ReceiptTotalsSection: View {
   private func amountField(
     _ title: String,
     field: ReceiptAmountField,
-    value: Binding<Double>,
+    value: Binding<Money>,
     isEmphasized: Bool = false
   ) -> some View {
     amountField(title, field: field, value: value, isEmphasized: isEmphasized) {
@@ -287,7 +287,7 @@ struct ReceiptTotalsSection: View {
   private func amountField(
     _ title: String,
     field: ReceiptAmountField,
-    value: Binding<Double>,
+    value: Binding<Money>,
     isEmphasized: Bool = false,
     @ViewBuilder label: () -> some View
   ) -> some View {
@@ -309,7 +309,7 @@ struct ReceiptTotalsSection: View {
 
   private func percentageAdjustmentField(
     _ adjustment: ReceiptTotalAdjustment,
-    amount: Binding<Double>,
+    amount: Binding<Money>,
     percentage: Binding<Double>,
     mode: Binding<AdjustmentInputMode>,
     caption: String?

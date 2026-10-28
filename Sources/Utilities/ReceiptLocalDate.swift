@@ -2,7 +2,7 @@ import Foundation
 
 /// A receipt's printed `yyyy-MM-dd` day. Days are read and written in a fixed UTC calendar, so
 /// the printed day never shifts with the device's time zone.
-enum ReceiptLocalDate {
+nonisolated enum ReceiptLocalDate {
   static let calendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .gmt
@@ -12,7 +12,7 @@ enum ReceiptLocalDate {
   /// The start of the day `value` names, or nil when it isn't a real day. Month and day may be
   /// unpadded, and surrounding whitespace is ignored.
   static func date(from value: String) -> Date? {
-    let parts = value.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "-")
+    let parts = value.trimmed.split(separator: "-")
     guard parts.count == 3,
       let year = Int(parts[0]),
       let month = Int(parts[1]),

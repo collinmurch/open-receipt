@@ -17,7 +17,7 @@ struct ParticipantStrip: View {
   }
 
   let participants: [ReceiptParticipant]
-  let amountsOwed: [ReceiptParticipant.ID: Double]
+  let amountsOwed: [ReceiptParticipant.ID: Money]
   let currency: String
   let selectedParticipantIDs: Set<ReceiptParticipant.ID>
   let onSelect: (ReceiptParticipant.ID) -> Void
@@ -151,12 +151,12 @@ struct ParticipantStrip: View {
         Text(shortName)
           .font(.caption2)
           .lineLimit(1)
-        Text(amount, format: .currency(code: currency))
+        Text(amount.decimal, format: .currency(code: currency))
           .font(.caption2.monospacedDigit().weight(.semibold))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .minimumScaleFactor(0.6)
-          .contentTransition(.numericText(value: amount))
+          .contentTransition(.numericText(value: Double(amount)))
       }
       .frame(width: itemWidth)
     }

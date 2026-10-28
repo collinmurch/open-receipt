@@ -3,7 +3,6 @@ import SwiftUI
 
 /// Opens payment requests, composing iMessage requests with the person's breakdown attached, and
 /// messages breakdowns. Present what it needs with `paymentRequestPresentation(_:)`.
-@MainActor
 @Observable
 final class PaymentRequester {
   var composition: IMessageComposition?
@@ -12,7 +11,7 @@ final class PaymentRequester {
   @ObservationIgnored private var isPreparingComposition = false
 
   func open(
-    _ request: PreparedPaymentRequest,
+    _ request: PaymentRequest,
     breakdown: ReceiptBreakdown?,
     openURL: OpenURLAction,
     onSent: @escaping () -> Void

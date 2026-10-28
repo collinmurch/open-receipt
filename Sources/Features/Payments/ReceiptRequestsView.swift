@@ -28,7 +28,7 @@ struct ReceiptRequestsView: View {
 
   init(
     draft: ReceiptDraft,
-    peopleStorage: PeopleStorageClient,
+    peopleStorage: PeopleFileStorage,
     isGroupSharePresented: Binding<Bool>,
     onFlush: @escaping () async -> Void,
     onAssignItems: @escaping () -> Void
@@ -126,7 +126,6 @@ struct ReceiptRequestsView: View {
       share: share,
       paymentDestination: destination,
       blankPaymentMethod: contact?.paymentMethods.blankMethod,
-      showsPaymentDestination: !isCurrentUser,
       showsTotal: calculation.unassignedItemCount == 0,
       currency: draft.displayCurrency,
       onOpenContact: contact.map { contact in { editedPerson = contact } }
@@ -153,30 +152,24 @@ struct ReceiptRequestsView: View {
     destination: PaymentDestination?,
     breakdown: ReceiptBreakdown
   ) -> some View {
-    let request = PreparedPaymentRequest(
-      share: share,
-      destination: destination,
-      currency: draft.displayCurrency,
-      note: requestNote,
-      isSplitComplete: true)
-    let contact = destination == nil && share.total.isRequestable ? person(for: share) : nil
+    let state = PaymentRequestState(
+      share: share, destination: destination, currency: draft.displayCurrency, note: requestNote)
+    let contact: Person? = if case .needsPaymentMethod = state { person(for: share) } else { nil }
     let caption: String? =
-      if request != nil {
+      switch state {
+      case .ready:
         share.participant.lastRequestedAt.map {
           "Last requested \(PaymentRequestDateFormatter.formatted($0))"
         }
-      } else if contact != nil {
-        nil
-      } else {
-        PreparedPaymentRequest.unavailableReason(
-          share: share,
-          destination: destination,
-          currency: draft.displayCurrency,
-          isSplitComplete: true)
+      case .needsPaymentMethod:
+        contact == nil
+          ? "Add a payment method to request from \(share.participant.displayName)." : nil
+      case .unavailable(let reason):
+        reason
       }
 
     return VStack(spacing: 8) {
-      if let request {
+      if case .ready(let request) = state {
         ShareRequestButton(request: request) {
           sendRequest(request, for: share, breakdown: breakdown)
         }
@@ -184,10 +177,9 @@ struct ReceiptRequestsView: View {
         Button {
           editedPerson = contact
         } label: {
-          ShareCardButtonLabel(title: "Add Payment Method", systemImage: "plus")
+          GlassActionLabel(title: "Add Payment Method", systemImage: "plus", isCompact: true)
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .glassCapsule()
       }
 
       if let caption {
@@ -259,13 +251,13 @@ struct ReceiptRequestsView: View {
   }
 
   private func person(for share: ReceiptParticipantShare) -> Person? {
-    ReceiptPersonResolver.person(for: share.participant, in: people.people)
+    people.people.person(for: share.participant)
   }
 
   /// Where to message `participant`: the iMessage recipient chosen for them, else their contact
   /// card's.
   private func messageRecipient(for participant: ReceiptParticipant) -> Person.IMessage.Recipient? {
-    let person = ReceiptPersonResolver.person(for: participant, in: people.people)
+    let person = people.people.person(for: participant)
     return person?.paymentMethods.iMessage?.recipient ?? contactRecipients[participant.id]
   }
 
@@ -274,7 +266,7 @@ struct ReceiptRequestsView: View {
   }
 
   private var requestNote: String {
-    PreparedPaymentRequest.note(merchantName: draft.merchantName)
+    PaymentRequest.note(merchantName: draft.merchantName)
   }
 
   private var participantIDs: Set<ReceiptParticipant.ID> {
@@ -305,16 +297,9 @@ struct ReceiptRequestsView: View {
   /// group breakdown opens over it.
   private func loadMessageRecipients() async {
     let contactIdentifiers = participantContactIdentifiers
-    guard !contactIdentifiers.isEmpty,
-      let contacts = try? await contactClient.fetchContacts(Array(contactIdentifiers.values))
-    else {
-      contactRecipients = [:]
-      return
-    }
-    let contactsByIdentifier = Dictionary(
-      contacts.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+    let contacts = await contactClient.contacts(withIdentifiers: Array(contactIdentifiers.values))
     contactRecipients = contactIdentifiers.compactMapValues {
-      contactsByIdentifier[$0]?.defaultRecipient(Person.IMessage.Recipient.self)
+      contacts[$0]?.defaultRecipient(Person.IMessage.Recipient.self)
     }
   }
 
@@ -323,7 +308,7 @@ struct ReceiptRequestsView: View {
   }
 
   private func sendRequest(
-    _ request: PreparedPaymentRequest,
+    _ request: PaymentRequest,
     for share: ReceiptParticipantShare,
     breakdown: ReceiptBreakdown
   ) {

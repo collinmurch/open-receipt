@@ -17,19 +17,30 @@ struct ReceiptRowFocusView: View {
   /// Whether the row was long-pressed into focus, so the card starts at the row's pressed size.
   let startsPressed: Bool
   var primaryAction: Action? = nil
-  /// A color dark enough to stay legible under the primary action's white label.
-  var primaryTint: Color = .blue
   let deleteAction: Action
   var onTap: (() -> Void)? = nil
   let onDismiss: () -> Void
 
+  /// The space between the lifted receipt and its actions.
+  private static let actionSpacing: CGFloat = 28
+
   var body: some View {
-    LiftedRowFocus(
-      rowFrame: rowFrame, startsPressed: startsPressed, onDismiss: onDismiss, onCardTap: onTap
-    ) {
+    LiftedFocus(onDismiss: onDismiss) { state, proxy in
+      let source = proxy.localFrame(of: rowFrame)
+      // The receipt settles just above the middle of the screen, with its actions below it.
+      let center = CGPoint(
+        x: proxy.size.width / 2,
+        y: proxy.size.height / 2 - source.height / 2 - LiftedCard.padding.height)
+      let actionsTop = CGPoint(
+        x: center.x,
+        y: center.y + source.height / 2 + LiftedCard.padding.height + Self.actionSpacing)
+
       row
-    } actions: { state in
+        .liftedCard(width: source.width, startsPressed: startsPressed, state: state, onTap: onTap)
+        .position(state.isInPlace ? center : CGPoint(x: source.midX, y: source.midY))
+
       actions(state)
+        .liftedActions(in: proxy.size, top: actionsTop, state: state)
     }
   }
 
@@ -37,7 +48,7 @@ struct ReceiptRowFocusView: View {
     VStack(spacing: 12) {
       if let primaryAction {
         ReceiptActionButton(
-          title: primaryAction.title, systemImage: primaryAction.systemImage, tint: primaryTint
+          title: primaryAction.title, systemImage: primaryAction.systemImage, tint: .blue
         ) {
           state.dismiss(then: primaryAction.perform)
         }
@@ -49,8 +60,7 @@ struct ReceiptRowFocusView: View {
         GlassActionLabel(title: deleteAction.title, systemImage: deleteAction.systemImage)
           .foregroundStyle(.red)
       }
-      .buttonStyle(.plain)
-      .glassEffect(.regular.interactive(), in: .capsule)
+      .glassCapsule()
     }
   }
 }

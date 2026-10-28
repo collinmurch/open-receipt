@@ -1,6 +1,8 @@
 import Foundation
 
-enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+nonisolated enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiable,
+  Sendable
+{
   case tax
   case tip
   case savings
@@ -30,18 +32,54 @@ enum ReceiptTotalAdjustment: String, CaseIterable, Codable, Hashable, Identifiab
     }
   }
 
-  /// How the adjustment moves the total: savings are subtracted, tax and tip are added.
-  var sign: Double {
-    self == .savings ? -1 : 1
-  }
-
-  /// `amount` as it moves the total, or back from that: savings change sign.
-  func signed(_ amount: Double) -> Double {
-    amount == 0 ? 0 : amount * sign
+  /// `amount` as it moves the total, or back from that: savings are subtracted, tax and tip are
+  /// added.
+  func signed(_ amount: Money) -> Money {
+    self == .savings ? -amount : amount
   }
 }
 
-enum ReceiptAdjustmentSplitMethod: String, CaseIterable, Codable, Identifiable, Sendable {
+nonisolated struct ReceiptTotalAdjustments: Equatable, Sendable {
+  private var amounts: [ReceiptTotalAdjustment: Money]
+
+  init(tax: Money = 0, tip: Money = 0, savings: Money = 0) {
+    amounts = [:]
+    if tax != 0 { amounts[.tax] = tax }
+    if tip != 0 { amounts[.tip] = tip }
+    if savings != 0 { amounts[.savings] = savings }
+  }
+
+  subscript(_ adjustment: ReceiptTotalAdjustment) -> Money? {
+    get { amounts[adjustment] }
+    set { amounts[adjustment] = newValue }
+  }
+
+  var isEmpty: Bool {
+    amounts.isEmpty
+  }
+
+  func contains(_ adjustment: ReceiptTotalAdjustment) -> Bool {
+    amounts[adjustment] != nil
+  }
+
+  mutating func add(_ adjustment: ReceiptTotalAdjustment) {
+    if amounts[adjustment] == nil {
+      amounts[adjustment] = 0
+    }
+  }
+
+  mutating func remove(_ adjustment: ReceiptTotalAdjustment) {
+    amounts[adjustment] = nil
+  }
+
+  /// The amount `adjustment` adds to the total, negative for savings.
+  func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Money {
+    adjustment.signed(amounts[adjustment] ?? .zero)
+  }
+}
+
+nonisolated enum ReceiptAdjustmentSplitMethod: String, CaseIterable, Codable, Identifiable, Sendable
+{
   case proportional
   case even
 

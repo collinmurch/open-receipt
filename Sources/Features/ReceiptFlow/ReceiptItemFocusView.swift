@@ -14,7 +14,7 @@ struct ReceiptItemFocusView: View {
   let stripFrame: CGRect
   /// The people selected in the strip being copied, which the copy fades from and back to.
   let stripSelection: Set<ReceiptParticipant.ID>
-  let amountsOwed: [ReceiptParticipant.ID: Double]
+  let amountsOwed: [ReceiptParticipant.ID: Money]
   @Binding var haptic: HapticEvent
   let onManagePeople: () -> Void
   let addTransition: (id: AnyHashable, namespace: Namespace.ID)
@@ -78,8 +78,7 @@ struct ReceiptItemFocusView: View {
         GlassActionLabel(title: "Edit", systemImage: "pencil")
           .foregroundStyle(.tint)
       }
-      .buttonStyle(.plain)
-      .glassEffect(.regular.interactive(), in: .capsule)
+      .glassCapsule()
       .accessibilityHint("Edit this item's name and price")
       .opacity(state.isLifted ? 1 : 0)
       .offset(y: state.isInPlace ? 0 : -12)

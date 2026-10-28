@@ -2,7 +2,7 @@ import Foundation
 
 /// Formats receipt days for the library. A printed day is a `yyyy-MM-dd` in UTC, so it is shown
 /// in UTC to keep the device's time zone from moving it, and in the locale's own calendar.
-enum ReceiptLibraryDateFormatter {
+nonisolated enum ReceiptLibraryDateFormatter {
   /// A receipt's printed day with its year, such as "August 10, 2026".
   static func formatted(localDate: String, locale: Locale = .current) -> String? {
     guard let date = ReceiptLocalDate.date(from: localDate) else { return nil }

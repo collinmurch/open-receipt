@@ -4,7 +4,6 @@ import Observation
 
 /// One receipt being read by the model. It outlives the screen that started it, so a person can
 /// leave while the receipt is read and find the result in their library.
-@MainActor
 @Observable
 final class ReceiptRecognition: Identifiable {
   enum Status: Equatable {

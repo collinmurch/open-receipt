@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// A finished split as it is shared: one person's share, or everyone's. It copies what it shows
 /// out of the receipt, so it renders the same however the receipt changes afterward.
-struct ReceiptBreakdown: Equatable, Sendable {
+nonisolated struct ReceiptBreakdown: Equatable, Sendable {
   enum Content: Equatable, Sendable {
     case person(ReceiptParticipantShare)
     case group([ReceiptParticipantShare])
@@ -22,8 +22,7 @@ struct ReceiptBreakdown: Equatable, Sendable {
   var photos: [ReceiptParticipant.ID: Data] = [:]
 
   var merchantTitle: String {
-    let merchant = merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
-    return merchant.isEmpty ? "Receipt" : merchant
+    merchantName.merchantTitle
   }
 
   var title: String {
@@ -51,8 +50,8 @@ struct ReceiptBreakdown: Equatable, Sendable {
     }
   }
 
-  var total: Double {
-    shares.reduce(0) { $0 + $1.total }
+  var total: Money {
+    ReceiptCurrency.amount(minorUnits: shares.reduce(0) { $0 + $1.units }, code: currency)
   }
 
   var shares: [ReceiptParticipantShare] {
@@ -119,22 +118,22 @@ extension ReceiptDraft {
   }
 }
 
-extension ReceiptBreakdown: Transferable {
+nonisolated extension ReceiptBreakdown: Transferable {
   static var transferRepresentation: some TransferRepresentation {
     DataRepresentation(exportedContentType: .png) { breakdown in
       try await ReceiptBreakdownRenderer.pngData(for: breakdown).orThrow()
     }
     .suggestedFileName { $0.fileName }
     DataRepresentation(exportedContentType: .pdf) { breakdown in
-      try await MainActor.run { try ReceiptBreakdownRenderer.pdfData(for: breakdown).orThrow() }
+      try await ReceiptBreakdownRenderer.pdfData(for: breakdown).orThrow()
     }
     .suggestedFileName { $0.fileName }
   }
 }
 
-private struct ReceiptBreakdownRenderingError: Error {}
+private nonisolated struct ReceiptBreakdownRenderingError: Error {}
 
-extension Data? {
+nonisolated extension Data? {
   fileprivate func orThrow() throws -> Data {
     guard let self else { throw ReceiptBreakdownRenderingError() }
     return self

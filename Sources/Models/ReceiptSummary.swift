@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
+nonisolated struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   let id: UUID
   let updatedAt: Date
   let capturedAt: Date
@@ -8,7 +8,7 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   let recognitionStatus: ReceiptDocument.Recognition.Status
   let merchantName: String?
   let localDate: String?
-  let total: Double?
+  let total: Money?
   let currency: String?
   let isUnavailable: Bool
   let unavailableDescription: String?
@@ -23,8 +23,7 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
 
   /// The merchant's name, or "Receipt" when the receipt doesn't name one.
   var merchantTitle: String {
-    let merchant = merchantName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return merchant.isEmpty ? "Receipt" : merchant
+    (merchantName ?? "").merchantTitle
   }
 
   /// Whether `person` may be on the receipt, which only its split can confirm.
@@ -70,7 +69,7 @@ struct ReceiptSummary: Codable, Identifiable, Equatable, Sendable {
   }
 }
 
-extension ReceiptSummary {
+nonisolated extension ReceiptSummary {
   /// The summary of a stored `document`.
   init(_ document: ReceiptDocument) throws {
     self.init(
@@ -81,7 +80,7 @@ extension ReceiptSummary {
       recognitionStatus: document.recognition.status,
       merchantName: document.receipt?.merchant.name,
       localDate: document.receipt?.transaction.localDate,
-      total: try document.receipt.map { try $0.amounts.total.requiredDouble() },
+      total: try document.receipt.map { try $0.amounts.total.requiredMoney() },
       currency: document.receipt?.currency,
       isUnavailable: false,
       unavailableDescription: nil,
@@ -96,7 +95,7 @@ extension ReceiptSummary {
   }
 }
 
-struct DeletedReceiptSummary: Equatable, Identifiable, Sendable {
+nonisolated struct DeletedReceiptSummary: Equatable, Identifiable, Sendable {
   let receipt: ReceiptSummary
   let deletedAt: Date
 
@@ -107,4 +106,12 @@ struct DeletedReceiptSummary: Equatable, Identifiable, Sendable {
 
   /// When the receipt is permanently deleted.
   var expiresAt: Date { deletedAt.addingTimeInterval(Self.retentionInterval) }
+}
+
+nonisolated extension String {
+  /// This merchant's name as a receipt's title, or "Receipt" when it's blank.
+  var merchantTitle: String {
+    let merchant = trimmed
+    return merchant.isEmpty ? "Receipt" : merchant
+  }
 }

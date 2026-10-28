@@ -1,13 +1,13 @@
 import Foundation
 
-struct ReceiptDraftPersistenceState {
+nonisolated struct ReceiptDraftPersistenceState {
   let id: UUID
   let backgroundStyle: ReceiptBackgroundStyle
   let merchantName: String
   let date: String
-  let subtotal: Double
+  let subtotal: Money
   let adjustments: ReceiptTotalAdjustments
-  let total: Double
+  let total: Money
   let currency: String
   let payment: ReceiptPayment?
   let items: [ReceiptDraftItem]
@@ -30,14 +30,14 @@ struct ReceiptDraftPersistenceState {
     backgroundStyle = document.presentation.backgroundStyle
     merchantName = receipt.merchant.name
     date = receipt.transaction.localDate
-    subtotal = try receipt.amounts.subtotal.requiredDouble()
+    subtotal = try receipt.amounts.subtotal.requiredMoney()
     var loadedAdjustments = ReceiptTotalAdjustments()
     for adjustment in receipt.amounts.adjustments {
       loadedAdjustments[adjustment.kind] = adjustment.kind.signed(
-        try adjustment.amount.requiredDouble())
+        try adjustment.amount.requiredMoney())
     }
     adjustments = loadedAdjustments
-    total = try receipt.amounts.total.requiredDouble()
+    total = try receipt.amounts.total.requiredMoney()
     currency = receipt.currency
     payment = receipt.payment.map {
       ReceiptPayment(
@@ -54,7 +54,7 @@ struct ReceiptDraftPersistenceState {
         id: item.id,
         description: item.description,
         quantity: try item.quantity.requiredDouble(),
-        lineTotal: try item.lineTotal.requiredDouble(),
+        lineTotal: try item.lineTotal.requiredMoney(),
         participantIDs: assignments[item.id, default: []])
     }
     adjustmentSplitMethod = split.adjustmentMethod
@@ -77,7 +77,7 @@ struct ReceiptDraftPersistenceState {
   }
 }
 
-extension ReceiptParticipant.Source {
+nonisolated extension ReceiptParticipant.Source {
   init(_ source: ReceiptDocument.ParticipantSource) {
     switch source.type {
     case .currentUser:
@@ -101,7 +101,7 @@ extension ReceiptParticipant.Source {
   }
 }
 
-extension ReceiptDocument {
+nonisolated extension ReceiptDocument {
   @MainActor
   func updating(from draft: ReceiptDraft, at date: Date = Date()) -> ReceiptDocument {
     var document = self
@@ -165,7 +165,7 @@ extension ReceiptDocument {
   }
 }
 
-extension ReceiptDraftPersistenceState {
+nonisolated extension ReceiptDraftPersistenceState {
   /// The values the stored split is worked out from.
   var splitInput: ReceiptSplitInput {
     ReceiptSplitInput(

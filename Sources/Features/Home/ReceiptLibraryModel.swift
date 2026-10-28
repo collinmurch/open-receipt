@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 @Observable
 final class ReceiptLibraryModel {
   private(set) var receipts: [ReceiptSummary] = [] {
@@ -13,10 +12,28 @@ final class ReceiptLibraryModel {
   var errorDescription: String?
 
   private let storage: ReceiptStorageClient
+  private let recents: RecentReceiptStore
+  private var recentIDs: [UUID] {
+    didSet { recents.save(recentIDs) }
+  }
   private var lastTrashPurgeCheck: Date?
 
-  init(storage: ReceiptStorageClient) {
+  init(storage: ReceiptStorageClient, recents: RecentReceiptStore) {
     self.storage = storage
+    self.recents = recents
+    recentIDs = recents.load()
+  }
+
+  /// The receipts opened most recently, newest first, or none when they're every receipt that can
+  /// be opened, which they would only repeat.
+  var recentlyOpened: [ReceiptSummary] {
+    let openable = receipts.filter { !$0.isUnavailable }
+    let opened = recentIDs.compactMap { id in openable.first { $0.id == id } }
+    return opened.count < openable.count ? opened : []
+  }
+
+  func markOpened(_ id: ReceiptSummary.ID) {
+    recentIDs = Array(([id] + recentIDs.filter { $0 != id }).prefix(Self.recentLimit))
   }
 
   func load() async {
@@ -50,11 +67,13 @@ final class ReceiptLibraryModel {
         errorDescription = error.localizedDescription
         return
       }
+      recentIDs.removeAll { $0 == receipt.id }
       await load()
       return
     }
     guard await remove(at: index, from: \.receipts, while: { try await storage.delete(receipt.id) })
     else { return }
+    recentIDs.removeAll { $0 == receipt.id }
     await reloadDeletedReceipts()
   }
 
@@ -151,6 +170,7 @@ final class ReceiptLibraryModel {
     }
   }
 
+  private static let recentLimit = 3
   private static let trashPurgeCheckInterval: TimeInterval = 24 * 60 * 60
 }
 
@@ -167,7 +187,6 @@ struct ReceiptLibraryRefreshAction: Equatable, Sendable {
     lhs.library === rhs.library
   }
 
-  @MainActor
   func callAsFunction() {
     guard let library else { return }
     Task { await library.load() }

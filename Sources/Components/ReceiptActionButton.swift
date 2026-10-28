@@ -8,45 +8,46 @@ struct ReceiptActionButton: View {
   /// A color dark enough to stay legible under the button's white label.
   let tint: Color
   let action: () -> Void
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 50
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 10) {
-        Text(title)
-        Image(systemName: systemImage)
-      }
-      .font(.body.weight(.semibold))
-      .foregroundStyle(.white)
-      .padding(.horizontal, 22)
-      .frame(minHeight: height)
-      .contentShape(.capsule)
+      GlassActionLabel(title: title, systemImage: systemImage)
+        .foregroundStyle(.white)
     }
-    .buttonStyle(.plain)
-    .glassEffect(.regular.tint(tint).interactive(), in: .capsule)
+    .glassCapsule(tint: tint)
   }
 }
 
-/// A glass capsule button's title and symbol, sized like `ReceiptActionButton`.
+/// A glass capsule button's title and symbol, sized like `ReceiptActionButton`, or smaller to fit
+/// a share card when `isCompact`.
 struct GlassActionLabel: View {
   let title: String
   let systemImage: String
+  var isCompact = false
   @ScaledMetric(relativeTo: .body) private var height: CGFloat = 50
+  @ScaledMetric(relativeTo: .body) private var compactHeight: CGFloat = 46
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: isCompact ? 8 : 10) {
       Text(title)
         .buttonTitleLineLimit()
+        .minimumScaleFactor(isCompact ? 0.8 : 1)
       Image(systemName: systemImage)
     }
     .font(.body.weight(.semibold))
-    .padding(.horizontal, 22)
-    .frame(minHeight: height)
+    .padding(.horizontal, isCompact ? 16 : 22)
+    .frame(minHeight: isCompact ? compactHeight : height)
     .contentShape(.capsule)
   }
 }
 
 extension View {
+  /// Makes a button a capsule of interactive glass, tinted with `tint` when there is one.
+  func glassCapsule(tint: Color? = nil) -> some View {
+    buttonStyle(.plain)
+      .glassEffect(.regular.tint(tint).interactive(), in: .capsule)
+  }
+
   /// Keeps a button's title to one line, letting it wrap, centered, at accessibility sizes where
   /// one line would cut it off.
   func buttonTitleLineLimit() -> some View {

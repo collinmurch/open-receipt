@@ -41,7 +41,6 @@ struct ReceiptFlowInput: Identifiable, Hashable {
       startsInEditing: startsInEditing)
   }
 
-  @MainActor
   static func recognition(_ recognition: ReceiptRecognition) -> ReceiptFlowInput {
     ReceiptFlowInput(
       id: recognition.id,
@@ -49,9 +48,22 @@ struct ReceiptFlowInput: Identifiable, Hashable {
       backgroundStyle: recognition.backgroundStyle)
   }
 
+  /// Opens `receipt`: the read of it under way, or else the stored receipt once it has loaded, so
+  /// the receipt is complete on the transition's first frame.
+  static func opening(
+    _ receipt: ReceiptSummary,
+    storage: ReceiptStorageClient,
+    recognitions: ReceiptRecognitionCenter
+  ) async -> ReceiptFlowInput {
+    if let recognition = recognitions.recognition(for: receipt.id) {
+      return .recognition(recognition)
+    }
+    let document = try? await storage.load(receipt.id)
+    return .storedReceipt(receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)
+  }
+
   /// Opens a new scan. It is read right away, or stored unread when the model is unavailable so
   /// its values can be entered by hand.
-  @MainActor
   static func scan(
     _ scan: ReceiptScan,
     recognitions: ReceiptRecognitionCenter

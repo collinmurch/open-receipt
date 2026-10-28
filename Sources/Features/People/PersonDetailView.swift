@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PersonDetailView: View {
-  private enum Field: Hashable {
+  private nonisolated enum Field: Hashable {
     case name
     case venmoUsername
     case cashtag
@@ -30,7 +30,7 @@ struct PersonDetailView: View {
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
   @Environment(\.receiptStorageClient) private var receiptStorage
-  @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(\.peopleStorage) private var peopleStorage
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(ContactPhotos.self) private var photos: ContactPhotos?
@@ -364,7 +364,7 @@ struct PersonDetailView: View {
   private func saveChanges() {
     guard !isDeleting else { return }
     var updatedPerson = person
-    updatedPerson.displayName = person.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    updatedPerson.displayName = person.displayName.trimmed
     guard !updatedPerson.displayName.isEmpty else { return }
     paymentMethods.apply(to: &updatedPerson.paymentMethods)
     guard updatedPerson != lastSavedPerson else { return }

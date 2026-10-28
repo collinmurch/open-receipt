@@ -1,6 +1,6 @@
 import Contacts
 
-struct ContactSummary: Identifiable, Sendable, Equatable {
+nonisolated struct ContactSummary: Identifiable, Sendable, Equatable {
   struct Value: Identifiable, Sendable, Hashable {
     var id: String { "\(label ?? ""):\(value)" }
 
@@ -74,52 +74,39 @@ struct ContactSummary: Identifiable, Sendable, Equatable {
     }
     return emailAddresses.first.map { Recipient.emailAddress($0.value) }
   }
+}
 
-  /// The payment methods this contact suggests for those `person` hasn't set.
-  func paymentDefaults(for person: Person) -> ContactPaymentDefaults {
-    ContactPaymentDefaults(
-      venmo: person.paymentMethods.venmo == nil
-        ? defaultRecipient(Person.Venmo.Recipient.self) : nil,
-      iMessage: person.paymentMethods.iMessage == nil
-        ? defaultRecipient(Person.IMessage.Recipient.self) : nil)
+nonisolated extension Person.PaymentMethods {
+  /// Sends Venmo and iMessage requests to `contact`'s suggested recipient where neither says
+  /// where to send them, returning whether either changed.
+  mutating func adoptRecipients(of contact: ContactSummary) -> Bool {
+    let original = self
+    if venmo == nil {
+      venmo = contact.defaultRecipient(Person.Venmo.Recipient.self).map { .init(recipient: $0) }
+    }
+    if iMessage == nil {
+      iMessage = contact.defaultRecipient(Person.IMessage.Recipient.self).map {
+        .init(recipient: $0)
+      }
+    }
+    return self != original
   }
 }
 
-struct ContactPaymentDefaults: Sendable, Equatable {
-  let venmo: Person.Venmo.Recipient?
-  let iMessage: Person.IMessage.Recipient?
-}
-
-extension Person {
-  /// Fills in the payment methods suggested by the person's contact, returning whether any changed.
-  mutating func adopt(_ defaults: ContactPaymentDefaults) -> Bool {
-    var didChange = false
-    if let recipient = defaults.venmo {
-      paymentMethods.venmo = .init(recipient: recipient)
-      didChange = true
-    }
-    if let recipient = defaults.iMessage {
-      paymentMethods.iMessage = .init(recipient: recipient)
-      didChange = true
-    }
-    return didChange
-  }
-}
-
-extension ReceiptOwner {
+nonisolated extension ReceiptOwner {
   init(_ contact: ContactSummary) {
     self.init(contactIdentifier: contact.identifier, displayName: contact.displayName)
   }
 }
 
 /// A payment recipient that can be one of a contact's phone numbers or email addresses.
-protocol ContactRecipient: Hashable, Identifiable {
+nonisolated protocol ContactRecipient: Hashable, Identifiable {
   static func phoneNumber(_ value: String) -> Self
   static func emailAddress(_ value: String) -> Self
   var displayValue: String { get }
 }
 
-extension Person.Venmo.Recipient: ContactRecipient {
+nonisolated extension Person.Venmo.Recipient: ContactRecipient {
   static func phoneNumber(_ value: String) -> Self {
     .init(kind: .phoneNumber, value: value)
   }
@@ -129,7 +116,7 @@ extension Person.Venmo.Recipient: ContactRecipient {
   }
 }
 
-extension Person.IMessage.Recipient: ContactRecipient {
+nonisolated extension Person.IMessage.Recipient: ContactRecipient {
   static func phoneNumber(_ value: String) -> Self {
     .init(kind: .phoneNumber, value: value)
   }

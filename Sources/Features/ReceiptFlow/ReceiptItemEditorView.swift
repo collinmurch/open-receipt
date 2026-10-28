@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ReceiptItemEditorView: View {
-  private enum Field: Hashable {
+  private nonisolated enum Field: Hashable {
     case name
     case quantity
     case lineTotal
@@ -130,7 +130,7 @@ struct ReceiptItemEditorView: View {
   }
 }
 
-extension ReceiptItemEditorView {
+nonisolated extension ReceiptItemEditorView {
   /// `name` with each line break replaced by a space, since an item's name is one line.
   static func singleLine(_ name: String) -> String {
     name.split(whereSeparator: \.isNewline).joined(separator: " ")
@@ -155,7 +155,7 @@ private struct ReceiptItemSplitSheet: View {
   private static let maximumCount = 50
 
   var body: some View {
-    let amountEach = item.lineTotal / Double(count)
+    let amountEach = item.lineTotal / count
 
     NavigationStack {
       Form {
@@ -169,9 +169,9 @@ private struct ReceiptItemSplitSheet: View {
             }
           }
           LabeledContent("Each") {
-            Text(amountEach, format: .currency(code: currency))
+            Text(amountEach.decimal, format: .currency(code: currency))
               .monospacedDigit()
-              .contentTransition(.numericText(value: amountEach))
+              .contentTransition(.numericText(value: Double(amountEach)))
               .animation(.smooth, value: count)
           }
         } footer: {

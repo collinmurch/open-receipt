@@ -2,10 +2,14 @@ import ImageIO
 import PhotosUI
 import SwiftUI
 
-enum ReceiptPhotoImporter {
+nonisolated enum ReceiptPhotoImporter {
   /// The longest side of an imported page. Photos are decoded straight to this size, which keeps
   /// a 48-megapixel photo from being expanded to full resolution in memory.
   static let maximumPixelDimension = 4096
+
+  /// Why none of the selected photos became pages.
+  static let unreadableDescription =
+    "The selected images couldn’t be opened. Select different images."
 
   /// Reads the selected photos concurrently and returns them in selection order, skipping any
   /// that cannot be decoded.
@@ -48,5 +52,38 @@ enum ReceiptPhotoImporter {
       return nil
     }
     return ReceiptPage(image: image)
+  }
+}
+
+extension View {
+  /// Presents the photo library to pick up to eight photos of a receipt, in the order they're
+  /// picked, and hands them to `onPick`.
+  func receiptPhotoPicker(
+    isPresented: Binding<Bool>,
+    onPick: @escaping ([PhotosPickerItem]) -> Void
+  ) -> some View {
+    modifier(ReceiptPhotoPicker(isPresented: isPresented, onPick: onPick))
+  }
+}
+
+private struct ReceiptPhotoPicker: ViewModifier {
+  @Binding var isPresented: Bool
+  let onPick: ([PhotosPickerItem]) -> Void
+  @State private var items: [PhotosPickerItem] = []
+
+  func body(content: Content) -> some View {
+    content
+      .photosPicker(
+        isPresented: $isPresented,
+        selection: $items,
+        maxSelectionCount: 8,
+        selectionBehavior: .ordered,
+        matching: .images
+      )
+      .onChange(of: items) { _, items in
+        guard !items.isEmpty else { return }
+        self.items = []
+        onPick(items)
+      }
   }
 }

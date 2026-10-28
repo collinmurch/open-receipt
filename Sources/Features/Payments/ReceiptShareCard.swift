@@ -1,14 +1,13 @@
 import SwiftUI
 
 /// One person's share on a card, filled like a list row, with what to do about it below.
-/// Tapping the person opens their contact, when they have one.
+/// Tapping the person opens their contact, when they have one. Everyone's but the owner's says
+/// where requests go.
 struct ReceiptShareCard<Accessory: View, Actions: View>: View {
   let share: ReceiptParticipantShare
   let paymentDestination: PaymentDestination?
   /// The share's chosen payment method, when nothing says where it sends requests.
   let blankPaymentMethod: PaymentMethod?
-  /// Whether to caption where requests go, which the owner's own share leaves out.
-  let showsPaymentDestination: Bool
   let showsTotal: Bool
   let currency: String
   let onOpenContact: (() -> Void)?
@@ -68,7 +67,7 @@ struct ReceiptShareCard<Accessory: View, Actions: View>: View {
         contactIdentifier: share.participant.source.contactIdentifier)
       VStack(alignment: .leading, spacing: 2) {
         Text(share.participant.displayName)
-        if showsPaymentDestination {
+        if !share.participant.source.isCurrentUser {
           PaymentDestinationCaption(
             destination: paymentDestination, blankMethod: blankPaymentMethod)
         }
@@ -80,16 +79,15 @@ struct ReceiptShareCard<Accessory: View, Actions: View>: View {
 
 /// A share's payment request.
 struct ShareRequestButton: View {
-  let request: PreparedPaymentRequest
+  let request: PaymentRequest
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      ShareCardButtonLabel(title: request.title, systemImage: request.systemImage)
+      GlassActionLabel(title: request.title, systemImage: request.systemImage, isCompact: true)
         .foregroundStyle(.white)
     }
-    .buttonStyle(.plain)
-    .glassEffect(.regular.tint(request.method.prominentColor).interactive(), in: .capsule)
+    .glassCapsule(tint: request.method.prominentColor)
   }
 }
 
@@ -114,35 +112,15 @@ struct ViewBreakdownButton: View {
   }
 }
 
-/// A share card button's title and symbol, sized to the title.
-struct ShareCardButtonLabel: View {
-  let title: String
-  let systemImage: String
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 46
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Text(title)
-        .buttonTitleLineLimit()
-        .minimumScaleFactor(0.8)
-      Image(systemName: systemImage)
-    }
-    .font(.body.weight(.semibold))
-    .padding(.horizontal, 16)
-    .frame(minHeight: height)
-    .contentShape(.capsule)
-  }
-}
-
 /// A person's share, or a dash while unassigned items keep the share from being final.
 struct ShareTotalText: View {
-  let amount: Double?
+  let amount: Money?
   let currency: String
 
   var body: some View {
     Group {
       if let amount {
-        Text(amount, format: .currency(code: currency))
+        Text(amount.decimal, format: .currency(code: currency))
       } else {
         Text("—")
           .foregroundStyle(.secondary)

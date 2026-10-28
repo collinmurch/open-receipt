@@ -5,8 +5,6 @@ import SwiftUI
 /// underneath until the copies settle back over them and `onDismiss` runs.
 struct LiftedFocus<Content: View>: View {
   let onDismiss: () -> Void
-  /// Runs once the lift settles.
-  var onLifted: () -> Void = {}
   @ViewBuilder let content: (LiftedFocusState, GeometryProxy) -> Content
 
   @State private var isLifted = false
@@ -40,11 +38,7 @@ struct LiftedFocus<Content: View>: View {
     .accessibilityAddTraits(.isModal)
     .accessibilityAction(.escape) { dismiss(then: nil) }
     .onAppear {
-      withAnimation(.lift) {
-        isLifted = true
-      } completion: {
-        onLifted()
-      }
+      withAnimation(.lift) { isLifted = true }
     }
   }
 

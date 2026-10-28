@@ -23,7 +23,6 @@ struct ReceiptPagesView: View {
   @State private var previewURL: URL?
   @State private var isScannerPresented = false
   @State private var isPhotoPickerPresented = false
-  @State private var photoItems: [PhotosPickerItem] = []
   @State private var isAddingPages = false
   @State private var isRescanConfirmationPresented = false
   @State private var errorDescription: String?
@@ -104,16 +103,7 @@ struct ReceiptPagesView: View {
       )
       .ignoresSafeArea()
     }
-    .photosPicker(
-      isPresented: $isPhotoPickerPresented,
-      selection: $photoItems,
-      maxSelectionCount: 8,
-      selectionBehavior: .ordered,
-      matching: .images
-    )
-    .onChange(of: photoItems) { _, items in
-      guard !items.isEmpty else { return }
-      photoItems = []
+    .receiptPhotoPicker(isPresented: $isPhotoPickerPresented) { items in
       addPages { await ReceiptPhotoImporter.pages(from: items) }
     }
     .errorAlert("Couldn’t Update Photos", message: $errorDescription)
@@ -131,7 +121,7 @@ struct ReceiptPagesView: View {
   private var rescanUnavailableReason: String? {
     switch recognitions.modelStatus {
     case .limitReached(let resetDate, _):
-      let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
+      let resumption = DeferredReceiptRead.resumption(at: resetDate)
       return
         "Today’s reading limit is reached. Read it again \(resumption), or edit the items to match the updated photos."
     case .unavailable(let reason):
@@ -261,7 +251,7 @@ struct ReceiptPagesView: View {
       defer { isAddingPages = false }
       let pages = await pages()
       guard !pages.isEmpty else {
-        errorDescription = "The selected images couldn’t be opened. Select different images."
+        errorDescription = ReceiptPhotoImporter.unreadableDescription
         return
       }
       do {

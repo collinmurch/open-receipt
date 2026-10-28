@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ReceiptParsingClient: Sendable {
+nonisolated struct ReceiptParsingClient: Sendable {
   typealias PreviewHandler = @Sendable (ReceiptParsePreview) async -> Void
 
   private let isSampleData: @Sendable () -> Bool
@@ -13,7 +13,7 @@ struct ReceiptParsingClient: Sendable {
   let showLimitIncrease: @MainActor @Sendable () -> Void
 
   init(
-    usesSampleData: @autoclosure @escaping @Sendable () -> Bool,
+    usesSampleData: @autoclosure @escaping @Sendable () -> Bool = false,
     stream:
       @escaping @Sendable ([ReceiptPage], @escaping PreviewHandler) async throws
       -> ParsedReceipt,
@@ -30,7 +30,7 @@ struct ReceiptParsingClient: Sendable {
 
   /// Creates a client that reports no progress while it parses.
   init(
-    usesSampleData: @autoclosure @escaping @Sendable () -> Bool,
+    usesSampleData: @autoclosure @escaping @Sendable () -> Bool = false,
     parse: @escaping @Sendable ([ReceiptPage]) async throws -> ParsedReceipt
   ) {
     self.init(usesSampleData: usesSampleData(), stream: { pages, _ in try await parse(pages) })
@@ -98,7 +98,6 @@ struct ReceiptParsingClient: Sendable {
   #if targetEnvironment(simulator)
     /// The simulator can't reach Private Cloud Compute, so only sample receipts can be read.
     static let live = ReceiptParsingClient(
-      usesSampleData: false,
       stream: { _, _ in
         throw ReceiptParserError.modelUnavailable(ReceiptParsingClient.simulatorReason)
       },
@@ -108,7 +107,6 @@ struct ReceiptParsingClient: Sendable {
       "Private Cloud Compute isn’t available in Simulator. Turn on Sample Receipts in Settings."
   #else
     static let live = ReceiptParsingClient(
-      usesSampleData: false,
       stream: { pages, onPreview in
         try await ReceiptParser.parse(pages: pages, onPreview: onPreview)
       },
@@ -130,8 +128,4 @@ struct ReceiptParsingClient: Sendable {
     },
     status: { SampleReceipts.isEnabled ? .available : ReceiptParsingClient.live.status() },
     showLimitIncrease: { ReceiptParsingClient.live.showLimitIncrease() })
-}
-
-extension EnvironmentValues {
-  @Entry var receiptParsingClient = ReceiptParsingClient.standard
 }

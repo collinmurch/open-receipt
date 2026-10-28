@@ -24,7 +24,6 @@ extension NewReceiptSource {
 }
 
 /// Home screen quick actions that start a new receipt, waiting for the library to take them.
-@MainActor
 @Observable
 final class NewReceiptQuickActions {
   /// Quick actions arrive through the scene delegate, which UIKit creates, so they share one

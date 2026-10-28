@@ -1,6 +1,6 @@
 import Foundation
 
-struct ReceiptScan: Identifiable, Sendable {
+nonisolated struct ReceiptScan: Identifiable, Sendable {
   enum Source: String, Codable, Sendable {
     case documentCamera
     case photoLibrary
@@ -25,7 +25,7 @@ struct ReceiptScan: Identifiable, Sendable {
   }
 }
 
-extension ReceiptScan {
+nonisolated extension ReceiptScan {
   /// The scan stored with `document`, with its `pages` loaded.
   init(document: ReceiptDocument, pages: [ReceiptPage]) {
     self.init(

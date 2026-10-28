@@ -1,6 +1,6 @@
 import Foundation
 
-enum PaymentRequestDateFormatter {
+nonisolated enum PaymentRequestDateFormatter {
   static func formatted(
     _ date: Date,
     relativeTo now: Date = Date(),

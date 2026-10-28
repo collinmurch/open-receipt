@@ -50,7 +50,6 @@ struct ContactAvatarView: View {
   }
 }
 
-@MainActor
 private enum PersonAvatarImageCache {
   private static let cache: NSCache<NSData, UIImage> = {
     let cache = NSCache<NSData, UIImage>()

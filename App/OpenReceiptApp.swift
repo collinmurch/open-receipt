@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct OpenReceiptApp: App {
   @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
-  @State private var library = ReceiptLibraryModel(storage: .live)
+  @State private var library = ReceiptLibraryModel(storage: .live, recents: .live)
   @State private var access: ReadingAccess
   @State private var recognitions: ReceiptRecognitionCenter
   @State private var photos = ContactPhotos(client: .live)
@@ -16,7 +16,7 @@ struct OpenReceiptApp: App {
         parsingClient: .standard,
         storage: .live,
         access: access,
-        owner: { try? await PeopleStorageClient.live.owner() }))
+        owner: { try? await PeopleFileStorage.live.owner() }))
   }
 
   var body: some Scene {

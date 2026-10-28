@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 actor PeopleFileStorage {
   static let live = PeopleFileStorage()
@@ -59,29 +59,10 @@ actor PeopleFileStorage {
   func save(_ person: Person) throws -> Person {
     var document = try load()
     var person = person
-    person.displayName = person.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    person.displayName = person.displayName.trimmed
     guard !person.displayName.isEmpty else { throw PeopleStorageError.emptyDisplayName }
 
-    if var venmo = person.paymentMethods.venmo {
-      venmo.recipient.value =
-        venmo.recipient.kind == .username
-        ? Person.Venmo.normalizedUsername(venmo.recipient.value)
-        : venmo.recipient.value.trimmingCharacters(in: .whitespacesAndNewlines)
-      venmo.customUsername = venmo.customUsername.flatMap { username in
-        let normalized = Person.Venmo.normalizedUsername(username)
-        return normalized.isEmpty ? nil : normalized
-      }
-      person.paymentMethods.venmo = venmo.recipient.value.isEmpty ? nil : venmo
-    }
-    if var cashApp = person.paymentMethods.cashApp {
-      cashApp.cashtag = Person.CashApp.normalizedCashtag(cashApp.cashtag)
-      person.paymentMethods.cashApp = cashApp.cashtag.isEmpty ? nil : cashApp
-    }
-    if var iMessage = person.paymentMethods.iMessage {
-      iMessage.recipient.value = iMessage.recipient.value.trimmingCharacters(
-        in: .whitespacesAndNewlines)
-      person.paymentMethods.iMessage = iMessage.recipient.value.isEmpty ? nil : iMessage
-    }
+    person.paymentMethods.normalize()
     person.updatedAt = Date()
 
     guard let index = document.people.firstIndex(where: { $0.id == person.id }) else {
@@ -157,7 +138,7 @@ actor PeopleFileStorage {
   }()
 }
 
-enum PeopleStorageError: Error, LocalizedError, Equatable {
+nonisolated enum PeopleStorageError: Error, LocalizedError, Equatable {
   case emptyDisplayName
   case personNotFound(Person.ID)
   case unsupportedSchemaVersion(Int)
@@ -174,10 +155,14 @@ enum PeopleStorageError: Error, LocalizedError, Equatable {
   }
 }
 
-private struct PeopleDocument: Codable {
+private nonisolated struct PeopleDocument: Codable {
   static let currentSchemaVersion = 3
 
   var schemaVersion = currentSchemaVersion
   var people: [Person] = []
   var owner: ReceiptOwner?
+}
+
+extension EnvironmentValues {
+  @Entry var peopleStorage = PeopleFileStorage.live
 }

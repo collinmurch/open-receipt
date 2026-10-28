@@ -3,29 +3,14 @@ import Foundation
 extension ReceiptFlowModel {
   /// Why a receipt isn't showing its review, and the ways out.
   struct Failure {
-    enum Retry {
-      case create(UUID)
-      case load(UUID)
-      case store(ReceiptScan)
-      case recognize(ReceiptRecognition)
-      /// Reads a stored scan that hasn't been read.
-      case read(UUID)
-
-      /// Whether retrying sends the scan to the model.
-      var readsReceipt: Bool {
-        switch self {
-        case .recognize, .read: true
-        case .create, .load, .store: false
-        }
-      }
-    }
-
     var title = "Couldn’t Read Receipt"
     var systemImage = "exclamationmark.triangle"
     /// Whether something went wrong, as opposed to a receipt that is waiting to be read.
     var isError = true
     let description: String
-    let retry: Retry?
+    /// The phase trying again returns to: creating, loading, storing, or reading the receipt, or
+    /// `nil` when trying again can't help.
+    let retry: Phase?
     /// Whether the stored scan can be kept and its values entered by hand.
     var allowsManualEntry = false
     var manualEntryTitle = "Enter Manually"
@@ -44,12 +29,12 @@ extension ReceiptFlowModel.Failure {
     let recognition = document.recognition
     if let deferredUntil = recognition.deferredUntil {
       return .waiting(
-        DeferredReceiptRead.description(until: deferredUntil), retry: .read(document.id))
+        DeferredReceiptRead.description(until: deferredUntil), retry: .preparingRead(document.id))
     }
     if recognition.status == .failed {
       return Self(
         description: recognition.failureMessage ?? "The receipt couldn’t be read.",
-        retry: .read(document.id),
+        retry: .preparingRead(document.id),
         allowsManualEntry: true)
     }
     return Self(
@@ -57,20 +42,22 @@ extension ReceiptFlowModel.Failure {
       systemImage: "doc.text.viewfinder",
       isError: false,
       description: "Read this receipt to fill in its items and totals, or enter them yourself.",
-      retry: .read(document.id),
+      retry: .preparingRead(document.id),
       allowsManualEntry: true,
       usesFreeRead: true)
   }
 
   /// A read that failed, or that is waiting for the reading limit to reset when `isDeferred`.
-  static func readFailed(_ message: String, retry: Retry?, isDeferred: Bool) -> Self {
+  static func readFailed(_ message: String, retry: ReceiptFlowModel.Phase?, isDeferred: Bool)
+    -> Self
+  {
     isDeferred
       ? .waiting(message, retry: retry)
       : Self(description: message, retry: retry, allowsManualEntry: true)
   }
 
   /// A rescan held back because reading the new pages needs unlimited reading.
-  static func rescanNotRead(retry: Retry) -> Self {
+  static func rescanNotRead(retry: ReceiptFlowModel.Phase) -> Self {
     Self(
       title: "New Photos Not Read",
       systemImage: "doc.text.viewfinder",
@@ -83,7 +70,7 @@ extension ReceiptFlowModel.Failure {
   }
 
   /// A rescan that failed, which can go back to the values already stored.
-  static func rescanFailed(_ message: String, retry: Retry?) -> Self {
+  static func rescanFailed(_ message: String, retry: ReceiptFlowModel.Phase?) -> Self {
     Self(
       title: "Couldn’t Read Receipt Again",
       description: message,
@@ -92,7 +79,7 @@ extension ReceiptFlowModel.Failure {
       manualEntryTitle: backToReceipt)
   }
 
-  private static func waiting(_ description: String, retry: Retry?) -> Self {
+  private static func waiting(_ description: String, retry: ReceiptFlowModel.Phase?) -> Self {
     Self(
       title: "Waiting to Read",
       systemImage: "hourglass",

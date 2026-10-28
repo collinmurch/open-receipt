@@ -16,6 +16,7 @@ struct ReceiptTrashView: View {
   @State private var isFocusedRowPressed = false
   @State private var haptic = HapticEvent()
   @Environment(ReceiptLibraryModel.self) private var library
+  @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(\.receiptStorageClient) private var storage
 
   var body: some View {
@@ -148,7 +149,6 @@ struct ReceiptTrashView: View {
         primaryAction: .init(title: "Restore", systemImage: "arrow.uturn.backward") {
           restore([deletedReceipt])
         },
-        primaryTint: .blue,
         deleteAction: .init(title: "Delete Permanently", systemImage: "trash") {
           pendingDeletion = [deletedReceipt]
         },
@@ -231,12 +231,10 @@ struct ReceiptTrashView: View {
     haptic.play(.success)
     Task {
       guard await library.restore(deletedReceipt) else { return }
-      let receipt = deletedReceipt.receipt
-      let document = try? await storage.load(receipt.id)
+      library.markOpened(deletedReceipt.id)
       onOpen(
         .receipt(
-          .storedReceipt(
-            receipt.id, backgroundStyle: receipt.backgroundStyle, document: document)))
+          await .opening(deletedReceipt.receipt, storage: storage, recognitions: recognitions)))
     }
   }
 
@@ -277,8 +275,6 @@ private struct ReceiptTrashRow: View {
         onLongPress: { onFocus(true) },
         onFocusedFrameChange: onFocusedFrameChange
       )
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(isSelecting ? [] : .isButton)
       .accessibilityActions {
         if !isSelecting {
           Button("Restore and Open", action: onTap)

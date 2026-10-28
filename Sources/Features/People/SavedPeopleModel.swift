@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 @Observable
 final class SavedPeopleModel {
   private(set) var people: [Person] = []
@@ -9,10 +8,10 @@ final class SavedPeopleModel {
   private(set) var isLoading = false
   var errorDescription: String?
 
-  private let storage: PeopleStorageClient
+  private let storage: PeopleFileStorage
   @ObservationIgnored private var hasLoaded = false
 
-  init(storage: PeopleStorageClient) {
+  init(storage: PeopleFileStorage) {
     self.storage = storage
   }
 
@@ -46,72 +45,55 @@ final class SavedPeopleModel {
         displayName: contact.displayName,
         contactIdentifier: contact.identifier)
     else { return nil }
-    return person.adopt(contact.paymentDefaults(for: person)) ? await save(person) : person
+    return person.paymentMethods.adoptRecipients(of: contact) ? await save(person) : person
   }
 
   func include(name: String) async -> Person? {
-    let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayName = name.trimmed
     guard !displayName.isEmpty else { return nil }
     return await include(id: nil, displayName: displayName, contactIdentifier: nil)
   }
 
   /// Replaces the stored owner that new receipts start with.
   func setOwner(_ owner: ReceiptOwner?) async {
-    do {
-      try await storage.setOwner(owner)
-      self.owner = owner
-      errorDescription = nil
-    } catch {
-      errorDescription = error.localizedDescription
-    }
+    guard await attempt({ try await storage.setOwner(owner) }) != nil else { return }
+    self.owner = owner
   }
 
   /// Stores `owner` only when no owner is stored yet.
   func adoptOwner(_ owner: ReceiptOwner) async {
-    do {
-      self.owner = try await storage.adoptOwner(owner)
-      errorDescription = nil
-    } catch {
-      errorDescription = error.localizedDescription
-    }
+    guard let adopted = await attempt({ try await storage.adoptOwner(owner) }) else { return }
+    self.owner = adopted
   }
 
   /// Saves the payment methods each person's contact suggests for those they haven't set.
   func adoptContactPaymentDefaults(from contactClient: ContactClient) async {
-    let defaults = await contactClient.defaultPaymentMethods(for: people)
-    for var person in people {
-      guard let personDefaults = defaults[person.id], person.adopt(personDefaults) else {
-        continue
-      }
+    let unset = people.filter {
+      $0.paymentMethods.venmo == nil || $0.paymentMethods.iMessage == nil
+    }
+    let contacts = await contactClient.contacts(
+      withIdentifiers: unset.compactMap(\.contactIdentifier))
+    for var person in unset {
+      guard let contact = person.contactIdentifier.flatMap({ contacts[$0] }),
+        person.paymentMethods.adoptRecipients(of: contact)
+      else { continue }
       await save(person)
     }
   }
 
   @discardableResult
   func save(_ person: Person) async -> Person? {
-    do {
-      let saved = try await storage.save(person)
-      replace(saved)
-      errorDescription = nil
-      return saved
-    } catch {
-      errorDescription = error.localizedDescription
-      return nil
-    }
+    guard let saved = await attempt({ try await storage.save(person) }) else { return nil }
+    replace(saved)
+    return saved
   }
 
   func delete(_ person: Person) async -> Bool {
-    do {
-      try await storage.delete(person.id)
-      withAnimation(.smooth(duration: 0.3)) {
-        people.removeAll { $0.id == person.id }
-      }
-      errorDescription = nil
-      return true
-    } catch {
-      errorDescription = error.localizedDescription
-      return false
+    guard await attempt({ try await storage.delete(id: person.id) }) != nil else { return false }
+    withAnimation(.smooth(duration: 0.3)) {
+      people.removeAll { $0.id == person.id }
     }
+    return true
   }
 
   private func include(
@@ -119,11 +101,22 @@ final class SavedPeopleModel {
     displayName: String,
     contactIdentifier: String?
   ) async -> Person? {
+    guard
+      let person = await attempt({
+        try await storage.include(
+          id: id, displayName: displayName, contactIdentifier: contactIdentifier, at: Date())
+      })
+    else { return nil }
+    replace(person)
+    return person
+  }
+
+  /// Runs `operation`, showing its error when it fails and clearing the last one when it succeeds.
+  private func attempt<Value>(_ operation: () async throws -> Value) async -> Value? {
     do {
-      let person = try await storage.include(id, displayName, contactIdentifier, Date())
-      replace(person)
+      let value = try await operation()
       errorDescription = nil
-      return person
+      return value
     } catch {
       errorDescription = error.localizedDescription
       return nil

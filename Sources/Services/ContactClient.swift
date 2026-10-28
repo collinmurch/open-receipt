@@ -1,7 +1,7 @@
 import Contacts
 import SwiftUI
 
-enum ContactAuthorization: Sendable, Equatable {
+nonisolated enum ContactAuthorization: Sendable, Equatable {
   case notDetermined
   case restricted
   case denied
@@ -30,7 +30,7 @@ enum ContactAuthorization: Sendable, Equatable {
   }
 }
 
-struct ContactClient: Sendable {
+nonisolated struct ContactClient: Sendable {
   var authorizationStatus: @Sendable () -> ContactAuthorization
   var requestAccess: @Sendable () async throws -> ContactAuthorization
   var fetchContacts: @Sendable ([String]?) async throws -> [ContactSummary]
@@ -50,27 +50,12 @@ struct ContactClient: Sendable {
       try await LiveContactStore.shared.fetchAvatar(identifier: identifier)
     })
 
-  func defaultPaymentMethods(
-    for people: [Person]
-  ) async -> [Person.ID: ContactPaymentDefaults] {
-    let eligiblePeople = people.filter {
-      ($0.paymentMethods.venmo == nil || $0.paymentMethods.iMessage == nil)
-        && $0.contactIdentifier != nil
-    }
-    let identifiers = eligiblePeople.compactMap(\.contactIdentifier)
-    guard !identifiers.isEmpty,
-      authorizationStatus().canReadContacts,
+  /// The contacts `identifiers` name, by identifier, or none when Contacts can't be read.
+  func contacts(withIdentifiers identifiers: [String]) async -> [String: ContactSummary] {
+    guard !identifiers.isEmpty, authorizationStatus().canReadContacts,
       let contacts = try? await fetchContacts(identifiers)
     else { return [:] }
-    let contactsByIdentifier = Dictionary(
-      uniqueKeysWithValues: contacts.map { ($0.identifier, $0) })
-    return Dictionary(
-      uniqueKeysWithValues: eligiblePeople.compactMap { person in
-        guard let identifier = person.contactIdentifier,
-          let contact = contactsByIdentifier[identifier]
-        else { return nil }
-        return (person.id, contact.paymentDefaults(for: person))
-      })
+    return Dictionary(contacts.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
   }
 }
 

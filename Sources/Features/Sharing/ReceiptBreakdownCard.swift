@@ -215,15 +215,15 @@ private struct GroupBreakdown: View {
           .foregroundStyle(.secondary)
       }
       Spacer(minLength: 12)
-      Text(share.total, format: .currency(code: breakdown.currency))
+      Text(share.total.decimal, format: .currency(code: breakdown.currency))
         .font(.subheadline.weight(.semibold).monospacedDigit())
     }
   }
 
   private var fractions: [Double] {
-    let total = shares.reduce(0) { $0 + max($1.total, 0) }
+    let total = shares.reduce(Money.zero) { $0 + max($1.total, 0) }
     guard total > 0 else { return shares.map { _ in 1 / Double(shares.count) } }
-    return shares.map { max($0.total, 0) / total }
+    return shares.map { max($0.total, 0).fraction(of: total) }
   }
 
   /// People take the receipt's two colors first, then the rest of the theme palette, in the
@@ -240,7 +240,7 @@ private struct GroupBreakdown: View {
 private struct BreakdownLine: View {
   let title: String
   let detail: String?
-  let amount: Double
+  let amount: Money
   let currency: String
 
   var body: some View {
@@ -256,7 +256,7 @@ private struct BreakdownLine: View {
         }
       }
       Spacer(minLength: 12)
-      Text(amount, format: .currency(code: currency))
+      Text(amount.decimal, format: .currency(code: currency))
         .font(.subheadline.monospacedDigit())
         .foregroundStyle(.secondary)
     }
@@ -265,7 +265,7 @@ private struct BreakdownLine: View {
 
 private struct BreakdownTotal: View {
   let title: String
-  let amount: Double
+  let amount: Money
   let currency: String
   let accent: Color
 
@@ -274,7 +274,7 @@ private struct BreakdownTotal: View {
       Text(title)
         .font(.headline)
       Spacer(minLength: 12)
-      Text(amount, format: .currency(code: currency))
+      Text(amount.decimal, format: .currency(code: currency))
         .font(.title.weight(.bold).monospacedDigit())
         .foregroundStyle(accent)
     }
@@ -311,7 +311,7 @@ private struct PerforationLine: View {
       .frame(height: 1)
   }
 
-  private struct Line: Shape {
+  private nonisolated struct Line: Shape {
     func path(in rect: CGRect) -> Path {
       Path { path in
         path.move(to: CGPoint(x: rect.minX, y: rect.midY))
@@ -322,7 +322,7 @@ private struct PerforationLine: View {
 }
 
 /// A slip of receipt paper: rounded at the top, torn into teeth along the bottom.
-private struct ReceiptSlipShape: Shape {
+private nonisolated struct ReceiptSlipShape: Shape {
   static let toothHeight: CGFloat = 8
   private static let toothWidth: CGFloat = 16
   private static let cornerRadius: CGFloat = 20

@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 
-public enum ReceiptModelContract {
+public nonisolated enum ReceiptModelContract {
   public static let version = 1
 
   public static let instructions = """
@@ -28,38 +28,53 @@ public enum ReceiptModelContract {
 
   static func receipt(from response: Response) -> ParsedReceipt {
     var receipt = ParsedReceipt(
-      merchantName: response.merchantName.trimmingCharacters(in: .whitespacesAndNewlines),
-      date: response.date.trimmingCharacters(in: .whitespacesAndNewlines),
-      subtotal: response.subtotal,
-      tax: response.taxComponents.reduce(0) { $0 + $1.amount },
-      tip: response.tip,
-      savings: abs(response.savings),
-      total: response.total,
-      currency: response.currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+      merchantName: response.merchantName.trimmed,
+      date: response.date.trimmed,
+      subtotal: amount(response.subtotal),
+      tax: response.taxComponents.reduce(.zero) { $0 + amount($1.amount) },
+      tip: amount(response.tip),
+      savings: amount(response.savings).magnitude,
+      total: amount(response.total),
+      currency: response.currency.trimmed.uppercased(),
       payment: response.payment?.parsedPayment,
       items: response.items.filter { $0.lineTotal != 0 }.map(\.parsedItem))
+    let totals =
+      [response.subtotal, response.tip, response.savings, response.total]
+      + response.taxComponents.map(\.amount)
+    if totals.contains(where: { Money($0) == nil }) {
+      receipt.warnings.append("One or more receipt totals are not finite numbers.")
+    }
+    if response.items.contains(where: { Money($0.lineTotal) == nil }) {
+      receipt.warnings.append("At least one item has an invalid line total.")
+    }
     receipt.warnings.append(contentsOf: ReceiptValidator.warnings(for: receipt))
     return receipt
   }
 
+  /// The amount the model wrote as `value`, or zero when it isn't one, which the receipt's
+  /// warnings note.
+  private static func amount(_ value: Double) -> Money {
+    Money(value) ?? .zero
+  }
+
   static func preview(from partial: Response.PartiallyGenerated) -> ReceiptParsePreview {
-    let currency = partial.currency?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    let currency = partial.currency?.trimmed.uppercased()
     return ReceiptParsePreview(
       merchantName: partial.merchantName.flatMap(nonEmpty),
       date: partial.date.flatMap(nonEmpty),
-      total: partial.total,
+      total: partial.total.flatMap { Money($0) },
       currency: currency.flatMap { ReceiptValidator.isCurrencyCode($0) ? $0 : nil },
       items: (partial.items ?? []).compactMap { item in
         guard let description = item.description.flatMap(nonEmpty) else { return nil }
         return ReceiptParsePreview.Item(
           description: description,
           quantity: item.quantity,
-          lineTotal: item.lineTotal)
+          lineTotal: item.lineTotal.flatMap { Money($0) })
       })
   }
 
   private static func nonEmpty(_ value: String) -> String? {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = value.trimmed
     return trimmed.isEmpty ? nil : trimmed
   }
 
@@ -104,9 +119,9 @@ public enum ReceiptModelContract {
 
     var parsedItem: ReceiptItem {
       ReceiptItem(
-        description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+        description: description.trimmed,
         quantity: quantity,
-        lineTotal: lineTotal)
+        lineTotal: ReceiptModelContract.amount(lineTotal))
     }
   }
 

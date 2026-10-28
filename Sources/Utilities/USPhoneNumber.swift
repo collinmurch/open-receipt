@@ -1,4 +1,4 @@
-enum USPhoneNumber {
+nonisolated enum USPhoneNumber {
   /// The digits of `value`, dropping a leading US country code of 1 from an 11-digit number.
   static func nationalDigits(_ value: String) -> String {
     let digits = String(value.unicodeScalars.filter { (48...57).contains($0.value) })

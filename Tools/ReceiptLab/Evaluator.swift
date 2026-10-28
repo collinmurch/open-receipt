@@ -1,12 +1,12 @@
 import Foundation
 import ReceiptKit
 
-struct FixtureEvaluation {
+struct FixtureEvaluation: Encodable {
   let passed: Bool
   let checks: [Check]
 
-  struct Check {
-    enum Status: String { case pass, fail, skipped }
+  struct Check: Encodable {
+    enum Status: String, Encodable { case pass, fail, skipped }
     let field: String
     let status: Status
     let expected: String?
@@ -33,20 +33,16 @@ enum FixtureEvaluator {
           detail: nil))
     }
 
-    checks.append(
-      amountCheck(
-        field: "subtotal", expected: expected.subtotal, actual: actual.subtotal,
-        tolerance: tolerance))
-    checks.append(
-      amountCheck(field: "tax", expected: expected.tax, actual: actual.tax, tolerance: tolerance))
-    checks.append(
-      amountCheck(field: "tip", expected: expected.tip, actual: actual.tip, tolerance: tolerance))
-    checks.append(
-      amountCheck(
-        field: "savings", expected: expected.savings, actual: actual.savings, tolerance: tolerance))
-    checks.append(
-      amountCheck(
-        field: "total", expected: expected.total, actual: actual.total, tolerance: tolerance))
+    let amounts: [(String, KeyPath<ExpectedReceipt, Double?>, KeyPath<ParsedReceipt, Money>)] = [
+      ("subtotal", \.subtotal, \.subtotal), ("tax", \.tax, \.tax), ("tip", \.tip, \.tip),
+      ("savings", \.savings, \.savings), ("total", \.total, \.total),
+    ]
+    for (field, expectedAmount, actualAmount) in amounts {
+      checks.append(
+        amountCheck(
+          field: field, expected: expected[keyPath: expectedAmount],
+          actual: Double(actual[keyPath: actualAmount]), tolerance: tolerance))
+    }
     checks.append(
       itemCountCheck(expected: expected.itemCount, actual: actual.items.count))
     if let expectedItems = expected.items {
@@ -122,21 +118,14 @@ enum FixtureEvaluator {
     var checks: [FixtureEvaluation.Check] = []
 
     for (index, item) in expected.enumerated() {
-      if let actualIndex = matches.actualIndexByExpectedIndex[index] {
-        let actualItem = actual[actualIndex]
-        checks.append(
-          FixtureEvaluation.Check(
-            field: "items[\(index)].lineTotal",
-            status: .pass,
-            expected: format(item.lineTotal),
-            actual: format(actualItem.lineTotal),
-            detail: actualItem.description))
+      if let match = matches.byExpectedIndex[index] {
+        let actualItem = actual[match.index]
         checks.append(
           nameCheck(
             index: index,
             expected: item.rawName,
             actual: actualItem.description,
-            similarity: matches.similarityByExpectedIndex[index] ?? 0))
+            similarity: match.similarity))
         if let quantity = item.quantity {
           checks.append(
             amountCheck(
@@ -171,7 +160,7 @@ enum FixtureEvaluator {
           field: "items.extra[\(index)]",
           status: .fail,
           expected: nil,
-          actual: "\(item.description) \(format(item.lineTotal))",
+          actual: "\(item.description) \(format(Double(item.lineTotal)))",
           detail: "unexpected parsed item"))
     }
     return checks
@@ -182,7 +171,7 @@ enum FixtureEvaluator {
     actual: [ReceiptItem],
     matches: ItemMatches
   ) -> FixtureEvaluation.Check {
-    let matched = matches.actualIndexByExpectedIndex.count
+    let matched = matches.byExpectedIndex.count
     let missing = expected.count - matched
     let extra = actual.count - matches.usedActual.count
     let pass = missing == 0 && extra == 0
@@ -200,8 +189,8 @@ enum FixtureEvaluator {
   }
 
   private struct ItemMatches {
-    let actualIndexByExpectedIndex: [Int: Int]
-    let similarityByExpectedIndex: [Int: Double]
+    /// The parsed item each expected item matched, by the expected item's index.
+    let byExpectedIndex: [Int: (index: Int, similarity: Double)]
     let usedActual: Set<Int>
   }
 
@@ -210,8 +199,7 @@ enum FixtureEvaluator {
     actual: [ReceiptItem],
     tolerance: Double
   ) -> ItemMatches {
-    var actualIndexByExpectedIndex: [Int: Int] = [:]
-    var similarityByExpectedIndex: [Int: Double] = [:]
+    var byExpectedIndex: [Int: (index: Int, similarity: Double)] = [:]
     var usedActual: Set<Int> = []
     for (expectedIndex, item) in expected.enumerated() {
       guard
@@ -221,14 +209,10 @@ enum FixtureEvaluator {
           usedActual: usedActual,
           tolerance: tolerance)
       else { continue }
-      actualIndexByExpectedIndex[expectedIndex] = match.index
-      similarityByExpectedIndex[expectedIndex] = match.similarity
+      byExpectedIndex[expectedIndex] = match
       usedActual.insert(match.index)
     }
-    return ItemMatches(
-      actualIndexByExpectedIndex: actualIndexByExpectedIndex,
-      similarityByExpectedIndex: similarityByExpectedIndex,
-      usedActual: usedActual)
+    return ItemMatches(byExpectedIndex: byExpectedIndex, usedActual: usedActual)
   }
 
   private static func bestMatch(
@@ -241,7 +225,7 @@ enum FixtureEvaluator {
       .filter { !usedActual.contains($0) }
       .compactMap { index -> (Int, Double)? in
         let item = actual[index]
-        guard abs(item.lineTotal - expected.lineTotal) <= tolerance else { return nil }
+        guard abs(Double(item.lineTotal) - expected.lineTotal) <= tolerance else { return nil }
         let nameSimilarity = descriptionSimilarity(expected.rawName, item.description)
         return (index, nameSimilarity)
       }
@@ -269,7 +253,7 @@ enum FixtureEvaluator {
     actual: ReceiptItem,
     tolerance: Double
   ) -> FixtureEvaluation.Check {
-    guard actual.quantity.isFinite, actual.quantity != 0, actual.lineTotal.isFinite else {
+    guard actual.quantity.isFinite, actual.quantity != 0 else {
       return FixtureEvaluation.Check(
         field: "items[\(index)].unitPrice",
         status: .fail,
@@ -280,7 +264,7 @@ enum FixtureEvaluator {
     return amountCheck(
       field: "items[\(index)].unitPrice",
       expected: expected,
-      actual: actual.lineTotal / actual.quantity,
+      actual: Double(actual.lineTotal) / actual.quantity,
       tolerance: tolerance)
   }
 

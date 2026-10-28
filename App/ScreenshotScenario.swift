@@ -83,33 +83,29 @@
       }
     }()
 
-    @MainActor
     func stage() async throws -> ScreenshotStage {
       let root = URL.temporaryDirectory.appending(
         path: "Screenshots-\(UUID().uuidString)", directoryHint: .isDirectory)
       let storage = ReceiptStorageClient.files(
         ReceiptFileStorage(rootURL: root.appending(path: "Receipts", directoryHint: .isDirectory)))
-      let people = PeopleStorageClient.files(
-        PeopleFileStorage(rootURL: root.appending(path: "People", directoryHint: .isDirectory)))
+      let people = PeopleFileStorage(
+        rootURL: root.appending(path: "People", directoryHint: .isDirectory))
       guard let page = ReceiptPhotoImporter.page(from: try Data(contentsOf: scene.imageURL))
       else { throw ScreenshotSceneError.unreadableImage(scene.imageURL) }
       let scan = ReceiptScan(id: scene.id, pages: [page], source: .photoLibrary)
-      let receipt = scene.receipt
-      let parsing = ReceiptParsingClient(usesSampleData: false) { _ in receipt }
-      let recognitions = ReceiptRecognitionCenter(parsingClient: parsing, storage: storage)
+      let recognitions = Self.center(reading: scene.receipt, storage: storage)
 
       func stage(
         _ path: [HomeRoute],
-        parsing: ReceiptParsingClient = parsing,
         recognitions: ReceiptRecognitionCenter = recognitions,
-        access: ReadingAccess = .unlimited()
+        access: ReadingAccess = .unlimited(),
+        recents: [ReceiptSummary.ID] = []
       ) -> ScreenshotStage {
         ScreenshotStage(
           path: path,
-          library: ReceiptLibraryModel(storage: storage),
+          library: ReceiptLibraryModel(storage: storage, recents: .memory(recents)),
           storage: storage,
           people: people,
-          parsing: parsing,
           recognitions: recognitions,
           access: access,
           contacts: kind == .share ? .cards(for: scene.people) : .unavailable,
@@ -119,33 +115,27 @@
 
       switch kind {
       case .reading:
-        let reading = readingClient
-        let readingCenter = ReceiptRecognitionCenter(parsingClient: reading, storage: storage)
+        let readingCenter = ReceiptRecognitionCenter(
+          parsingClient: readingClient, storage: storage, access: .unlimited())
         let recognition = readingCenter.recognize(
           scan, backgroundStyle: scene.backgroundStyle, isUserInitiated: false)
-        return stage(
-          [.receipt(.recognition(recognition))], parsing: reading, recognitions: readingCenter)
+        return stage([.receipt(.recognition(recognition))], recognitions: readingCenter)
 
-      case .breakdowns:
-        let document = try await storeSplit(
-          scan, storage: storage, people: people, completes: true)
-        try writeBreakdowns(of: document)
-        return stage([
-          .receipt(
-            .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
-        ])
-
-      case .split, .requests, .share:
+      case .split, .requests, .share, .breakdowns:
         let document = try await storeSplit(
           scan, storage: storage, people: people, completes: kind != .split)
-        return stage([
-          .receipt(
-            .storedReceipt(document.id, backgroundStyle: scene.backgroundStyle, document: document))
-        ])
+        if kind == .breakdowns { try writeBreakdowns(of: document) }
+        return stage(opening(document))
+
+      case .review, .reviewEditing, .reviewKeyboard, .itemEditing, .tip, .unbalanced,
+        .unbalancedEditing:
+        return stage(opening(try await storeReview(scan, storage: storage)))
 
       case .library:
         try await storeLibrary(scan, page: page, storage: storage)
-        return stage([])
+        // The oldest receipts were opened last, so Recently Opened brings them back to the top.
+        let oldest = try await storage.list().sorted { $0.capturedAt < $1.capturedAt }
+        return stage([], recents: oldest.prefix(3).map(\.id))
 
       case .paywall:
         try await storeLibrary(scan, page: page, storage: storage)
@@ -154,40 +144,6 @@
           [],
           access: ReadingAccess(
             client: .fixed(isEntitled: false), store: .memory(Set(usedReads)), isUnlocked: false))
-
-      case .review, .reviewEditing, .reviewKeyboard, .itemEditing, .tip:
-        var document = try await Self.storeRead(
-          scene.receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-        if kind != .tip {
-          let draft = try ReceiptDraft(document: document)
-          for adjustment in draft.unconfirmedAdjustments {
-            draft.stopAsking(about: adjustment)
-          }
-          document = document.updating(from: draft)
-          try await storage.save(document)
-        }
-        return stage([
-          .receipt(
-            .storedReceipt(
-              document.id, backgroundStyle: scene.backgroundStyle, document: document,
-              startsInEditing: [.reviewEditing, .reviewKeyboard, .itemEditing].contains(kind)))
-        ])
-
-      case .unbalanced, .unbalancedEditing:
-        let read = try await Self.storeRead(
-          unbalancedReceipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
-        let draft = try ReceiptDraft(document: read)
-        for adjustment in draft.unconfirmedAdjustments {
-          draft.stopAsking(about: adjustment)
-        }
-        let document = read.updating(from: draft)
-        try await storage.save(document)
-        return stage([
-          .receipt(
-            .storedReceipt(
-              document.id, backgroundStyle: scene.backgroundStyle, document: document,
-              startsInEditing: kind == .unbalancedEditing))
-        ])
 
       case .people:
         _ = try await storeSplit(scan, storage: storage, people: people, completes: true)
@@ -203,6 +159,35 @@
         }
         return stage([.recentlyDeleted])
       }
+    }
+
+    /// Opens the stored `document`, ready to edit in the scenarios that edit it.
+    private func opening(_ document: ReceiptDocument) -> [HomeRoute] {
+      let startsInEditing = [.reviewEditing, .reviewKeyboard, .itemEditing, .unbalancedEditing]
+        .contains(kind)
+      return [
+        .receipt(
+          .storedReceipt(
+            document.id, backgroundStyle: scene.backgroundStyle, document: document,
+            startsInEditing: startsInEditing))
+      ]
+    }
+
+    /// Reads the review scenarios' receipt and answers its questions about tax and tip, except in
+    /// the tip scenario, which shows them.
+    private func storeReview(
+      _ scan: ReceiptScan, storage: ReceiptStorageClient
+    ) async throws -> ReceiptDocument {
+      let receipt =
+        [.unbalanced, .unbalancedEditing].contains(kind) ? unbalancedReceipt : scene.receipt
+      let read = try await Self.storeRead(
+        receipt, scan: scan, backgroundStyle: scene.backgroundStyle, storage: storage)
+      guard kind != .tip else { return read }
+      let draft = try ReceiptDraft(document: read)
+      draft.unconfirmedAdjustments.forEach(draft.stopAsking(about:))
+      let document = read.updating(from: draft)
+      try await storage.save(document)
+      return document
     }
 
     private var receiptListStart: ReceiptListStart {
@@ -239,7 +224,6 @@
 
     /// Writes the overview slip and each person's slip as transparent PNGs, then
     /// `breakdowns.json` listing them in order, which tells the capture test they're done.
-    @MainActor
     private func writeBreakdowns(of document: ReceiptDocument) throws {
       guard let directory = breakdownsDirectory else {
         throw ScreenshotSceneError.missingBreakdownsDirectory
@@ -272,10 +256,9 @@
     }
 
     /// The slip's width inside a shared card.
-    @MainActor private static let slipWidth = ReceiptBreakdownRenderer.width - 44
+    private static let slipWidth = ReceiptBreakdownRenderer.width - 44
 
     /// Reads the scene's receipt as today's, and its library entries on their own days.
-    @MainActor
     private func storeLibrary(
       _ scan: ReceiptScan,
       page: ReceiptPage,
@@ -304,7 +287,7 @@
     private var readingClient: ReceiptParsingClient {
       let receipt = scene.receipt
       let rowCount = readingRowCount
-      return ReceiptParsingClient(usesSampleData: false) { _, onPreview in
+      return ReceiptParsingClient { _, onPreview in
         var preview = ReceiptParsePreview(
           merchantName: receipt.merchantName,
           date: receipt.date,
@@ -333,11 +316,10 @@
 
     /// Reads the scene's receipt, then adds its people, assignments, and tip the way someone would
     /// after reading it.
-    @MainActor
     private func storeSplit(
       _ scan: ReceiptScan,
       storage: ReceiptStorageClient,
-      people: PeopleStorageClient,
+      people: PeopleFileStorage,
       completes: Bool
     ) async throws -> ReceiptDocument {
       let document = try await Self.storeRead(
@@ -365,7 +347,8 @@
       for participant in scene.people where names.contains(participant.name) {
         let contactIdentifier = kind == .share ? participant.contactIdentifier : nil
         var person = try await people.include(
-          nil, participant.name, contactIdentifier, scan.capturedAt)
+          id: nil, displayName: participant.name, contactIdentifier: contactIdentifier,
+          at: scan.capturedAt)
         person.paymentMethods = participant.paymentMethods
         let id = draft.addPerson(try await people.save(person)).id
         participants[participant.name] = id
@@ -380,9 +363,7 @@
       if let tip = scene.addedTip {
         draft.tip = tip
       }
-      for adjustment in draft.unconfirmedAdjustments {
-        draft.stopAsking(about: adjustment)
-      }
+      draft.unconfirmedAdjustments.forEach(draft.stopAsking(about:))
       if completes {
         draft.complete()
       }
@@ -391,22 +372,27 @@
       return split
     }
 
-    @MainActor
     private static func storeRead(
       _ receipt: ParsedReceipt,
       scan: ReceiptScan,
       backgroundStyle: ReceiptBackgroundStyle,
       storage: ReceiptStorageClient
     ) async throws -> ReceiptDocument {
-      let center = ReceiptRecognitionCenter(
-        parsingClient: ReceiptParsingClient(usesSampleData: false) { _ in receipt },
-        storage: storage)
-      let recognition = center.recognize(
+      let recognition = center(reading: receipt, storage: storage).recognize(
         scan, backgroundStyle: backgroundStyle, isUserInitiated: false)
       guard case .recognized(let document) = await recognition.outcome else {
         throw ScreenshotSceneError.unreadReceipt
       }
       return document
+    }
+
+    /// A center that reads every scan as `receipt`.
+    private static func center(
+      reading receipt: ParsedReceipt, storage: ReceiptStorageClient
+    ) -> ReceiptRecognitionCenter {
+      ReceiptRecognitionCenter(
+        parsingClient: ReceiptParsingClient { _ in receipt }, storage: storage, access: .unlimited()
+      )
     }
 
     private static func localDate(daysBefore days: Int, now: Date) -> String {
@@ -420,8 +406,7 @@
     let path: [HomeRoute]
     let library: ReceiptLibraryModel
     let storage: ReceiptStorageClient
-    let people: PeopleStorageClient
-    let parsing: ReceiptParsingClient
+    let people: PeopleFileStorage
     let recognitions: ReceiptRecognitionCenter
     let access: ReadingAccess
     let contacts: ContactClient
@@ -447,8 +432,7 @@
             .environment(stage.recognitions)
             .environment(stage.access)
             .environment(\.receiptStorageClient, stage.storage)
-            .environment(\.peopleStorageClient, stage.people)
-            .environment(\.receiptParsingClient, stage.parsing)
+            .environment(\.peopleStorage, stage.people)
             .environment(\.contactClient, stage.contacts)
             .environment(\.receiptListStart, stage.receiptListStart)
         } else {

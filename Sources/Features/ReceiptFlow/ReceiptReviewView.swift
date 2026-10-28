@@ -1,11 +1,7 @@
 import SwiftUI
 
-private enum ReceiptReviewSheet: Hashable {
-  case people
-}
-
 /// A field typed in while editing a receipt.
-enum ReceiptEditField: Hashable {
+nonisolated enum ReceiptEditField: Hashable {
   case merchant
   case amount(ReceiptAmountField)
 }
@@ -17,6 +13,8 @@ struct ReceiptReviewView: View {
   /// How long the receipt shows after switching to it before an item is revealed, so the switch
   /// reads as its own step.
   private static let revealPause = Duration.milliseconds(450)
+  /// Where the people sheet zooms from.
+  private static let peopleSheetID = "people-sheet"
 
   @Bindable var draft: ReceiptDraft
   let showsSampleNotice: Bool
@@ -44,7 +42,7 @@ struct ReceiptReviewView: View {
   @State private var haptic = HapticEvent()
   @Namespace private var sheetTransition
   @Environment(\.contactClient) private var contactClient
-  @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(\.peopleStorage) private var peopleStorage
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.receiptListStart) private var listStart
 
@@ -85,7 +83,7 @@ struct ReceiptReviewView: View {
           contactClient: contactClient,
           peopleStorage: peopleStorage
         )
-        .navigationTransition(.zoom(sourceID: ReceiptReviewSheet.people, in: sheetTransition))
+        .navigationTransition(.zoom(sourceID: Self.peopleSheetID, in: sheetTransition))
       }
       .sheet(isPresented: $isPagesPresented) {
         ReceiptPagesView(receiptID: draft.id, editor: pages, style: draft.backgroundStyle)
@@ -300,7 +298,7 @@ struct ReceiptReviewView: View {
   }
 
   private var peopleSheetTransition: (id: AnyHashable, namespace: Namespace.ID) {
-    (id: ReceiptReviewSheet.people, namespace: sheetTransition)
+    (id: Self.peopleSheetID, namespace: sheetTransition)
   }
 
   private var completionButton: some View {
@@ -325,7 +323,7 @@ struct ReceiptReviewView: View {
 
   private var navigationTitle: String {
     if isEditing { return "Edit Receipt" }
-    return draft.merchantName.isEmpty ? "Receipt" : draft.merchantName
+    return draft.merchantName.merchantTitle
   }
 
   @ToolbarContentBuilder
@@ -428,7 +426,7 @@ struct ReceiptReviewView: View {
   }
 
   /// Adds an item for what the items are short of the subtotal, and opens it to be named.
-  private func addMissingItem(lineTotal: Double) {
+  private func addMissingItem(lineTotal: Money) {
     let id = withAnimation(.settle) { draft.addItem(lineTotal: lineTotal) }
     haptic.play(.selection)
     editItem(id)

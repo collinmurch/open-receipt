@@ -38,10 +38,10 @@ struct PersonReceiptRow: View {
   @ViewBuilder
   private var owedValue: some View {
     if let owed = receipt.owed {
-      Text(owed, format: .currency(code: receipt.currency))
+      Text(owed.decimal, format: .currency(code: receipt.currency))
         .font(.body.monospacedDigit())
         .fontWeight(.semibold)
-        .foregroundStyle(abs(owed) < 0.005 ? Color.secondary : Color.orange)
+        .foregroundStyle(owed == 0 ? Color.secondary : Color.orange)
         .accessibilityLabel(
           "Owes \(owed.formatted(.currency(code: receipt.currency)))")
     } else {

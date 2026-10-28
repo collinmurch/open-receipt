@@ -5,14 +5,14 @@ import Security
 /// deleting and reinstalling the app doesn't reset it: in this device's keychain, in iCloud
 /// Keychain, and in iCloud key-value storage. Each holds a set of read keys, and the record is
 /// all of them combined.
-struct FreeReadStore: Sendable {
+nonisolated struct FreeReadStore: Sendable {
   let load: @Sendable () -> Set<String>
   let save: @Sendable (Set<String>) -> Void
   /// Yields when another device changes the record.
   let changes: @Sendable () -> AsyncStream<Void>
 }
 
-extension FreeReadStore {
+nonisolated extension FreeReadStore {
   /// Every store combined. Loading reads all of them, and saving writes the same record to each,
   /// which restores any that were cleared.
   static func merged(_ stores: [FreeReadStore]) -> FreeReadStore {

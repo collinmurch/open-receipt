@@ -7,7 +7,7 @@ import SwiftUI
 /// the pasted amount as written. Only edits change the value: formatting it, such as for a new
 /// currency, never does.
 struct CurrencyAmountField: View {
-  @Binding var value: Double
+  @Binding var value: Money
   let currencyCode: String
   let isEmphasized: Bool
   @State private var text = ""
@@ -16,7 +16,7 @@ struct CurrencyAmountField: View {
   @State private var isNegative = false
   @FocusState private var isFocused: Bool
 
-  init(value: Binding<Double>, currencyCode: String, isEmphasized: Bool = false) {
+  init(value: Binding<Money>, currencyCode: String, isEmphasized: Bool = false) {
     _value = value
     self.currencyCode = currencyCode
     self.isEmphasized = isEmphasized
@@ -40,12 +40,11 @@ struct CurrencyAmountField: View {
         else { return }
         let formatted = CurrencyAmountInput.text(for: amount, currencyCode: currencyCode)
         if formatted != newText { text = formatted }
-        if abs(amount - value) >= CurrencyAmountInput.tolerance { value = amount }
+        if amount != value { value = amount }
       }
       .onChange(of: value) { _, newValue in
         if newValue != 0 { isNegative = newValue < 0 }
-        let shown = CurrencyAmountInput.amount(in: text, currencyCode: currencyCode)
-        if abs(shown - newValue) >= CurrencyAmountInput.tolerance {
+        if CurrencyAmountInput.amount(in: text, currencyCode: currencyCode) != newValue {
           text = CurrencyAmountInput.text(for: newValue, currencyCode: currencyCode)
         }
       }
@@ -82,19 +81,19 @@ struct CurrencyAmountField: View {
   }
 }
 
-enum CurrencyAmountInput {
-  static let tolerance = 0.000_5
-  private static let maximumUnits = 1e12
+nonisolated enum CurrencyAmountInput {
+  private static let maximumUnits = 1_000_000_000_000
 
-  static func text(for amount: Double, currencyCode: String) -> String {
+  static func text(for amount: Money, currencyCode: String) -> String {
     amount.formatted(.currency(code: currencyCode))
   }
 
-  /// The amount `text` shows, reading its digits in `currencyCode`'s smallest unit.
-  static func amount(in text: String, currencyCode: String) -> Double {
-    signed(
-      units(text.compactMap(\.wholeNumberValue)), isNegative: isNegative(text),
-      currencyCode: currencyCode)
+  /// The amount `text` shows, reading its digits in `currencyCode`'s smallest unit, or `nil` when
+  /// it has too many digits to hold.
+  static func amount(in text: String, currencyCode: String) -> Money? {
+    units(text.compactMap(\.wholeNumberValue)).map {
+      signed($0, isNegative: isNegative(text), currencyCode: currencyCode)
+    }
   }
 
   /// Returns the amount an edit from `oldText` to `newText` enters, or `nil` when `newText` only
@@ -109,11 +108,11 @@ enum CurrencyAmountInput {
     replacing oldText: String,
     with newText: String,
     replacingAll: Bool,
-    value: Double,
+    value: Money,
     isNegative: Bool,
     currencyCode: String,
     locale: Locale = .current
-  ) -> Double? {
+  ) -> Money? {
     guard newText != text(for: value, currencyCode: currencyCode) else { return nil }
     let inserted =
       replacingAll
@@ -127,14 +126,13 @@ enum CurrencyAmountInput {
     {
       digits.removeLast()
     }
-    let units = units(digits)
-    guard units < maximumUnits else { return value }
+    guard let units = units(digits) else { return value }
     return signed(units, isNegative: isNegative, currencyCode: currencyCode)
   }
 
   private static func pastedAmount(
     _ text: Substring, currencyCode: String, locale: Locale
-  ) -> Double? {
+  ) -> Money? {
     let decimalSeparator = locale.decimalSeparator ?? "."
     var number = ""
     for character in text {
@@ -144,19 +142,25 @@ enum CurrencyAmountInput {
         number += "."
       }
     }
-    guard let magnitude = Double(number), magnitude < maximumUnits else { return nil }
-    let units = Double(ReceiptCurrency.minorUnits(magnitude, code: currencyCode))
+    guard let magnitude = Money(number), magnitude < Money(units: maximumUnits, places: 0)
+    else { return nil }
+    let units = ReceiptCurrency.minorUnits(magnitude, code: currencyCode)
     guard units < maximumUnits else { return nil }
     return signed(units, isNegative: isNegative(text), currencyCode: currencyCode)
   }
 
-  private static func units(_ digits: [Int]) -> Double {
-    digits.reduce(0) { $0 * 10 + Double($1) }
+  /// The number `digits` write, or `nil` when it's too large to hold.
+  private static func units(_ digits: [Int]) -> Int? {
+    var units = 0
+    for digit in digits {
+      units = units * 10 + digit
+      guard units < maximumUnits else { return nil }
+    }
+    return units
   }
 
-  private static func signed(_ units: Double, isNegative: Bool, currencyCode: String) -> Double {
-    let magnitude = units / pow(10, Double(ReceiptCurrency.fractionDigits(currencyCode)))
-    return isNegative && magnitude != 0 ? -magnitude : magnitude
+  private static func signed(_ units: Int, isNegative: Bool, currencyCode: String) -> Money {
+    ReceiptCurrency.amount(minorUnits: isNegative ? -units : units, code: currencyCode)
   }
 
   /// Whether `text` has a minus sign before its first digit or after its last, as in "-$3.50"

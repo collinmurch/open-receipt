@@ -11,8 +11,15 @@ enum HomeRoute: Hashable {
 
 /// A control in the receipt library that a pushed screen zooms out of.
 enum HomeZoomSource: Hashable {
-  case row(UUID)
+  case row(ReceiptLibraryRowID)
   case newReceipt
+}
+
+/// A receipt's row in the library. A receipt opened lately has one in Recently Opened as well as
+/// one in its month.
+struct ReceiptLibraryRowID: Hashable {
+  let receiptID: UUID
+  var isRecent = false
 }
 
 struct HomeView: View {
@@ -25,7 +32,7 @@ struct HomeView: View {
   @Environment(ReceiptLibraryModel.self) private var library
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
   @Environment(NewReceiptQuickActions.self) private var quickActions: NewReceiptQuickActions?
-  @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(\.peopleStorage) private var peopleStorage
   @Environment(\.scenePhase) private var scenePhase
 
   init(initialPath: [HomeRoute] = []) {
@@ -106,9 +113,7 @@ struct HomeView: View {
   /// A quick action starts its receipt from the library, so whatever is open closes first. An
   /// open scanner stays up for Scan.
   private func returnToLibrary(for source: NewReceiptSource) {
-    var transaction = Transaction()
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
+    withTransaction(\.disablesAnimations, true) {
       path = []
     }
     if source != .scan { isScannerPresented = false }
@@ -118,9 +123,7 @@ struct HomeView: View {
   /// pushed under the scanner, so closing the scanner reveals it without a second transition.
   private func capture(_ scan: ReceiptScan) {
     let input = ReceiptFlowInput.scan(scan, recognitions: recognitions)
-    var transaction = Transaction()
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
+    withTransaction(\.disablesAnimations, true) {
       path.append(.receipt(input))
     }
     isScannerPresented = false
@@ -142,7 +145,9 @@ extension View {
 
 #Preview {
   HomeView()
-    .environment(ReceiptLibraryModel(storage: .live))
-    .environment(ReceiptRecognitionCenter(parsingClient: .standard, storage: .live))
+    .environment(ReceiptLibraryModel(storage: .live, recents: .live))
+    .environment(
+      ReceiptRecognitionCenter(parsingClient: .standard, storage: .live, access: .unlimited())
+    )
     .environment(ReadingAccess.unlimited())
 }

@@ -80,13 +80,8 @@ final class StoreScreenshots: ScenarioTestCase {
   /// written to `breakdowns` beside the appearance directories.
   @MainActor
   func testHeader() throws {
-    let environment = ProcessInfo.processInfo.environment
-    guard let output = environment["SCREENSHOTS_OUTPUT"],
-      let receipt = environment["SCREENSHOTS_RECEIPT"]
-    else { throw XCTSkip("Run through make previews.") }
-
-    let directory = URL(filePath: output, directoryHint: .isDirectory)
-      .appending(path: "breakdowns", directoryHint: .isDirectory)
+    let (output, receipt) = try makeEnvironment("previews")
+    let directory = output.appending(path: "breakdowns", directoryHint: .isDirectory)
     try? FileManager.default.removeItem(at: directory)
     let app = XCUIApplication()
     app.launchArguments = [
@@ -126,12 +121,7 @@ final class StoreScreenshots: ScenarioTestCase {
     arguments: [String] = [],
     prepare: (XCUIApplication) throws -> Void = { _ in }
   ) throws {
-    let environment = ProcessInfo.processInfo.environment
-    guard let output = environment["SCREENSHOTS_OUTPUT"],
-      let receipt = environment["SCREENSHOTS_RECEIPT"]
-    else { throw XCTSkip("Run through make previews.") }
-
-    let root = URL(filePath: output, directoryHint: .isDirectory)
+    let (root, receipt) = try makeEnvironment("previews")
     let directories = try Appearance.allCases.map { appearance in
       let directory = root.appending(path: appearance.rawValue, directoryHint: .isDirectory)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

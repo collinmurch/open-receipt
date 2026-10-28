@@ -19,6 +19,16 @@ class ScenarioTestCase: XCTestCase {
     await MainActor.run { XCUIDevice.shared.appearance = .light }
   }
 
+  /// Where captures go and the scene the app stages, which `make target` passes. A test run any
+  /// other way skips.
+  func makeEnvironment(_ target: String) throws -> (output: URL, receipt: String) {
+    let environment = ProcessInfo.processInfo.environment
+    guard let output = environment["SCREENSHOTS_OUTPUT"],
+      let receipt = environment["SCREENSHOTS_RECEIPT"]
+    else { throw XCTSkip("Run through make \(target).") }
+    return (URL(filePath: output, directoryHint: .isDirectory), receipt)
+  }
+
   /// Launches the app into `scenario` in `appearance`, recording highlighted frames to
   /// `highlights`.
   @MainActor

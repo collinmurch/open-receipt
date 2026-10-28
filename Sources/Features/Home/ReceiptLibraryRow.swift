@@ -46,10 +46,10 @@ struct ReceiptLibraryRow: View {
     if recognition != nil {
       ProgressView()
     } else if let total = receipt.total {
-      Text(total, format: .currency(code: ReceiptCurrency.displayCode(receipt.currency)))
+      Text(total.decimal, format: .currency(code: ReceiptCurrency.displayCode(receipt.currency)))
         .font(.body.monospacedDigit())
         .foregroundStyle(.primary)
-        .contentTransition(.numericText(value: total))
+        .contentTransition(.numericText(value: Double(total)))
     } else if expiresAt == nil {
       Image(systemName: statusSymbol)
         .foregroundStyle(.secondary)

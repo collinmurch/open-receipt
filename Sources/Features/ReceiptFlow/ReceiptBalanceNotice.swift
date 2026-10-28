@@ -13,9 +13,9 @@ struct ReceiptBalanceNotice: Equatable {
   }
 
   enum Action: Hashable {
-    case addItem(Double)
-    case setSubtotal(Double)
-    case setTotal(Double)
+    case addItem(Money)
+    case setSubtotal(Money)
+    case setTotal(Money)
   }
 
   let kind: Kind
@@ -30,11 +30,10 @@ struct ReceiptBalanceNotice: Equatable {
 
   /// The first step of `draft` that doesn't add up, from the items down to the total. Fixing it
   /// reveals the next one, so the subtotal is explained before the total.
-  @MainActor
   static func notice(for draft: ReceiptDraft) -> ReceiptBalanceNotice? {
     let balance = draft.balance
     let currency = draft.displayCurrency
-    func formatted(_ amount: Double) -> String {
+    func formatted(_ amount: Money) -> String {
       amount.formatted(.currency(code: currency))
     }
     let subtotalUnits = balance.subtotalDifferenceUnits
@@ -51,7 +50,7 @@ struct ReceiptBalanceNotice: Equatable {
             + "\(formatted(printed)). It may have been misread.",
           actions: [.setSubtotal(calculated)])
       }
-      let difference = abs(balance.subtotalDifference)
+      let difference = balance.subtotalDifference.magnitude
       let isShort = subtotalUnits > 0
       return ReceiptBalanceNotice(
         kind: .items,
@@ -66,7 +65,7 @@ struct ReceiptBalanceNotice: Equatable {
           ? [.addItem(difference), .setSubtotal(calculated)] : [.setSubtotal(calculated)])
     }
     guard totalUnits != 0 else { return nil }
-    let difference = abs(balance.totalDifference)
+    let difference = balance.totalDifference.magnitude
     let isHigher = totalUnits > 0
     return ReceiptBalanceNotice(
       kind: .total,
@@ -91,7 +90,6 @@ struct ReceiptBalanceNotice: Equatable {
   }
 
   /// The amounts the total is made of, such as "The subtotal, tax, and tip".
-  @MainActor
   private static func partsPhrase(of draft: ReceiptDraft, balance: ReceiptBalance) -> String {
     var parts = [balance.printedSubtotal == nil ? "items" : "subtotal"]
     if draft.adjustments.contains(.tax) { parts.append("tax") }
@@ -173,7 +171,7 @@ struct ReceiptBalanceNoticeRow: View {
     }
   }
 
-  private func formatted(_ amount: Double) -> String {
+  private func formatted(_ amount: Money) -> String {
     amount.formatted(.currency(code: currencyCode))
   }
 }

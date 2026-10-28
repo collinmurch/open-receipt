@@ -187,8 +187,7 @@ struct ReceiptGroupShareView: View {
         ) {
           GlassActionLabel(title: "Share", systemImage: "square.and.arrow.up")
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .glassCapsule()
 
         if !messageRecipients.isEmpty {
           Button {
@@ -198,10 +197,7 @@ struct ReceiptGroupShareView: View {
             GlassActionLabel(title: messageTitle, systemImage: "message.fill")
               .foregroundStyle(.white)
           }
-          .buttonStyle(.plain)
-          .glassEffect(
-            .regular.tint(PaymentMethod.iMessage.prominentColor).interactive(), in: .capsule
-          )
+          .glassCapsule(tint: PaymentMethod.iMessage.prominentColor)
           .screenshotHighlight("group-message-button")
           .accessibilityHint(
             "Message \(messageRecipients.map(\.name).formatted()) with the breakdown")

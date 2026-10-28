@@ -40,7 +40,6 @@ struct AppleContactView: UIViewControllerRepresentable {
     context: Context
   ) {}
 
-  @MainActor
   final class Coordinator: NSObject {
     let store = CNContactStore()
     let onClose: @MainActor () -> Void

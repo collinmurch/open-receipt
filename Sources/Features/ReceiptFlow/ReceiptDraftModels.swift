@@ -1,49 +1,10 @@
 import Foundation
 
-struct ReceiptTotalAdjustments: Equatable, Sendable {
-  private var amounts: [ReceiptTotalAdjustment: Double]
-
-  init(tax: Double = 0, tip: Double = 0, savings: Double = 0) {
-    amounts = [:]
-    if tax != 0 { amounts[.tax] = tax }
-    if tip != 0 { amounts[.tip] = tip }
-    if savings != 0 { amounts[.savings] = savings }
-  }
-
-  subscript(_ adjustment: ReceiptTotalAdjustment) -> Double? {
-    get { amounts[adjustment] }
-    set { amounts[adjustment] = newValue }
-  }
-
-  var isEmpty: Bool {
-    amounts.isEmpty
-  }
-
-  func contains(_ adjustment: ReceiptTotalAdjustment) -> Bool {
-    amounts[adjustment] != nil
-  }
-
-  mutating func add(_ adjustment: ReceiptTotalAdjustment) {
-    if amounts[adjustment] == nil {
-      amounts[adjustment] = 0
-    }
-  }
-
-  mutating func remove(_ adjustment: ReceiptTotalAdjustment) {
-    amounts[adjustment] = nil
-  }
-
-  /// The amount `adjustment` adds to the total, negative for savings.
-  func signedAmount(of adjustment: ReceiptTotalAdjustment) -> Double {
-    adjustment.signed(amounts[adjustment] ?? 0)
-  }
-}
-
-struct ReceiptDraftItem: Identifiable, Equatable, Sendable {
+nonisolated struct ReceiptDraftItem: Identifiable, Equatable, Sendable {
   let id: UUID
   var description: String
   var quantity: Double
-  var lineTotal: Double
+  var lineTotal: Money
   var participantIDs: Set<ReceiptParticipant.ID>
 
   init(item: ReceiptItem) {
@@ -58,7 +19,7 @@ struct ReceiptDraftItem: Identifiable, Equatable, Sendable {
     id: UUID,
     description: String,
     quantity: Double,
-    lineTotal: Double,
+    lineTotal: Money,
     participantIDs: Set<ReceiptParticipant.ID>
   ) {
     self.id = id
@@ -69,7 +30,7 @@ struct ReceiptDraftItem: Identifiable, Equatable, Sendable {
   }
 }
 
-struct ReceiptParticipant: Identifiable, Equatable, Sendable {
+nonisolated struct ReceiptParticipant: Identifiable, Equatable, Sendable {
   enum Source: Equatable, Sendable {
     case currentUser(contactIdentifier: String?)
     case contact(identifier: String)

@@ -175,7 +175,8 @@ struct SearchArtwork: View {
     DriftingSlip(center: CGPoint(x: 260, y: 1900), width: 520, height: 940, angle: -12, depth: 0.5),
     DriftingSlip(center: CGPoint(x: 300, y: 520), width: 320, height: 580, angle: 10, depth: 0.9),
     DriftingSlip(center: CGPoint(x: 3560, y: 700), width: 420, height: 760, angle: 13, depth: 0.55),
-    DriftingSlip(center: CGPoint(x: 3640, y: 2150), width: 360, height: 640, angle: -8, depth: 0.85),
+    DriftingSlip(
+      center: CGPoint(x: 3640, y: 2150), width: 360, height: 640, angle: -8, depth: 0.85),
     DriftingSlip(center: CGPoint(x: 1700, y: 120), width: 260, height: 460, angle: -6, depth: 1),
   ]
 }

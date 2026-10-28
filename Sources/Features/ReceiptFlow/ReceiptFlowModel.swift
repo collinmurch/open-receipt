@@ -1,21 +1,6 @@
 import Foundation
 import Observation
 
-/// A receipt's stored pages and whether its values predate them.
-struct ReceiptPagesState: Equatable {
-  var pages: [ReceiptDocument.Page]
-  var needsRescan: Bool
-
-  static let empty = ReceiptPagesState(pages: [], needsRescan: false)
-}
-
-extension ReceiptPagesState {
-  init(document: ReceiptDocument) {
-    self.init(pages: document.scan.pages, needsRescan: document.needsRescan)
-  }
-}
-
-@MainActor
 @Observable
 final class ReceiptFlowModel {
   enum Phase {
@@ -26,7 +11,7 @@ final class ReceiptFlowModel {
     case recognizing(ReceiptRecognition)
     case reviewing(ReceiptDraft)
     case rescanning(ReceiptDraft)
-    case failed(Failure)
+    indirect case failed(Failure)
 
     enum Kind: Equatable {
       case creating
@@ -54,7 +39,10 @@ final class ReceiptFlowModel {
   }
 
   private(set) var phase: Phase
-  private(set) var pages = ReceiptPagesState.empty
+  /// The receipt's stored pages.
+  private(set) var pages: [ReceiptDocument.Page] = []
+  /// Whether the receipt's values predate its pages.
+  private(set) var needsRescan = false
   private(set) var backgroundStyle: ReceiptBackgroundStyle?
   private(set) var saveErrorDescription: String?
   /// Whether the review opens ready to edit, for a receipt whose values are entered by hand.
@@ -133,7 +121,7 @@ final class ReceiptFlowModel {
   }
 
   func rescan() {
-    guard case .reviewing(let draft) = phase, pages.needsRescan else { return }
+    guard case .reviewing(let draft) = phase, needsRescan else { return }
     phase = .rescanning(draft)
   }
 
@@ -162,17 +150,10 @@ final class ReceiptFlowModel {
 
   func retry(using recognitions: ReceiptRecognitionCenter) {
     guard case .failed(let failure) = phase, let retry = failure.retry else { return }
-    switch retry {
-    case .create(let id):
-      phase = .creating(id)
-    case .load(let id):
-      phase = .loading(id)
-    case .store(let scan):
-      phase = .storing(scan)
-    case .recognize(let recognition):
+    if case .recognizing(let recognition) = retry {
       phase = .recognizing(recognitions.retry(recognition))
-    case .read(let id):
-      phase = .preparingRead(id)
+    } else {
+      phase = retry
     }
   }
 
@@ -212,13 +193,13 @@ final class ReceiptFlowModel {
     owner: @Sendable () async -> ReceiptOwner? = { nil }
   ) async {
     guard case .recognizing(let recognition) = phase else { return }
-    let retry: Failure.Retry = recognition.isRescan ? .load(receiptID) : .read(receiptID)
+    let retry: Phase = recognition.isRescan ? .loading(receiptID) : .preparingRead(receiptID)
     await recognitions.cancel(recognition)
     await openForManualEntry(retry: retry, storage: storage, owner: owner)
   }
 
   private func openForManualEntry(
-    retry: Failure.Retry?,
+    retry: Phase?,
     storage: ReceiptStorageClient,
     owner: @Sendable () async -> ReceiptOwner?
   ) async {
@@ -308,10 +289,8 @@ final class ReceiptFlowModel {
   }
 
   private func updatePages(from document: ReceiptDocument) {
-    let pages = ReceiptPagesState(document: document)
-    if self.pages != pages {
-      self.pages = pages
-    }
+    if pages != document.scan.pages { pages = document.scan.pages }
+    if needsRescan != document.needsRescan { needsRescan = document.needsRescan }
   }
 
   private func finish(_ recognition: ReceiptRecognition) async {
@@ -321,7 +300,7 @@ final class ReceiptFlowModel {
     case .cancelled:
       return
     case .needsUnlock where recognition.isRescan:
-      phase = .failed(.rescanNotRead(retry: .recognize(recognition)))
+      phase = .failed(.rescanNotRead(retry: .recognizing(recognition)))
     case .needsUnlock:
       // The scan was stored unread, so it opens the way any unread receipt does.
       guard let document = recognition.document else { return }
@@ -330,16 +309,17 @@ final class ReceiptFlowModel {
       do {
         try review(document)
       } catch {
-        phase = .failed(Failure(description: error.localizedDescription, retry: .load(document.id)))
+        phase = .failed(
+          Failure(description: error.localizedDescription, retry: .loading(document.id)))
       }
     case .failed(let message, let isRetryable) where recognition.isRescan:
       phase = .failed(
-        .rescanFailed(message, retry: isRetryable ? .recognize(recognition) : nil))
+        .rescanFailed(message, retry: isRetryable ? .recognizing(recognition) : nil))
     case .failed(let message, let isRetryable):
       phase = .failed(
         .readFailed(
           message,
-          retry: isRetryable ? .recognize(recognition) : nil,
+          retry: isRetryable ? .recognizing(recognition) : nil,
           isDeferred: recognition.document?.recognition.deferredUntil != nil))
     }
   }
@@ -349,18 +329,14 @@ final class ReceiptFlowModel {
     recognitions: ReceiptRecognitionCenter,
     storage: ReceiptStorageClient
   ) async {
-    recognitions.prewarm()
     do {
       let snapshot = try await storage.load(receiptID).updating(from: draft)
       try await storage.save(snapshot)
-      let pages = try await storage.loadPages(receiptID)
-      guard !Task.isCancelled else { return }
-      let scan = ReceiptScan(document: snapshot, pages: pages)
-      phase = .recognizing(recognitions.recognize(scan, replacing: snapshot))
+      phase = .recognizing(try await recognitions.read(snapshot))
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(Failure(description: error.localizedDescription, retry: .load(receiptID)))
+      phase = .failed(Failure(description: error.localizedDescription, retry: .loading(receiptID)))
     }
   }
 
@@ -380,7 +356,7 @@ final class ReceiptFlowModel {
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(Failure(description: error.localizedDescription, retry: .create(id)))
+      phase = .failed(Failure(description: error.localizedDescription, retry: .creating(id)))
     }
   }
 
@@ -392,7 +368,7 @@ final class ReceiptFlowModel {
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(Failure(description: error.localizedDescription, retry: .store(scan)))
+      phase = .failed(Failure(description: error.localizedDescription, retry: .storing(scan)))
     }
   }
 
@@ -409,7 +385,7 @@ final class ReceiptFlowModel {
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(Failure(description: error.localizedDescription, retry: .load(id)))
+      phase = .failed(Failure(description: error.localizedDescription, retry: .loading(id)))
       return
     }
 
@@ -437,20 +413,15 @@ final class ReceiptFlowModel {
     storage: ReceiptStorageClient
   ) async {
     if joinActiveRecognition(of: id, from: recognitions) { return }
-    recognitions.prewarm()
     do {
-      let document = try await storage.load(id)
-      let pages = try await storage.loadPages(id)
-      guard !Task.isCancelled else { return }
-      let scan = ReceiptScan(document: document, pages: pages)
-      phase = .recognizing(recognitions.recognize(scan, replacing: document))
+      phase = .recognizing(try await recognitions.read(storage.load(id)))
     } catch is CancellationError {
       return
     } catch {
       phase = .failed(
         Failure(
           description: error.localizedDescription,
-          retry: .read(id),
+          retry: .preparingRead(id),
           allowsManualEntry: true))
     }
   }

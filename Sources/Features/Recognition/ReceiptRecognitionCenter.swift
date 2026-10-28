@@ -4,7 +4,6 @@ import Observation
 
 /// Owns every receipt being read. Recognition starts the moment pages exist, writes the scan to
 /// storage alongside the model request, and finishes even if the person leaves the receipt.
-@MainActor
 @Observable
 final class ReceiptRecognitionCenter {
   private(set) var recognitions: [UUID: ReceiptRecognition] = [:]
@@ -25,7 +24,7 @@ final class ReceiptRecognitionCenter {
   init(
     parsingClient: ReceiptParsingClient,
     storage: ReceiptStorageClient,
-    access: ReadingAccess = .unlimited(),
+    access: ReadingAccess,
     owner: @escaping @Sendable () async -> ReceiptOwner? = { nil },
     connectivity: ReceiptConnectivity = .live,
     connectionRetryDelay: Duration = .seconds(2)
@@ -41,6 +40,11 @@ final class ReceiptRecognitionCenter {
   /// The model's availability and quota. Reading it in a view body tracks changes.
   var modelStatus: ReceiptModelStatus {
     parsingClient.status()
+  }
+
+  /// Whether reads return the sample receipt instead of reading the pages.
+  var usesSampleData: Bool {
+    parsingClient.usesSampleData
   }
 
   func prewarm() {
@@ -79,6 +83,20 @@ final class ReceiptRecognitionCenter {
       isUserInitiated: isUserInitiated)
     start(recognition)
     return recognition
+  }
+
+  /// Reads the stored receipt `document` again from its pages.
+  func read(
+    _ document: ReceiptDocument,
+    isUserInitiated: Bool = true
+  ) async throws -> ReceiptRecognition {
+    prewarm()
+    let pages = try await storage.loadPages(document.id)
+    try Task.checkCancellation()
+    return recognize(
+      ReceiptScan(document: document, pages: pages),
+      replacing: document,
+      isUserInitiated: isUserInitiated)
   }
 
   /// Stops `recognition` and returns once it has finished, leaving the stored receipt as it was
@@ -121,11 +139,9 @@ final class ReceiptRecognitionCenter {
     guard let document = try? await storage.load(id),
       document.recognition.status != .succeeded,
       document.recognition.deferredUntil != nil,
-      let pages = try? await storage.loadPages(id),
-      !pages.isEmpty
+      !document.scan.pages.isEmpty
     else { return nil }
-    let scan = ReceiptScan(document: document, pages: pages)
-    return recognize(scan, replacing: document, isUserInitiated: false)
+    return try? await read(document, isUserInitiated: false)
   }
 
   private func scheduleDeferredReadWake(after dates: [Date], now: Date) {
@@ -318,14 +334,12 @@ final class ReceiptRecognitionCenter {
     while true {
       recognition.update(.reading)
       do {
-        return try await parsingClient.stream(recognition.scan.pages) { preview in
-          await MainActor.run {
-            recognition.update(preview)
-            activity.reportProgress(itemCount: preview.items.count)
-          }
+        return try await parsingClient.stream(recognition.scan.pages) { @MainActor preview in
+          recognition.update(preview)
+          activity.reportProgress(itemCount: preview.items.count)
         }
-      } catch let error as ReceiptParserError
-        where error.isConnectionFailure && connectionRetries < Self.connectionRetryLimit
+      } catch ReceiptParserError.connectionUnavailable
+        where connectionRetries < Self.connectionRetryLimit
       {
         connectionRetries += 1
         recognition.update(.waitingForConnection)

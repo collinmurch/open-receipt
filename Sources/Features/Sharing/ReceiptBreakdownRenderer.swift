@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Draws breakdown cards as images and PDFs. Cards are always light, so they read the same in
 /// whatever conversation they land in.
-@MainActor
 enum ReceiptBreakdownRenderer {
   static let width: CGFloat = 390
   static let scale: CGFloat = 3
@@ -74,7 +73,7 @@ enum ReceiptBreakdownRenderer {
 /// A breakdown as a cache key. A breakdown is a snapshot of everything its card shows but the
 /// locale its amounts are written in, so an equal breakdown in the same locale always draws the
 /// same image.
-private final class DrawingKey: NSObject {
+private nonisolated final class DrawingKey: NSObject {
   let breakdown: ReceiptBreakdown
   let locale = Locale.current
 
@@ -92,7 +91,6 @@ private final class DrawingKey: NSObject {
   }
 }
 
-@MainActor
 private final class Drawing {
   let image: UIImage?
 

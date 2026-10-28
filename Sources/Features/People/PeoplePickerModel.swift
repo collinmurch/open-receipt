@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-@MainActor
 @Observable
 final class PeoplePickerModel {
   private(set) var authorization: ContactAuthorization = .notDetermined
@@ -21,7 +20,7 @@ final class PeoplePickerModel {
 
   /// `searchText` without surrounding whitespace.
   var searchQuery: String {
-    searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    searchText.trimmed
   }
 
   var filteredContacts: [ContactSummary] {

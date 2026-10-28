@@ -1,6 +1,6 @@
 import Foundation
 
-enum ParticipantShortNames {
+nonisolated enum ParticipantShortNames {
   /// Returns each participant's first name, adding as many leading letters of the last name as
   /// needed to tell apart participants who share a first name.
   static func names(for participants: [ReceiptParticipant]) -> [ReceiptParticipant.ID: String] {
@@ -23,7 +23,7 @@ enum ParticipantShortNames {
   }
 }
 
-private struct NameParts {
+private nonisolated struct NameParts {
   let first: String
   let last: String
 

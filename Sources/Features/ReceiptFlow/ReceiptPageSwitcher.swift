@@ -79,7 +79,6 @@ private struct PageTabBar: UIViewControllerRepresentable {
     return CGSize(width: width, height: fitted.height)
   }
 
-  @MainActor
   final class Coordinator: NSObject, UITabBarDelegate {
     var selection: Binding<ReceiptReviewPage>
 

@@ -5,10 +5,11 @@ import SwiftUI
 /// one the receipt edits it in.
 struct ReceiptAdjustmentQuestionView: View {
   @Bindable var draft: ReceiptDraft
+  /// Tax or tip, the only adjustments asked about.
   let adjustment: ReceiptTotalAdjustment
   private let presets: [AdjustmentPreset]
   @State private var choice: AdjustmentChoice
-  @State private var customAmount = 0.0
+  @State private var customAmount: Money = 0
   @FocusState private var focusedField: ReceiptAmountField?
   @Environment(\.colorScheme) private var colorScheme
 
@@ -44,7 +45,7 @@ struct ReceiptAdjustmentQuestionView: View {
       }
     }
     .tint(draft.backgroundStyle.accentColor(for: colorScheme))
-    .navigationTitle(draft.merchantName.isEmpty ? "Receipt" : draft.merchantName)
+    .navigationTitle(draft.merchantName.merchantTitle)
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -102,7 +103,7 @@ struct ReceiptAdjustmentQuestionView: View {
     ).focusingCustom(field, in: $focusedField)
   }
 
-  private var amount: Double {
+  private var amount: Money {
     guard case .preset(let preset) = choice else { return customAmount }
     return preset.amount
   }
@@ -145,14 +146,8 @@ struct ReceiptAdjustmentQuestionView: View {
     for adjustment: ReceiptTotalAdjustment,
     in draft: ReceiptDraft
   ) -> [AdjustmentPreset] {
-    switch adjustment {
-    case .tax:
-      draft.impliedTax.map { [AdjustmentPreset(title: "Auto (From Total)", amount: $0)] } ?? []
-    case .tip:
-      draft.tipPresets
-    case .savings:
-      []
-    }
+    guard adjustment == .tax else { return draft.tipPresets }
+    return draft.impliedTax.map { [AdjustmentPreset(title: "Auto (From Total)", amount: $0)] } ?? []
   }
 
   private var detail: String? {
@@ -166,40 +161,30 @@ struct ReceiptAdjustmentQuestionView: View {
     }
     let base = draft.itemsTotal
     guard base > 0, amount > 0 else { return nil }
-    let percentage = (amount / base * 100).formatted(
+    let percentage = (amount.fraction(of: base) * 100).formatted(
       .percent.scale(1).precision(.fractionLength(0...1)))
     return "\(formatted(amount)) is \(percentage) of \(formatted(base)) in items."
   }
 
   private var title: String {
-    switch adjustment {
-    case .tax: "Tax Not Found"
-    case .tip: "Did You Tip?"
-    case .savings: "Any Savings?"
-    }
+    adjustment == .tax ? "Tax Not Found" : "Did You Tip?"
   }
 
   private var message: String {
-    switch adjustment {
-    case .tax: "This receipt doesn’t show any tax. Add it so it’s split with everything else."
-    case .tip: "Add a tip so it’s split along with the bill."
-    case .savings: "Add savings so everyone shares them."
-    }
+    adjustment == .tax
+      ? "This receipt doesn’t show any tax. Add it so it’s split with everything else."
+      : "Add a tip so it’s split along with the bill."
   }
 
   private var systemImage: String {
-    switch adjustment {
-    case .tax: "doc.text.magnifyingglass"
-    case .tip: "heart.circle"
-    case .savings: "tag"
-    }
+    adjustment == .tax ? "doc.text.magnifyingglass" : "heart.circle"
   }
 
   private var currency: String {
     draft.displayCurrency
   }
 
-  private func formatted(_ amount: Double) -> String {
+  private func formatted(_ amount: Money) -> String {
     amount.formatted(.currency(code: currency))
   }
 }

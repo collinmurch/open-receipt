@@ -2,7 +2,7 @@ import ImageIO
 import SwiftUI
 
 /// The rounded tile a receipt page, or the place to add one, sits in.
-struct ReceiptPageTileShape: InsettableShape {
+nonisolated struct ReceiptPageTileShape: InsettableShape {
   var inset: CGFloat = 0
 
   func path(in rect: CGRect) -> Path {
@@ -56,17 +56,19 @@ struct ReceiptPageThumbnail: View {
 
   private static func thumbnail(for url: URL) async -> CGImage? {
     if let cached = thumbnails.object(forKey: url as NSURL) { return cached }
-    let thumbnail = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-      guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-      let options =
-        [
-          kCGImageSourceCreateThumbnailFromImageAlways: true,
-          kCGImageSourceCreateThumbnailWithTransform: true,
-          kCGImageSourceThumbnailMaxPixelSize: 600,
-        ] as CFDictionary
-      return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
-    }.value
+    let thumbnail = await decodeThumbnail(at: url)
     if let thumbnail { thumbnails.setObject(thumbnail, forKey: url as NSURL) }
     return thumbnail
+  }
+
+  @concurrent private static func decodeThumbnail(at url: URL) async -> CGImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let options =
+      [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 600,
+      ] as CFDictionary
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
   }
 }

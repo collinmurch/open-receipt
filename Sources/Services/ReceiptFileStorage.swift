@@ -72,7 +72,7 @@ actor ReceiptFileStorage {
           transaction: .init(localDate: ""),
           currency: currency,
           items: [],
-          amounts: .init(subtotal: .init(0), adjustments: [], total: .init(0)),
+          amounts: .init(subtotal: .init(Money.zero), adjustments: [], total: .init(Money.zero)),
           payment: nil),
         split: .init(
           adjustmentMethod: adjustmentMethod,
@@ -604,7 +604,7 @@ extension ReceiptFileStorage {
   }
 }
 
-enum ReceiptStorageError: Error, LocalizedError {
+nonisolated enum ReceiptStorageError: Error, LocalizedError {
   case emptyScan
   case receiptAlreadyExists(UUID)
   case receiptAlreadyDeleted(UUID)

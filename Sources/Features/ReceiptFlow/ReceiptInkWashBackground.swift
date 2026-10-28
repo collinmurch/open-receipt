@@ -53,7 +53,7 @@ struct ReceiptInkWashBackground: View {
   }
 }
 
-private enum ReceiptInkWashShader {
+private nonisolated enum ReceiptInkWashShader {
   static func shader(
     size: CGSize,
     palette: ReceiptInkWashPalette,
@@ -93,7 +93,7 @@ private enum ReceiptInkWashShader {
   }
 }
 
-private struct ReceiptInkWashPalette {
+private nonisolated struct ReceiptInkWashPalette {
   let base: Color
   let primary: Color
   let secondary: Color

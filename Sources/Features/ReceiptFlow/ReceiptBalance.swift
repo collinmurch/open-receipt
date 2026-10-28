@@ -7,7 +7,7 @@ import Foundation
 /// taken off, some take them off before the subtotal, and others after it. The balance reads
 /// savings the way that best explains the printed amounts, so a receipt that adds up on paper adds
 /// up here too.
-struct ReceiptBalance: Equatable, Sendable {
+nonisolated struct ReceiptBalance: Equatable, Sendable {
   /// Where a receipt's savings were taken off.
   struct SavingsPlacement: Equatable, Sendable {
     /// Whether the item prices already have the savings taken off.
@@ -32,19 +32,19 @@ struct ReceiptBalance: Equatable, Sendable {
 
   let placement: SavingsPlacement
   /// What the items' line totals add up to.
-  let itemsTotal: Double
+  let itemsTotal: Money
   /// The subtotal printed on the receipt, or `nil` when it doesn't show one.
-  let printedSubtotal: Double?
+  let printedSubtotal: Money?
   /// The subtotal the items come to, with savings taken off where the receipt takes them off.
   /// `nil` when the receipt doesn't show a subtotal.
-  let calculatedSubtotal: Double?
+  let calculatedSubtotal: Money?
   /// The total the subtotal and adjustments come to, or the items and adjustments when the
   /// receipt doesn't show a subtotal.
-  let calculatedTotal: Double
+  let calculatedTotal: Money
   /// How much the printed subtotal is over the items, negative when it's under.
-  let subtotalDifference: Double
+  let subtotalDifference: Money
   /// How much the printed total is over the subtotal and adjustments, negative when it's under.
-  let totalDifference: Double
+  let totalDifference: Money
   /// `subtotalDifference` and `totalDifference` in the currency's smallest unit, which is what
   /// the split shares out.
   let subtotalDifferenceUnits: Int
@@ -75,8 +75,8 @@ struct ReceiptBalance: Equatable, Sendable {
 
   private init(_ input: ReceiptSplitInput, at placement: SavingsPlacement) {
     let code = input.currency
-    func units(_ amount: Double) -> Int { ReceiptCurrency.minorUnits(amount, code: code) }
-    func amount(_ units: Int) -> Double { ReceiptCurrency.amount(minorUnits: units, code: code) }
+    func units(_ amount: Money) -> Int { ReceiptCurrency.minorUnits(amount, code: code) }
+    func amount(_ units: Int) -> Money { ReceiptCurrency.amount(minorUnits: units, code: code) }
 
     let amounts = Amounts(
       items: input.items.reduce(0) { $0 + units($1.lineTotal) },
@@ -137,7 +137,7 @@ struct ReceiptBalance: Equatable, Sendable {
   }
 
   /// The subtotal the totals list shows: the printed one, or the items when there isn't one.
-  var subtotal: Double {
+  var subtotal: Money {
     printedSubtotal ?? itemsTotal
   }
 

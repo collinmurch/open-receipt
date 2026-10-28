@@ -28,14 +28,14 @@ extension ReceiptDraft {
   }
 
   /// What the items' line totals add up to.
-  var itemsTotal: Double {
-    items.reduce(0) { $0 + $1.lineTotal }
+  var itemsTotal: Money {
+    items.reduce(.zero) { $0 + $1.lineTotal }
   }
 
   /// The tax a receipt that doesn't show any most likely charged: what its total has beyond a
   /// printed subtotal that matches the items. `nil` when the subtotal doesn't back that up, since
   /// the difference could then be an item that wasn't read.
-  var impliedTax: Double? {
+  var impliedTax: Money? {
     let balance = balance
     guard balance.printedSubtotal != nil, balance.subtotalDifferenceUnits == 0,
       balance.totalDifferenceUnits > 0
@@ -45,13 +45,13 @@ extension ReceiptDraft {
 
   /// What the tip is a percentage of: the subtotal, with the tax and savings listed above it.
   /// Savings already in the subtotal are in it wherever they're listed.
-  var tipBaseAmount: Double {
+  var tipBaseAmount: Money {
     tipBaseAmount(for: tipPercentage)
   }
 
   /// What a tip of `percentage` is worked out on, or what the tip is a percentage of when it's
   /// `nil`.
-  func tipBaseAmount(for percentage: Int?) -> Double {
+  func tipBaseAmount(for percentage: Int?) -> Money {
     tipBaseAmount(at: tipPlacement(for: percentage))
   }
 
@@ -89,7 +89,7 @@ extension ReceiptDraft {
 
   /// The line under a tip of `amount` that says what it's a percentage of, for a tip chosen as
   /// `percentage` or entered when it's `nil`.
-  func tipCaption(for amount: Double, percentage: Int?) -> String? {
+  func tipCaption(for amount: Money, percentage: Int?) -> String? {
     let placement = tipPlacement(for: percentage)
     return TipBaseCaption.text(
       tip: amount, base: tipBaseAmount(at: placement),
@@ -123,14 +123,14 @@ extension ReceiptDraft {
     }
   }
 
-  private func tipAmount(_ percentage: Int, at placement: ReceiptBalance.SavingsPlacement) -> Double
+  private func tipAmount(_ percentage: Int, at placement: ReceiptBalance.SavingsPlacement) -> Money
   {
     AdjustmentPreset.percentage(
       percentage, of: tipBaseAmount(at: placement), currencyCode: displayCurrency
     ).amount
   }
 
-  private func tipBaseAmount(at placement: ReceiptBalance.SavingsPlacement) -> Double {
+  private func tipBaseAmount(at placement: ReceiptBalance.SavingsPlacement) -> Money {
     let balance = balance
     let above = adjustments(above: .tip, in: adjustmentOrder)
     let tax = above.contains(.tax) ? tax : 0
@@ -165,7 +165,7 @@ extension ReceiptDraft {
     get {
       let subtotal = balance.subtotal
       guard subtotal > 0 else { return 0 }
-      return savings / subtotal * 100
+      return (savings * 100).fraction(of: subtotal)
     }
     set {
       savings = rounded(balance.subtotal * min(max(newValue, 0), 100) / 100)
@@ -192,24 +192,13 @@ extension ReceiptDraft {
   }
 
   /// Sets the printed subtotal, which a total that added up follows.
-  func setSubtotal(_ amount: Double) {
+  func setSubtotal(_ amount: Money) {
     keepingBalance(.subtotal) { subtotal = amount }
-  }
-
-  /// Sets the subtotal to what the items come to.
-  func matchSubtotalToItems() {
-    guard let calculated = balance.calculatedSubtotal else { return }
-    setSubtotal(calculated)
-  }
-
-  /// Sets the total to what the subtotal and adjustments come to.
-  func matchTotal() {
-    total = balance.calculatedTotal
   }
 
   /// Adds `adjustment` at `amount`, or sets it to `amount` when the receipt has it. A tip is entered
   /// as an amount.
-  func addAdjustment(_ adjustment: ReceiptTotalAdjustment, amount: Double = 0) {
+  func addAdjustment(_ adjustment: ReceiptTotalAdjustment, amount: Money = 0) {
     if adjustment == .tip { setTipPercentage(nil) }
     keepingBalance {
       adjustments.add(adjustment)
@@ -221,7 +210,7 @@ extension ReceiptDraft {
     keepingBalance { adjustments.remove(adjustment) }
   }
 
-  func addItem(lineTotal: Double = 0) -> ReceiptDraftItem.ID {
+  func addItem(lineTotal: Money = 0) -> ReceiptDraftItem.ID {
     let item = ReceiptDraftItem(
       item: ReceiptItem(description: "", quantity: 1, lineTotal: lineTotal))
     items.append(item)
@@ -242,7 +231,7 @@ extension ReceiptDraft {
     let totalUnits = ReceiptCurrency.minorUnits(item.lineTotal, code: currency)
     let baseUnits = totalUnits / count
     let remainderUnits = totalUnits - baseUnits * count
-    let name = item.description.trimmingCharacters(in: .whitespacesAndNewlines)
+    let name = item.description.trimmed
     let splitItems = (0..<count).map { offset in
       let extraUnits = offset < abs(remainderUnits) ? remainderUnits.signum() : 0
       return ReceiptDraftItem(
@@ -257,7 +246,7 @@ extension ReceiptDraft {
   }
 
   /// `amount` rounded to the smallest unit of the receipt's currency.
-  private func rounded(_ amount: Double) -> Double {
+  private func rounded(_ amount: Money) -> Money {
     ReceiptCurrency.rounded(amount, code: displayCurrency)
   }
 }

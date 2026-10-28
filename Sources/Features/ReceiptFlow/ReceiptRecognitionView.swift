@@ -35,9 +35,9 @@ struct ReceiptRecognitionView: View {
           HStack {
             Text("Total")
             Spacer()
-            Text(total, format: .currency(code: currency))
+            Text(total.decimal, format: .currency(code: currency))
               .monospacedDigit()
-              .contentTransition(.numericText(value: total))
+              .contentTransition(.numericText(value: Double(total)))
           }
           .fontWeight(.semibold)
         }
@@ -213,8 +213,8 @@ private struct ReceiptRecognitionItemRow: View {
       Spacer()
       Group {
         if let lineTotal = item.lineTotal {
-          Text(lineTotal, format: .currency(code: currency))
-            .contentTransition(.numericText(value: lineTotal))
+          Text(lineTotal.decimal, format: .currency(code: currency))
+            .contentTransition(.numericText(value: Double(lineTotal)))
         } else {
           Text(0, format: .currency(code: currency))
             .redacted(reason: .placeholder)

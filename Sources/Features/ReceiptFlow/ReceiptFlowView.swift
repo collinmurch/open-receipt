@@ -4,9 +4,8 @@ struct ReceiptFlowView: View {
   @State private var model: ReceiptFlowModel
   @State private var motion: ReceiptBackgroundMotion
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.receiptParsingClient) private var parsingClient
   @Environment(\.receiptStorageClient) private var storage
-  @Environment(\.peopleStorageClient) private var peopleStorage
+  @Environment(\.peopleStorage) private var peopleStorage
   @Environment(\.receiptLibraryRefresh) private var refreshLibrary
   @Environment(\.scenePhase) private var scenePhase
   @Environment(ReceiptRecognitionCenter.self) private var recognitions
@@ -84,7 +83,7 @@ struct ReceiptFlowView: View {
         } else {
           ReceiptReviewView(
             draft: draft,
-            showsSampleNotice: parsingClient.usesSampleData && !model.pages.pages.isEmpty,
+            showsSampleNotice: recognitions.usesSampleData && !model.pages.isEmpty,
             pages: pagesEditor,
             startsInEditing: model.startsInEditing,
             onFlush: { await model.flush(storage: storage) }
@@ -138,8 +137,8 @@ struct ReceiptFlowView: View {
 
   private var pagesEditor: ReceiptPagesEditor {
     ReceiptPagesEditor(
-      pages: model.pages.pages,
-      needsRescan: model.pages.needsRescan,
+      pages: model.pages,
+      needsRescan: model.needsRescan,
       add: { try await model.addPages($0, storage: storage) },
       delete: { try await model.deletePage($0, storage: storage) },
       reorder: { try await model.reorderPages($0, storage: storage) },

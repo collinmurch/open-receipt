@@ -1,14 +1,14 @@
 import StoreKit
 import SwiftUI
 
-enum PurchaseOutcome: Equatable, Sendable {
+nonisolated enum PurchaseOutcome: Equatable, Sendable {
   case purchased
   /// The purchase waits for approval, such as Ask to Buy.
   case pending
   case cancelled
 }
 
-enum PurchaseError: LocalizedError {
+nonisolated enum PurchaseError: LocalizedError {
   case productUnavailable
   case nothingToRestore
 
@@ -23,7 +23,7 @@ enum PurchaseError: LocalizedError {
 
 /// The App Store purchase of unlimited reading. Debug uses a stand-in that never reaches the App
 /// Store.
-struct PurchaseClient: Sendable {
+nonisolated struct PurchaseClient: Sendable {
   /// Whether this Apple Account has a verified purchase that wasn't refunded or revoked.
   let isEntitled: @Sendable () async -> Bool
   /// Yields whenever a transaction arrives outside a purchase in the app, such as a purchase on
@@ -40,7 +40,7 @@ struct PurchaseClient: Sendable {
   static let unlimitedReadingID = "com.collinmurch.openreceipt.unlimited"
 }
 
-extension PurchaseClient {
+nonisolated extension PurchaseClient {
   static let live = PurchaseClient(
     isEntitled: {
       for await result in Transaction.currentEntitlements(for: unlimitedReadingID) {

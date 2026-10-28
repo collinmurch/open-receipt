@@ -3,7 +3,7 @@ import SwiftUI
 /// The shared motion of a receipt's backgrounds. The wash drifts on a fixed cycle measured from
 /// `origin`, so every page that reads the same motion draws the same frame at the same moment and
 /// moving between pages never jumps.
-struct ReceiptBackgroundMotion: Sendable {
+nonisolated struct ReceiptBackgroundMotion: Sendable {
   let pattern: ReceiptBackgroundMotionPattern
   let origin: Date
 
@@ -30,7 +30,7 @@ extension EnvironmentValues {
 }
 
 /// Where the wash's two blooms travel as it drifts, laid out from a seed.
-struct ReceiptBackgroundMotionPattern: Sendable {
+nonisolated struct ReceiptBackgroundMotionPattern: Sendable {
   let leadingStart: UnitPoint
   let leadingEnd: UnitPoint
   let trailingStart: UnitPoint
@@ -72,7 +72,7 @@ struct ReceiptBackgroundMotionPattern: Sendable {
 }
 
 /// A SplitMix64 generator, so a seed always produces the same wash layout.
-private struct SeededRandomNumberGenerator: RandomNumberGenerator {
+private nonisolated struct SeededRandomNumberGenerator: RandomNumberGenerator {
   private var state: UInt64
 
   init(seed: UUID) {

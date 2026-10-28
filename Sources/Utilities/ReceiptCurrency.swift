@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-enum ReceiptCurrency {
+nonisolated enum ReceiptCurrency {
   /// `code` when it is a currency code, or `fallback` otherwise.
   static func displayCode(
     _ code: String?,
@@ -13,7 +13,7 @@ enum ReceiptCurrency {
 
   /// An entered code without surrounding whitespace, in capitals.
   static func normalized(_ code: String) -> String {
-    code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    code.trimmed.uppercased()
   }
 
   /// The localized name of `code`, such as "US Dollar" for USD.
@@ -48,29 +48,19 @@ enum ReceiptCurrency {
   }
 
   /// `amount` counted in `code`'s smallest unit, such as cents for USD or yen for JPY, or zero
-  /// when it isn't a countable amount. Halves round away from zero, so 1.005 USD is 101 cents.
-  static func minorUnits(_ amount: Double, code: String) -> Int {
-    // A Double only holds 15 significant digits faithfully, so reading the scaled amount at that
-    // precision recovers the decimal it stands for, such as 100.5 rather than 100.49999999999999
-    // for 1.005 * 100, before rounding.
-    let scaled = Double(String(format: "%.15g", amount * minorUnitScale(code))) ?? .nan
-    let units = scaled.rounded()
-    return units.isFinite ? Int(exactly: units) ?? 0 : 0
+  /// when it's too large to count. Halves round away from zero, so 1.005 USD is 101 cents.
+  static func minorUnits(_ amount: Money, code: String) -> Int {
+    amount.units(places: fractionDigits(code)) ?? 0
   }
 
   /// The amount that `units` of `code`'s smallest unit make, such as 1.25 for 125 USD cents.
-  static func amount(minorUnits units: Int, code: String) -> Double {
-    Double(units) / minorUnitScale(code)
+  static func amount(minorUnits units: Int, code: String) -> Money {
+    Money(units: units, places: fractionDigits(code))
   }
 
   /// `amount` rounded to `code`'s smallest unit, such as the nearest cent for USD.
-  static func rounded(_ amount: Double, code: String) -> Double {
-    guard amount.isFinite else { return amount }
-    return Self.amount(minorUnits: minorUnits(amount, code: code), code: code)
-  }
-
-  private static func minorUnitScale(_ code: String) -> Double {
-    pow(10, Double(fractionDigits(code)))
+  static func rounded(_ amount: Money, code: String) -> Money {
+    amount.rounded(places: fractionDigits(code))
   }
 
   private struct FormatDetails {

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Person: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct Person: Codable, Equatable, Identifiable, Sendable {
   struct PaymentMethods: Codable, Equatable, Sendable {
     var defaultMethod: PaymentMethod?
     var venmo: Venmo?
@@ -17,6 +17,28 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
         iMessage.map { .iMessage($0.recipient) }
       case .none:
         nil
+      }
+    }
+
+    /// Trims what says where each method sends requests, and the "@" before a username and the
+    /// "$" before a cashtag, removing any method left saying nothing.
+    mutating func normalize() {
+      if var venmo {
+        venmo.recipient.value =
+          venmo.recipient.kind == .username
+          ? Venmo.normalizedUsername(venmo.recipient.value)
+          : venmo.recipient.value.trimmed
+        venmo.customUsername = venmo.customUsername.map(Venmo.normalizedUsername)
+        if venmo.customUsername?.isEmpty == true { venmo.customUsername = nil }
+        self.venmo = venmo.recipient.value.isEmpty ? nil : venmo
+      }
+      if var cashApp {
+        cashApp.cashtag = CashApp.normalizedCashtag(cashApp.cashtag)
+        self.cashApp = cashApp.cashtag.isEmpty ? nil : cashApp
+      }
+      if var iMessage {
+        iMessage.recipient.value = iMessage.recipient.value.trimmed
+        self.iMessage = iMessage.recipient.value.isEmpty ? nil : iMessage
       }
     }
 
@@ -65,7 +87,7 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
 
     /// `value` without surrounding whitespace or a leading "@".
     static func normalizedUsername(_ value: String) -> String {
-      String(value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingPrefix("@"))
+      String(value.trimmed.trimmingPrefix("@"))
     }
   }
 
@@ -77,7 +99,7 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
     }
 
     static func normalizedCashtag(_ value: String) -> String {
-      let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      let trimmed = value.trimmed
       return String(trimmed.drop(while: { $0 == "$" }))
     }
   }
@@ -126,14 +148,40 @@ struct Person: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
-extension Person.Venmo {
+nonisolated extension Person.Venmo {
   init(username: String) {
     self.init(recipient: Recipient(kind: .username, value: username), customUsername: username)
   }
 }
 
+nonisolated extension [Person] {
+  /// The saved person `participant` is: the one it links to, else the one for its contact, so a
+  /// contact deleted and saved again keeps its receipts. Participants linked to no one, as receipts
+  /// split before people were saved are, fall back to a unique name.
+  func person(for participant: ReceiptParticipant) -> Person? {
+    if let personID = participant.personID,
+      let person = first(where: { $0.id == personID })
+    {
+      return person
+    }
+
+    if case .contact(let identifier) = participant.source,
+      let contact = first(where: { $0.isContact(identifier) })
+    {
+      return contact
+    }
+
+    guard participant.personID == nil else { return nil }
+
+    let matches = filter {
+      $0.displayName.localizedCaseInsensitiveCompare(participant.displayName) == .orderedSame
+    }
+    return matches.count == 1 ? matches[0] : nil
+  }
+}
+
 /// The contact that represents the person using the app. New receipts start with it.
-struct ReceiptOwner: Codable, Equatable, Sendable {
+nonisolated struct ReceiptOwner: Codable, Equatable, Sendable {
   var contactIdentifier: String
   var displayName: String
 }

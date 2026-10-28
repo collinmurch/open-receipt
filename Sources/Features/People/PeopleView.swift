@@ -9,7 +9,7 @@ struct PeopleView: View {
     PaymentSettings.initialDefaultMethod
   @Environment(\.contactClient) private var contactClient
 
-  init(storage: PeopleStorageClient) {
+  init(storage: PeopleFileStorage) {
     model = SavedPeopleModel(storage: storage)
   }
 

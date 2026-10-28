@@ -5,7 +5,6 @@ import UIKit
 /// Keeps a receipt read running after the app moves to the background. A read someone started
 /// becomes a continued processing task, which the system shows with its progress and lets finish;
 /// otherwise the app asks for the short background time UIKit allows.
-@MainActor
 final class ReceiptReadActivity {
   private var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
   private let continuedProcessing: ContinuedProcessing?
@@ -39,7 +38,7 @@ final class ReceiptReadActivity {
 
 /// State sits behind a mutex, because the system calls the launch and expiration handlers on its
 /// own queues.
-private final class ContinuedProcessing: Sendable {
+private nonisolated final class ContinuedProcessing: Sendable {
   private static let totalUnitCount: Int64 = 100
 
   private struct State {

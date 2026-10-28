@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-public struct ReceiptPage: Sendable {
+public nonisolated struct ReceiptPage: Sendable {
   public let image: CGImage
   public let orientation: CGImagePropertyOrientation
 

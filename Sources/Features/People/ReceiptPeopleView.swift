@@ -14,7 +14,7 @@ struct ReceiptPeopleView: View {
   init(
     draft: ReceiptDraft,
     contactClient: ContactClient,
-    peopleStorage: PeopleStorageClient
+    peopleStorage: PeopleFileStorage
   ) {
     self.draft = draft
     self.contactClient = contactClient
@@ -163,25 +163,14 @@ struct ReceiptPeopleView: View {
   private func savedPeopleSection(_ people: [Person]) -> some View {
     Section("Saved People") {
       ForEach(people) { person in
-        let participant =
-          draft.participant(forPersonID: person.id)
-          ?? person.contactIdentifier.flatMap(draft.participant(forContactIdentifier:))
-        Button {
-          if let participant {
-            removeParticipant(participant.id)
-          } else {
-            Task {
-              guard let included = await peopleModel.include(person) else { return }
-              addToDraft(included)
-            }
-          }
-        } label: {
-          PersonSelectionRow(
-            name: person.displayName,
-            contactIdentifier: person.contactIdentifier,
-            isSelected: participant != nil)
+        selectionRow(
+          name: person.displayName,
+          contactIdentifier: person.contactIdentifier,
+          participant: draft.participant(forPersonID: person.id)
+            ?? person.contactIdentifier.flatMap(draft.participant(forContactIdentifier:))
+        ) {
+          await peopleModel.include(person)
         }
-        .buttonStyle(.plain)
       }
     }
   }
@@ -201,7 +190,13 @@ struct ReceiptPeopleView: View {
           .foregroundStyle(.secondary)
       } else {
         ForEach(contacts) { contact in
-          contactRow(contact)
+          selectionRow(
+            name: contact.displayName,
+            contactIdentifier: contact.identifier,
+            participant: draft.participant(forContactIdentifier: contact.identifier)
+          ) {
+            await peopleModel.include(contact)
+          }
         }
       }
     }
@@ -216,22 +211,26 @@ struct ReceiptPeopleView: View {
     }
   }
 
-  private func contactRow(_ contact: ContactSummary) -> some View {
-    let participant = draft.participant(forContactIdentifier: contact.identifier)
-    return Button {
+  /// A person who can be picked for the receipt: tapping removes `participant`, or adds the
+  /// person `include` saves when they aren't on it.
+  private func selectionRow(
+    name: String,
+    contactIdentifier: String?,
+    participant: ReceiptParticipant?,
+    include: @escaping @MainActor () async -> Person?
+  ) -> some View {
+    Button {
       if let participant {
         removeParticipant(participant.id)
       } else {
         Task {
-          guard let person = await peopleModel.include(contact) else { return }
+          guard let person = await include() else { return }
           addToDraft(person)
         }
       }
     } label: {
       PersonSelectionRow(
-        name: contact.displayName,
-        contactIdentifier: contact.identifier,
-        isSelected: participant != nil)
+        name: name, contactIdentifier: contactIdentifier, isSelected: participant != nil)
     }
     .buttonStyle(.plain)
   }
@@ -270,7 +269,7 @@ struct ReceiptPeopleView: View {
 }
 
 private struct NewPersonView: View {
-  private enum Field: Hashable {
+  private nonisolated enum Field: Hashable {
     case name
   }
 
@@ -305,7 +304,7 @@ private struct NewPersonView: View {
   }
 
   private var trimmedName: String {
-    name.trimmingCharacters(in: .whitespacesAndNewlines)
+    name.trimmed
   }
 
   private func addPerson() {

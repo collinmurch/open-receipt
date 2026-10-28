@@ -43,11 +43,14 @@ struct ArtworkBackdrop: View {
           ArtworkPalette.mint, ArtworkPalette.sage, ArtworkPalette.teal,
           ArtworkPalette.sage, ArtworkPalette.teal, ArtworkPalette.deep,
         ])
-      glow(at: CGPoint(x: size.width * 0.5, y: size.height * 0.42), radius: size.height * 0.55,
+      glow(
+        at: CGPoint(x: size.width * 0.5, y: size.height * 0.42), radius: size.height * 0.55,
         color: .white, opacity: 0.32)
-      glow(at: CGPoint(x: size.width * 0.08, y: 0), radius: size.height * 0.6,
+      glow(
+        at: CGPoint(x: size.width * 0.08, y: 0), radius: size.height * 0.6,
         color: ArtworkPalette.mist, opacity: 0.7)
-      glow(at: CGPoint(x: size.width * 0.95, y: size.height), radius: size.height * 0.7,
+      glow(
+        at: CGPoint(x: size.width * 0.95, y: size.height), radius: size.height * 0.7,
         color: ArtworkPalette.deep, opacity: 0.45)
       ForEach(slips.indices, id: \.self) { index in
         slip(slips[index])
@@ -101,7 +104,7 @@ struct ArtworkBackdrop: View {
 
 /// Receipt paper: rounded at the top and torn into teeth along the bottom, like the shared
 /// breakdown slips.
-struct TornSlipShape: Shape {
+nonisolated struct TornSlipShape: Shape {
   var toothWidth: CGFloat = 16
   var cornerRadius: CGFloat = 20
 
@@ -134,7 +137,6 @@ struct TornSlipShape: Shape {
 }
 
 /// A tile of gray noise, the same on every run so renders only change when the design does.
-@MainActor
 enum Grain {
   static let image: Image = {
     let side = 256

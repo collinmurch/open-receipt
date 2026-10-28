@@ -6,7 +6,7 @@
     struct Item: Decodable {
       let description: String
       var quantity: Double?
-      let lineTotal: Double
+      let lineTotal: Money
     }
 
     /// Who is on a scenario's receipt and which items each of them had. Names match `people`, and
@@ -59,7 +59,7 @@
     struct LibraryEntry: Decodable {
       let merchant: String
       let daysAgo: Int
-      let total: Double
+      let total: Money
       let backgroundStyle: ReceiptBackgroundStyle
 
       func receipt(date: String) -> ParsedReceipt {
@@ -77,11 +77,11 @@
     let merchant: String
     let date: String
     let currency: String
-    let subtotal: Double
-    let tax: Double
-    let total: Double
+    let subtotal: Money
+    let tax: Money
+    let total: Money
     /// A tip entered after the receipt is read.
-    var addedTip: Double?
+    var addedTip: Money?
     var backgroundStyle: ReceiptBackgroundStyle
     let people: [Participant]
     let items: [Item]

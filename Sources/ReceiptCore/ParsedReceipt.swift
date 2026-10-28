@@ -1,12 +1,12 @@
-public struct ReceiptItem: Sendable, Equatable {
+public nonisolated struct ReceiptItem: Sendable, Equatable {
   public let description: String
   public let quantity: Double
-  public let lineTotal: Double
+  public let lineTotal: Money
 
   public init(
     description: String,
     quantity: Double,
-    lineTotal: Double
+    lineTotal: Money
   ) {
     self.description = description
     self.quantity = quantity
@@ -14,7 +14,7 @@ public struct ReceiptItem: Sendable, Equatable {
   }
 }
 
-public struct ReceiptPayment: Sendable, Equatable {
+public nonisolated struct ReceiptPayment: Sendable, Equatable {
   public let method: String?
   public let last4: String?
   public let authCode: String?
@@ -26,14 +26,14 @@ public struct ReceiptPayment: Sendable, Equatable {
   }
 }
 
-public struct ParsedReceipt: Sendable {
+public nonisolated struct ParsedReceipt: Sendable {
   public var merchantName: String
   public var date: String
-  public var subtotal: Double
-  public var tax: Double
-  public var tip: Double
-  public var savings: Double
-  public var total: Double
+  public var subtotal: Money
+  public var tax: Money
+  public var tip: Money
+  public var savings: Money
+  public var total: Money
   public var currency: String
   public var payment: ReceiptPayment?
   public var items: [ReceiptItem]
@@ -42,11 +42,11 @@ public struct ParsedReceipt: Sendable {
   public init(
     merchantName: String = "",
     date: String = "",
-    subtotal: Double = 0,
-    tax: Double = 0,
-    tip: Double = 0,
-    savings: Double = 0,
-    total: Double = 0,
+    subtotal: Money = 0,
+    tax: Money = 0,
+    tip: Money = 0,
+    savings: Money = 0,
+    total: Money = 0,
     currency: String = "USD",
     payment: ReceiptPayment? = nil,
     items: [ReceiptItem] = [],

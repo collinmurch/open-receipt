@@ -1,14 +1,14 @@
 import Foundation
 
 /// A month of receipts in the library.
-struct ReceiptLibrarySection: Identifiable, Equatable {
+nonisolated struct ReceiptLibrarySection: Identifiable, Equatable {
   /// The month's first day as `yyyy-MM-dd`, which stays unique across calendars and eras.
   let id: String
   let title: String
   var receipts: [ReceiptSummary]
 }
 
-enum ReceiptLibrarySections {
+nonisolated enum ReceiptLibrarySections {
   /// Groups receipts by month in `calendar`, newest first, by the day printed on them or else the
   /// day they were captured in `calendar`'s time zone.
   static func grouped(

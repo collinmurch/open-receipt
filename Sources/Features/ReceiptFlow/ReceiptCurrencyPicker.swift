@@ -10,7 +10,7 @@ struct ReceiptCurrencyPicker: View {
 
   var body: some View {
     List {
-      if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      if searchText.trimmed.isEmpty {
         Section("Common") {
           ForEach(catalog.common) { currency in
             currencyRow(currency)
@@ -35,7 +35,7 @@ struct ReceiptCurrencyPicker: View {
   }
 
   private var searchResults: [CurrencyOption] {
-    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let query = searchText.trimmed
     return catalog.searchOrder.filter {
       $0.code.localizedCaseInsensitiveContains(query)
         || $0.name.localizedCaseInsensitiveContains(query)
@@ -72,8 +72,8 @@ struct ReceiptCurrencyPicker: View {
 extension ReceiptCurrencyPicker {
   /// Builds the list of currencies off the main thread ahead of time. Building it looks up every
   /// locale, which would otherwise stall the first push of the picker.
-  static func prepareCatalog() async {
-    await Task.detached(priority: .utility) { _ = CurrencyCatalog.current }.value
+  @concurrent static func prepareCatalog() async {
+    _ = CurrencyCatalog.current
   }
 }
 
@@ -105,7 +105,7 @@ extension View {
   }
 }
 
-private struct CurrencyCatalog: Sendable {
+private nonisolated struct CurrencyCatalog: Sendable {
   static let current: Self = {
     let currencies = Locale.commonISOCurrencyCodes.map { code in
       CurrencyOption(
@@ -126,7 +126,7 @@ private struct CurrencyCatalog: Sendable {
   let searchOrder: [CurrencyOption]
 }
 
-private struct CurrencyOption: Identifiable, Sendable {
+private nonisolated struct CurrencyOption: Identifiable, Sendable {
   let code: String
   let name: String
   let symbols: [String]

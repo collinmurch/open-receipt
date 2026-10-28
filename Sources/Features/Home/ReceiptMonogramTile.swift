@@ -42,7 +42,7 @@ struct ReceiptMonogramTile: View {
   }
 }
 
-enum ReceiptMonogram {
+nonisolated enum ReceiptMonogram {
   /// Up to two initials from the first words of a merchant name that start with a letter or digit.
   static func initials(for name: String) -> String? {
     let letters =

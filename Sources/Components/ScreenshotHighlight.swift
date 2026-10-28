@@ -26,7 +26,6 @@ private struct ScreenshotHighlightModifier: ViewModifier {
 }
 
 /// Writes highlighted frames, in points, to the path passed as `-ScreenshotHighlights`.
-@MainActor
 enum ScreenshotHighlights {
   /// Whether `make previews` launched this build to capture screenshots, which only Debug builds
   /// can be.

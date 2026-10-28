@@ -3,7 +3,6 @@ import Observation
 
 /// Contact photos for every screen. Each is fetched the first time it's shown and kept, and
 /// fetched again after Contacts changes.
-@MainActor
 @Observable
 final class ContactPhotos {
   private var photos: [String: Data] = [:]

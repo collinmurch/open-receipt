@@ -4,7 +4,6 @@ import SwiftUI
 /// Whether receipts can be read: unlimited after the one-time purchase, and a few free reads
 /// before it. Each free read is recorded under a key when it starts, so a read that is retried,
 /// deferred, or resumed later uses one free read in all.
-@MainActor
 @Observable
 final class ReadingAccess {
   static let freeReadLimit = 5

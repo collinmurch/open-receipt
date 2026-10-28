@@ -92,7 +92,7 @@ struct ReceiptModelNotice: View {
     case .approachingLimit:
       return "You’re close to today’s limit for reading receipts."
     case .limitReached(let resetDate, _):
-      let resumption = resetDate.map { DeferredReceiptRead.resumption(at: $0) } ?? "later"
+      let resumption = DeferredReceiptRead.resumption(at: resetDate)
       return
         "Today’s reading limit is reached. New receipts are saved and read automatically \(resumption)."
     case .unavailable(let reason):
